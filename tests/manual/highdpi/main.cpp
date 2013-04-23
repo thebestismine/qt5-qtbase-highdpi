@@ -359,10 +359,10 @@ public:
         int y = 10;
         int dx = 50;
         int dy = 50;
-        int maxX = 900;
-        int minSize = 4;
-        int maxSize = 70;
-        int sizeIncrement = 4;
+        int maxX = 600;
+        int minSize = 5;
+        int maxSize = 64;
+        int sizeIncrement = 5;
 
         // Disable high-dpi icons
         qApp->setAttribute(Qt::AA_UseHighDpiPixmaps, false);

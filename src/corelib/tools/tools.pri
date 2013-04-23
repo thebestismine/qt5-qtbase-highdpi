@@ -106,6 +106,10 @@ SOURCES += \
     SOURCES += tools/qelapsedtimer_mac.cpp
     OBJECTIVE_SOURCES += tools/qlocale_mac.mm
 }
+else:blackberry {
+    SOURCES += tools/qelapsedtimer_unix.cpp tools/qlocale_blackberry.cpp
+    HEADERS += tools/qlocale_blackberry.h
+}
 else:unix:SOURCES += tools/qelapsedtimer_unix.cpp tools/qlocale_unix.cpp
 else:win32:SOURCES += tools/qelapsedtimer_win.cpp tools/qlocale_win.cpp
 else:integrity:SOURCES += tools/qelapsedtimer_unix.cpp tools/qlocale_unix.cpp
@@ -124,8 +128,19 @@ contains(QT_CONFIG, zlib) {
 contains(QT_CONFIG,icu) {
     SOURCES += tools/qlocale_icu.cpp
     DEFINES += QT_USE_ICU
-    win32:LIBS_PRIVATE += -licuin -licuuc
-    else:LIBS_PRIVATE += -licui18n -licuuc
+    win32 {
+        CONFIG(static, static|shared) {
+            CONFIG(debug, debug|release) {
+                LIBS_PRIVATE += -lsicuind -lsicuucd -lsicudtd
+            } else {
+                LIBS_PRIVATE += -lsicuin -lsicuuc -lsicudt
+            }
+        } else {
+            LIBS_PRIVATE += -licuin -licuuc
+        }
+    } else {
+        LIBS_PRIVATE += -licui18n -licuuc
+    }
 }
 
 pcre {
@@ -134,7 +149,7 @@ pcre {
     LIBS_PRIVATE += -lpcre16
 }
 
-DEFINES += HB_EXPORT=Q_CORE_EXPORT
+INCLUDEPATH += ../3rdparty/harfbuzz/src
 HEADERS += ../3rdparty/harfbuzz/src/harfbuzz.h
 SOURCES += ../3rdparty/harfbuzz/src/harfbuzz-buffer.c \
            ../3rdparty/harfbuzz/src/harfbuzz-gdef.c \

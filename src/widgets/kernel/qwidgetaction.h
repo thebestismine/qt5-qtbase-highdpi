@@ -3,7 +3,7 @@
 ** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
 ** Contact: http://www.qt-project.org/legal
 **
-** This file is part of the QtGui module of the Qt Toolkit.
+** This file is part of the QtWidgets module of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
@@ -59,13 +59,13 @@ class Q_WIDGETS_EXPORT QWidgetAction : public QAction
 public:
     explicit QWidgetAction(QObject *parent);
     virtual ~QWidgetAction();
-    
+
     void setDefaultWidget(QWidget *w);
     QWidget *defaultWidget() const;
 
     QWidget *requestWidget(QWidget *parent);
     void releaseWidget(QWidget *widget);
-    
+
 protected:
     virtual bool event(QEvent *);
     virtual bool eventFilter(QObject *, QEvent *);

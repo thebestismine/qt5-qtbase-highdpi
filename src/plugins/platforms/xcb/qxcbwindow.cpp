@@ -187,8 +187,10 @@ QXcbWindow::QXcbWindow(QWindow *window)
     , m_gravity(XCB_GRAVITY_STATIC)
     , m_mapped(false)
     , m_transparent(false)
+    , m_usingSyncProtocol(false)
     , m_deferredActivation(false)
     , m_embedded(false)
+    , m_alertState(false)
     , m_netWmUserTimeWindow(XCB_NONE)
     , m_dirtyFrameMargins(false)
 #if defined(XCB_USE_EGL)
@@ -355,7 +357,9 @@ void QXcbWindow::create()
     properties[propertyCount++] = atom(QXcbAtom::WM_TAKE_FOCUS);
     properties[propertyCount++] = atom(QXcbAtom::_NET_WM_PING);
 
-    if (m_screen->syncRequestSupported())
+    m_usingSyncProtocol = m_screen->syncRequestSupported() && window()->surfaceType() != QSurface::OpenGLSurface;
+
+    if (m_usingSyncProtocol)
         properties[propertyCount++] = atom(QXcbAtom::_NET_WM_SYNC_REQUEST);
 
     if (window()->flags() & Qt::WindowContextHelpButtonHint)
@@ -372,7 +376,7 @@ void QXcbWindow::create()
     m_syncValue.hi = 0;
     m_syncValue.lo = 0;
 
-    if (m_screen->syncRequestSupported()) {
+    if (m_usingSyncProtocol) {
         m_syncCounter = xcb_generate_id(xcb_connection());
         Q_XCB_CALL(xcb_sync_create_counter(xcb_connection(), m_syncCounter, m_syncValue));
 
@@ -464,7 +468,7 @@ void QXcbWindow::destroy()
     if (connection()->focusWindow() == this)
         connection()->setFocusWindow(0);
 
-    if (m_syncCounter && m_screen->syncRequestSupported())
+    if (m_syncCounter && m_usingSyncProtocol)
         Q_XCB_CALL(xcb_sync_destroy_counter(xcb_connection(), m_syncCounter));
     if (m_window) {
         if (m_netWmUserTimeWindow) {
@@ -1782,24 +1786,6 @@ void QXcbWindow::handlePropertyNotifyEvent(const xcb_property_notify_event_t *ev
         }
         return;
     }
-
-    const xcb_atom_t xEmbedInfoAtom = atom(QXcbAtom::_XEMBED_INFO);
-    if (event->atom == xEmbedInfoAtom) {
-        const xcb_get_property_cookie_t get_cookie =
-            xcb_get_property(xcb_connection(), 0, m_window, xEmbedInfoAtom,
-                             XCB_ATOM_ANY, 0, 3);
-
-        xcb_get_property_reply_t *reply =
-            xcb_get_property_reply(xcb_connection(), get_cookie, NULL);
-        if (reply && reply->length >= 2) {
-            const long *data = (const long *)xcb_get_property_value(reply);
-            if (data[1] & XEMBED_MAPPED)
-                Q_XCB_CALL(xcb_map_window(xcb_connection(), m_window));
-            else
-                Q_XCB_CALL(xcb_unmap_window(xcb_connection(), m_window));
-        }
-        free(reply);
-    }
 }
 
 void QXcbWindow::handleFocusInEvent(const xcb_focus_in_event_t *)
@@ -1843,7 +1829,7 @@ void QXcbWindow::handleFocusOutEvent(const xcb_focus_out_event_t *)
 
 void QXcbWindow::updateSyncRequestCounter()
 {
-    if (m_screen->syncRequestSupported() && (m_syncValue.lo != 0 || m_syncValue.hi != 0)) {
+    if (m_usingSyncProtocol && (m_syncValue.lo != 0 || m_syncValue.hi != 0)) {
         Q_XCB_CALL(xcb_sync_set_counter(xcb_connection(), m_syncCounter, m_syncValue));
         xcb_flush(xcb_connection());
         connection()->sync();
@@ -2062,5 +2048,18 @@ void QXcbWindow::setMask(const QRegion &region)
 }
 
 #endif // !QT_NO_SHAPE
+
+void QXcbWindow::setAlertState(bool enabled)
+{
+    if (m_alertState == enabled)
+        return;
+    const NetWmStates oldState = netWmStates();
+    m_alertState = enabled;
+    if (enabled) {
+        setNetWmStates(oldState | NetWmStateDemandsAttention);
+    } else {
+        setNetWmStates(oldState & ~NetWmStateDemandsAttention);
+    }
+}
 
 QT_END_NAMESPACE

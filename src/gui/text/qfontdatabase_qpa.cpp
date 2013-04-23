@@ -68,11 +68,8 @@ Q_GUI_EXPORT  void qt_registerFont(const QString &familyName, const QString &sty
     f->fixedPitch = fixedPitch;
 
     for (int i = 0; i < QFontDatabase::WritingSystemsCount; ++i) {
-        if (writingSystems.supported(QFontDatabase::WritingSystem(i))) {
+        if (writingSystems.supported(QFontDatabase::WritingSystem(i)))
             f->writingSystems[i] = QtFontFamily::Supported;
-        } else {
-            f->writingSystems[i] = QtFontFamily::Unsupported;
-        }
     }
 
     QtFontFoundry *foundry = f->foundry(foundryname, true);
@@ -113,8 +110,7 @@ static QStringList fallbackFamilies(const QString &family, QFont::Style style, Q
     for (i = retList.begin(); i != retList.end(); ++i) {
         bool contains = false;
         for (int j = 0; j < db->count; j++) {
-            QtFontFamily *qtFamily = db->families[j];
-            if (!(i->compare(qtFamily->name,Qt::CaseInsensitive))) {
+            if (db->families[j]->matchesFamilyName(*i)) {
                 contains = true;
                 break;
             }

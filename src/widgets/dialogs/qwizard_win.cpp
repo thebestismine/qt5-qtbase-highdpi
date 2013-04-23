@@ -3,7 +3,7 @@
 ** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
 ** Contact: http://www.qt-project.org/legal
 **
-** This file is part of the QtGui module of the Qt Toolkit.
+** This file is part of the QtWidgets module of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
@@ -74,7 +74,7 @@ Q_DECLARE_METATYPE(QMargins)
 QT_BEGIN_NAMESPACE
 
 //DWM related
-typedef struct  {       //MARGINS       
+typedef struct  {       //MARGINS
     int cxLeftWidth;    // width of left border that retains its size
     int cxRightWidth;   // width of right border that retains its size
     int cyTopHeight;    // height of top border that retains its size
@@ -240,7 +240,11 @@ void QVistaBackButton::paintEvent(QPaintEvent *)
     else if (underMouse())
         state = WIZ_NAV_BB_HOT;
 
-    pDrawThemeBackground(theme, hdc, WIZ_NAV_BACKBUTTON, state, &clipRect, &clipRect);
+    WIZ_NAVIGATIONPARTS buttonType = (layoutDirection() == Qt::LeftToRight
+                                      ? WIZ_NAV_BACKBUTTON
+                                      : WIZ_NAV_FORWARDBUTTON);
+
+    pDrawThemeBackground(theme, hdc, buttonType, state, &clipRect, &clipRect);
 }
 
 /******************************************************************************
@@ -385,7 +389,11 @@ void QVistaHelper::drawTitleBar(QPainter *painter)
         glowOffset = glowSize();
     }
 
-    const QRect textRectangle(titleOffset() - glowOffset, verticalCenter - textHeight / 2, textWidth, textHeight);
+    const int titleLeft = (wizard->layoutDirection() == Qt::LeftToRight
+                           ? titleOffset() - glowOffset
+                           : wizard->width() - titleOffset() - textWidth + glowOffset);
+
+    const QRect textRectangle(titleLeft, verticalCenter - textHeight / 2, textWidth, textHeight);
     if (isWindow) {
         drawTitleText(painter, text, textRectangle, hdc);
     } else {
@@ -397,7 +405,11 @@ void QVistaHelper::drawTitleBar(QPainter *painter)
 
     const QIcon windowIcon = wizard->windowIcon();
     if (!windowIcon.isNull()) {
-        const QRect rect(origin.x() + leftMargin(),
+        const int iconLeft = (wizard->layoutDirection() == Qt::LeftToRight
+                              ? leftMargin()
+                              : wizard->width() - leftMargin() - iconSize());
+
+        const QRect rect(origin.x() + iconLeft,
                          origin.y() + verticalCenter - iconSize() / 2, iconSize(), iconSize());
         const HICON hIcon = qt_pixmapToWinHICON(windowIcon.pixmap(iconSize()));
         DrawIconEx(hdc, rect.left(), rect.top(), hIcon, 0, 0, 0, NULL, DI_NORMAL | DI_COMPAT);
@@ -695,14 +707,14 @@ bool QVistaHelper::drawTitleText(QPainter *painter, const QString &text, const Q
         dib.bmiHeader.biPlanes = 1;
         dib.bmiHeader.biBitCount = 32;
         dib.bmiHeader.biCompression = BI_RGB;
- 
+
         bmp = CreateDIBSection(hdc, &dib, DIB_RGB_COLORS, NULL, NULL, 0);
 
         // Set up the DC
         HFONT hCaptionFont = getCaptionFont(hTheme);
         HBITMAP hOldBmp = (HBITMAP)SelectObject(dcMem, (HGDIOBJ) bmp);
         HFONT hOldFont = (HFONT)SelectObject(dcMem, (HGDIOBJ) hCaptionFont);
- 
+
         // Draw the text!
         WIZ_DTTOPTS dto;
         dto.dwSize = sizeof(WIZ_DTTOPTS);
@@ -711,7 +723,7 @@ bool QVistaHelper::drawTitleText(QPainter *painter, const QString &text, const Q
 
         dto.dwFlags = WIZ_DTT_COMPOSITED|WIZ_DTT_GLOWSIZE;
         dto.iGlowSize = glowSize();
- 
+
         pDrawThemeTextEx(hTheme, dcMem, 0, 0, (LPCWSTR)text.utf16(), -1, uFormat, &rctext, &dto );
         BitBlt(hdc, rect.left(), rect.top(), rect.width(), rect.height(), dcMem, 0, 0, SRCCOPY);
         SelectObject(dcMem, (HGDIOBJ) hOldBmp);
@@ -743,7 +755,7 @@ bool QVistaHelper::drawBlackRect(const QRect &rect, HDC hdc)
         dib.bmiHeader.biPlanes = 1;
         dib.bmiHeader.biBitCount = 32;
         dib.bmiHeader.biCompression = BI_RGB;
- 
+
         bmp = CreateDIBSection(hdc, &dib, DIB_RGB_COLORS, NULL, NULL, 0);
         HBITMAP hOldBmp = (HBITMAP)SelectObject(dcMem, (HGDIOBJ) bmp);
 

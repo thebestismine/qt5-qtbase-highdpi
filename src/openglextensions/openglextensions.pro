@@ -1,6 +1,9 @@
 TARGET     = QtOpenGLExtensions
-QT = core
 CONFIG += static
+
+contains(QT_CONFIG, opengl):CONFIG += opengl
+contains(QT_CONFIG, opengles1):CONFIG += opengles1
+contains(QT_CONFIG, opengles2):CONFIG += opengles2
 
 load(qt_module)
 

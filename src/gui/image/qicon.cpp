@@ -121,25 +121,21 @@ static void qt_cleanup_icon_cache()
 
 /*! \internal
 
-    Returns the effective device pixel ratio.
-    New public API should set a QWindow pointer, and will get the
-    the deivcePixelRatio for that window.
+    Returns the effective device pixel ratio, using
+    the provided window pointer if possible.
 
-    Old API won't have a window pointer and qApp->devicePixelRatio()
-    will be used, iff Qt::AA_UseHighDpiPixmaps is set to prevent
-    breaking old code.
+    if Qt::AA_UseHighDpiPixmaps is not set this function
+    returns 1.0 to keep non-hihdpi aware code working.
 */
 static qreal qt_effective_device_pixel_ratio(QWindow *window = 0)
 {
+    if (!qApp->testAttribute(Qt::AA_UseHighDpiPixmaps))
+        return qreal(1.0);
+
     if (window)
         return window->devicePixelRatio();
 
-    bool environmentEnable = !qgetenv("QT_USE_HIGHDPI_PIXMAPS").isEmpty();
-    if (environmentEnable || qApp->testAttribute(Qt::AA_UseHighDpiPixmaps)) {
-        return qApp->devicePixelRatio(); // Don't know which window to target.
-    }
-
-    return qreal(1.0);
+    return qApp->devicePixelRatio(); // Don't know which window to target.
 }
 
 QIconPrivate::QIconPrivate()
@@ -147,6 +143,25 @@ QIconPrivate::QIconPrivate()
     serialNum(serialNumCounter.fetchAndAddRelaxed(1)),
     detach_no(0)
 {
+}
+
+/*! \internal
+    Computes the displayDevicePixelRatio for a pixmap.
+
+    If displayDevicePixelRatio is 1.0 the reurned value is 1.0, always.
+
+    For a displayDevicePixelRatio of 2.0 the returned value will be between
+    1.0 and 2.0, depending on requestedSize and actualsize:
+    * If actualsize < requestedSize        : 1.0 (not enough pixels for a normal-dpi pixmap)
+    * If actualsize == requestedSize * 2.0 : 2.0 (enough pixels for a high-dpi pixmap)
+    * else : a scaled value between 1.0 and 2.0. (pixel count is between normal-dpi and high-dpi)
+*/
+qreal QIconPrivate::pixmapDevicePixelRatio(qreal displayDevicePixelRatio, const QSize &requestedSize, const QSize &actualSize)
+{
+    QSize targetSize = requestedSize * displayDevicePixelRatio;
+    qreal scale = 0.5 * (qreal(actualSize.width()) / qreal(targetSize.width()) +
+                         qreal(actualSize.height() / qreal(targetSize.height())));
+    return qMax(qreal(1.0), displayDevicePixelRatio *scale);
 }
 
 QPixmapIconEngine::QPixmapIconEngine()
@@ -164,7 +179,7 @@ QPixmapIconEngine::~QPixmapIconEngine()
 
 void QPixmapIconEngine::paint(QPainter *painter, const QRect &rect, QIcon::Mode mode, QIcon::State state)
 {
-    QSize pixmapSize = rect.size() * qt_effective_device_pixel_ratio();
+    QSize pixmapSize = rect.size() * qt_effective_device_pixel_ratio(0);
     QPixmap px = pixmap(pixmapSize, mode, state);
     painter->drawPixmap(rect, pixmap(pixmapSize, mode, state));
 }
@@ -733,7 +748,8 @@ QPixmap QIcon::pixmap(const QSize &size, Mode mode, State state) const
 /*!
   Returns the actual size of the icon for the requested \a size, \a
   mode, and \a state. The result might be smaller than requested, but
-  never larger.
+  never larger. The returned size is in device-independent pixels (This
+  is relevant for high-dpi pixmaps.)
 
   \sa pixmap(), paint()
 */
@@ -754,9 +770,6 @@ QSize QIcon::actualSize(const QSize &size, Mode mode, State state) const
   a high-dpi display the pixmap can be larger. In that case it will have
   a devicePixelRatio larger than 1.
 
-  This function does not take Qt::AA_UseHighDpiPixmaps into account when
-  called with a valid window pointer.
-
   \sa  actualSize(), paint()
 */
 QPixmap QIcon::pixmap(QWindow *window, const QSize &size, Mode mode, State state) const
@@ -764,29 +777,15 @@ QPixmap QIcon::pixmap(QWindow *window, const QSize &size, Mode mode, State state
     if (!d)
         return QPixmap();
 
-    QSize targetSize = size * qt_effective_device_pixel_ratio(window);
+    qreal devicePixelRatio = qt_effective_device_pixel_ratio(window);
 
-    QPixmap pixmap = d->engine->pixmap(targetSize, mode, state);
-    if (pixmap.devicePixelRatio() > 1.0)
-        pixmap.setDevicePixelRatio(1.0);
+    // Handle the simple normal-dpi case:
+    if (!(devicePixelRatio > 1.0))
+        return d->engine->pixmap(size, mode, state);
 
-    // Set devicePixelRatio to 2.0 if we are returning a pixmap larger than the
-    // requested size. There are two cases here:
-    //
-    // 1) The pixmap is exactly 2x the requested size (it cannot be more)
-    // 2) The pixmap is between 1x and 2x - there is not enough pixels.
-    //
-    // In case 2) we indicate that the pixmap should be drawn exactly to
-    // the pixel grid at 2x and appear smaller than the requested size.
-    // An alternative would be to set a fractional devicePixelRatio between
-    // 1 and 2, which would size the pixmap to the requeseted size and
-    // result in scaled pixmap drawing.
-    //
-    // In any case, user code is free to disregard the devicePixelRatio
-    // by changing it or specifying the target rect when painting.
-    if ((pixmap.size().width() > size.width() || pixmap.size().height() > size.height()))
-        pixmap.setDevicePixelRatio(2.0);
-
+    // Try get a pixmap that is big enough to be displayed at device pixel resolution.
+    QPixmap pixmap = d->engine->pixmap(size * devicePixelRatio, mode, state);
+    pixmap.setDevicePixelRatio(d->pixmapDevicePixelRatio(devicePixelRatio, size, pixmap.size()));
     return pixmap;
 }
 
@@ -796,11 +795,8 @@ QPixmap QIcon::pixmap(QWindow *window, const QSize &size, Mode mode, State state
   Returns the actual size of the icon for the requested \a window  \a size, \a
   mode, and \a state.
 
-  The pixmap can be smaller than the requested size.
-
-
-  This function does not take Qt::AA_UseHighDpiPixmaps into account when
-  called with a valid window pointer.
+  The pixmap can be smaller than the requested size. The returned size
+  is in device-independent pixels (This is relevant for high-dpi pixmaps.)
 
   \sa actualSize(), pixmap(), paint()
 */
@@ -809,13 +805,14 @@ QSize QIcon::actualSize(QWindow *window, const QSize &size, Mode mode, State sta
     if (!d)
         return QSize();
 
-    QSize targetSize = size * qt_effective_device_pixel_ratio(window);
-    QSize actualSize = d->engine->actualSize(targetSize, mode, state);
+    qreal devicePixelRatio = qt_effective_device_pixel_ratio(window);
 
-    // Match devicePixelRatio setting in pixmap() above.
-    if ((actualSize.width() > size.width() || actualSize.height() > size.height()))
-        return actualSize / 2;
-    return actualSize;
+    // Handle the simple normal-dpi case:
+    if (!(devicePixelRatio > 1.0))
+        return d->engine->actualSize(size, mode, state);
+
+    QSize actualSize = d->engine->actualSize(size * devicePixelRatio, mode, state);
+    return actualSize / d->pixmapDevicePixelRatio(devicePixelRatio, size, actualSize);
 }
 
 /*!
@@ -971,6 +968,17 @@ void QIcon::addFile(const QString &fileName, const QSize &size, Mode mode, State
         detach();
     }
     d->engine->addFile(fileName, size, mode, state);
+
+    // Check if a "@2x" file exists and add it.
+    if (qApp->devicePixelRatio() > 1.0) {
+        int dotIndex = fileName.lastIndexOf(QLatin1Char('.'));
+        if (dotIndex != -1) {
+            QString at2xfileName = fileName;
+            at2xfileName.insert(dotIndex, QStringLiteral("@2x"));
+            if (QFile::exists(at2xfileName))
+                d->engine->addFile(at2xfileName, size, mode, state);
+        }
+    }
 }
 
 /*!
@@ -1065,6 +1073,7 @@ void QIcon::setThemeName(const QString &name)
 */
 QString QIcon::themeName()
 {
+    QIconLoader::instance()->ensureInitialized();
     return QIconLoader::instance()->themeName();
 }
 

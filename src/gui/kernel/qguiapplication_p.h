@@ -107,7 +107,7 @@ public:
     static QAbstractEventDispatcher *qt_qpa_core_dispatcher()
     {
         if (QCoreApplication::instance())
-            return QCoreApplication::instance()->d_func()->threadData->eventDispatcher;
+            return QCoreApplication::instance()->d_func()->threadData->eventDispatcher.load();
         else
             return 0;
     }
@@ -190,6 +190,8 @@ public:
     static void hideModalWindow(QWindow *window);
     static void updateBlockedStatus(QWindow *window);
     virtual bool isWindowBlocked(QWindow *window, QWindow **blockingWindow = 0) const;
+
+    static bool synthesizeMouseFromTouchEventsEnabled();
 
     static Qt::MouseButtons buttons;
     static ulong mousePressTime;

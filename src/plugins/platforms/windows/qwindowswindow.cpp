@@ -487,6 +487,11 @@ QWindowsWindow::WindowData
     const QWindowCreationContextPtr context(new QWindowCreationContext(w, rect, data.customMargins, style, exStyle));
     QWindowsContext::instance()->setWindowCreationContext(context);
 
+    if (context->frameX < 0)
+        context->frameX = 0;
+    if (context->frameY < 0)
+        context->frameY = 0;
+
     if (QWindowsContext::verboseWindows)
         qDebug().nospace()
                 << "CreateWindowEx: " << w << *this
@@ -786,13 +791,16 @@ QWindowsWindow::QWindowsWindow(QWindow *aWindow, const WindowData &data) :
     m_iconSmall(0),
     m_iconBig(0)
 {
-    if (aWindow->surfaceType() == QWindow::OpenGLSurface)
-        setFlag(OpenGLSurface);
     // Clear the creation context as the window can be found in QWindowsContext's map.
     QWindowsContext::instance()->setWindowCreationContext(QSharedPointer<QWindowCreationContext>());
     QWindowsContext::instance()->addWindow(m_data.hwnd, this);
+    const Qt::WindowType type = aWindow->type();
+    if (type == Qt::Desktop)
+        return; // No further handling for Qt::Desktop
+    if (aWindow->surfaceType() == QWindow::OpenGLSurface)
+        setFlag(OpenGLSurface);
     if (aWindow->isTopLevel()) {
-        switch (aWindow->type()) {
+        switch (type) {
         case Qt::Window:
         case Qt::Dialog:
         case Qt::Sheet:
@@ -806,8 +814,13 @@ QWindowsWindow::QWindowsWindow(QWindow *aWindow, const WindowData &data) :
         }
     }
 #ifndef Q_OS_WINCE
-    if (QWindowsContext::instance()->systemInfo() & QWindowsContext::SI_SupportsTouch)
-        QWindowsContext::user32dll.registerTouchWindow(m_data.hwnd, 0);
+    if (QWindowsContext::instance()->systemInfo() & QWindowsContext::SI_SupportsTouch) {
+        if (QWindowsContext::user32dll.registerTouchWindow(m_data.hwnd, 0)) {
+            setFlag(TouchRegistered);
+        } else {
+            qErrnoWarning("RegisterTouchWindow() failed for window '%s'.", qPrintable(aWindow->objectName()));
+        }
+    }
 #endif // !Q_OS_WINCE
     setWindowState(aWindow->windowState());
     const qreal opacity = qt_window_private(aWindow)->opacity;
@@ -819,7 +832,7 @@ QWindowsWindow::~QWindowsWindow()
 {
 #ifndef Q_OS_WINCE
     QWindowSystemInterface::flushWindowSystemEvents();
-    if (QWindowsContext::instance()->systemInfo() & QWindowsContext::SI_SupportsTouch)
+    if (testFlag(TouchRegistered))
         QWindowsContext::user32dll.unregisterTouchWindow(m_data.hwnd);
 #endif // !Q_OS_WINCE
     destroyWindow();
@@ -1705,6 +1718,16 @@ void QWindowsWindow::getSizeHints(MINMAXINFO *mmi) const
 }
 #endif // !Q_OS_WINCE
 
+// Return the default cursor (Arrow) from QWindowsCursor's cache.
+static inline QWindowsWindowCursor defaultCursor(const QWindow *w)
+{
+    if (QScreen *screen = w->screen())
+        if (const QPlatformScreen *platformScreen = screen->handle())
+            if (QPlatformCursor *cursor = platformScreen->cursor())
+                return static_cast<QWindowsCursor *>(cursor)->standardWindowCursor(Qt::ArrowCursor);
+    return QWindowsWindowCursor(Qt::ArrowCursor);
+}
+
 /*!
     \brief Applies to cursor property set on the window to the global cursor.
 
@@ -1714,9 +1737,12 @@ void QWindowsWindow::getSizeHints(MINMAXINFO *mmi) const
 void QWindowsWindow::applyCursor()
 {
 #ifndef QT_NO_CURSOR
-    if (m_cursor.isNull()) { // Recurse up to parent with non-null cursor.
-        if (const QWindow *p = window()->parent())
+    if (m_cursor.isNull()) { // Recurse up to parent with non-null cursor. Set default for toplevel.
+        if (const QWindow *p = window()->parent()) {
             QWindowsWindow::baseWindowOf(p)->applyCursor();
+        } else {
+            SetCursor(defaultCursor(window()).handle());
+        }
     } else {
         SetCursor(m_cursor.handle());
     }
@@ -1776,6 +1802,19 @@ QWindowsWindow *QWindowsWindow::childAt(const QPoint &clientPoint, unsigned cwex
 }
 
 #ifndef Q_OS_WINCE
+void QWindowsWindow::setAlertState(bool enabled)
+{
+    if (isAlertState() == enabled)
+        return;
+    if (enabled) {
+        alertWindow(0);
+        setFlag(AlertState);
+    } else {
+        stopAlertWindow();
+        clearFlag(AlertState);
+    }
+}
+
 void QWindowsWindow::alertWindow(int durationMs)
 {
     DWORD timeOutMs = GetCaretBlinkTime();

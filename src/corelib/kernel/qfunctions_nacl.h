@@ -42,6 +42,8 @@
 #ifndef QFUNCTIONS_NACL_H
 #define QFUNCTIONS_NACL_H
 
+#include <QtCore/qglobal.h>
+
 #ifdef Q_OS_NACL
 
 #include <sys/types.h>
@@ -67,7 +69,7 @@ int pthread_cancel(pthread_t thread);
 
 int pthread_attr_setinheritsched(pthread_attr_t *attr,
     int inheritsched);
-int pthread_attr_getinheritsched(const pthread_attr_t *attr, 
+int pthread_attr_getinheritsched(const pthread_attr_t *attr,
     int *inheritsched);
 
 // event dispatcher, select

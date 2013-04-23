@@ -172,7 +172,7 @@ QWindowsUser32DLL::QWindowsUser32DLL() :
     updateLayeredWindowIndirect(0),
     isHungAppWindow(0),
     registerTouchWindow(0), unregisterTouchWindow(0),
-    getTouchInputInfo(0), closeTouchInputHandle(0)
+    getTouchInputInfo(0), closeTouchInputHandle(0), setProcessDPIAware(0)
 {
 }
 
@@ -187,6 +187,7 @@ void QWindowsUser32DLL::init()
 
     updateLayeredWindowIndirect = (UpdateLayeredWindowIndirect)(library.resolve("UpdateLayeredWindowIndirect"));
     isHungAppWindow = (IsHungAppWindow)library.resolve("IsHungAppWindow");
+    setProcessDPIAware = (SetProcessDPIAware)library.resolve("SetProcessDPIAware");
 }
 
 bool QWindowsUser32DLL::initTouch()
@@ -252,7 +253,7 @@ struct QWindowsContextPrivate {
     QSet<QString> m_registeredWindowClassNames;
     HandleBaseWindowHash m_windows;
     HDC m_displayContext;
-    const int m_defaultDPI;
+    int m_defaultDPI;
     QWindowsKeyMapper m_keyMapper;
     QWindowsMouseHandler m_mouseHandler;
     QWindowsMimeConverter m_mimeConverter;
@@ -266,23 +267,23 @@ struct QWindowsContextPrivate {
 
 QWindowsContextPrivate::QWindowsContextPrivate() :
     m_systemInfo(0),
-    m_displayContext(GetDC(0)),
-    m_defaultDPI(GetDeviceCaps(m_displayContext,LOGPIXELSY)),
     m_oleInitializeResult(OleInitialize(NULL)),
     m_eventType(QByteArrayLiteral("windows_generic_MSG")),
     m_lastActiveWindow(0), m_asyncExpose(0)
 {
+    const QSysInfo::WinVersion ver = QSysInfo::windowsVersion();
 #ifndef Q_OS_WINCE
     QWindowsContext::user32dll.init();
     QWindowsContext::shell32dll.init();
-#endif
+    // Ensure metrics functions report correct data, QTBUG-30063.
+    if (QWindowsContext::user32dll.setProcessDPIAware)
+        QWindowsContext::user32dll.setProcessDPIAware();
 
-    const QSysInfo::WinVersion ver = QSysInfo::windowsVersion();
-#ifndef Q_OS_WINCE
     if (hasTouchSupport(ver) && QWindowsContext::user32dll.initTouch())
         m_systemInfo |= QWindowsContext::SI_SupportsTouch;
-#endif
-
+#endif // !Q_OS_WINCE
+    m_displayContext = GetDC(0);
+    m_defaultDPI = GetDeviceCaps(m_displayContext, LOGPIXELSY);
     if (useRTL_Extensions(ver)) {
         m_systemInfo |= QWindowsContext::SI_RTL_Extensions;
         m_keyMapper.setUseRTLExtensions(true);
@@ -368,58 +369,52 @@ void QWindowsContext::setKeyGrabber(QWindow *w)
 }
 
 // Window class registering code (from qapplication_win.cpp)
-// If 0 is passed as the widget pointer, register a window class
-// for QWidget as default. This is used in QGLTemporaryContext
-// during GL initialization, where we don't want to use temporary
-// QWidgets or QGLWidgets, neither do we want to have separate code
-// to register window classes.
 
 QString QWindowsContext::registerWindowClass(const QWindow *w, bool isGL)
 {
-    const Qt::WindowFlags flags = w ? w->flags() : (Qt::WindowFlags)0;
+    Q_ASSERT(w);
+    const Qt::WindowFlags flags = w->flags();
     const Qt::WindowFlags type = flags & Qt::WindowType_Mask;
-
-    uint style = 0;
-    bool icon = false;
-    QString cname = QStringLiteral("Qt5");
-    if (w && isGL) {
-        cname += QStringLiteral("QGLWindow");
-        style = CS_DBLCLKS|CS_OWNDC;
-        icon  = true;
-    } else if (w && (flags & Qt::MSWindowsOwnDC)) {
-        cname += QStringLiteral("QWindowOwnDC");
-        style = CS_DBLCLKS|CS_OWNDC;
-        icon  = true;
-    } else if (w && (type == Qt::Tool || type == Qt::ToolTip)) {
-        style = CS_DBLCLKS;
-        if (w->inherits("QTipLabel") || w->inherits("QAlphaWidget")) {
-            if ((QSysInfo::WindowsVersion >= QSysInfo::WV_XP
-                && (QSysInfo::WindowsVersion & QSysInfo::WV_NT_based))) {
-                style |= CS_DROPSHADOW;
-            }
-            cname += QStringLiteral("QToolTip");
-        } else {
-            cname += QStringLiteral("QTool");
-        }
-        style |= CS_SAVEBITS;
-        icon = false;
-    } else if (w && (type == Qt::Popup)) {
-        cname += QStringLiteral("QPopup");
-        style = CS_DBLCLKS|CS_SAVEBITS;
-        if ((QSysInfo::WindowsVersion >= QSysInfo::WV_XP
-            && (QSysInfo::WindowsVersion & QSysInfo::WV_NT_based)))
-            style |= CS_DROPSHADOW;
-        icon = false;
-    } else {
-        cname += QStringLiteral("QWindow");
-        style = CS_DBLCLKS;
-        icon  = true;
+    // Determine style and icon.
+    uint style = CS_DBLCLKS;
+    bool icon = true;
+    if (isGL || (flags & Qt::MSWindowsOwnDC))
+        style |= CS_OWNDC;
+    if ((QSysInfo::WindowsVersion & QSysInfo::WV_NT_based)
+        && (type == Qt::Popup || w->property("_q_windowsDropShadow").toBool())) {
+        style |= CS_DROPSHADOW;
     }
+    if (type == Qt::Tool || type == Qt::ToolTip || type == Qt::Popup) {
+        style |= CS_SAVEBITS; // Save/restore background
+        icon = false;
+    }
+    // Create a unique name for the flag combination
+    QString cname = QStringLiteral("Qt5QWindow");
+    switch (type) {
+    case Qt::Tool:
+        cname += QStringLiteral("Tool");
+        break;
+    case Qt::ToolTip:
+        cname += QStringLiteral("ToolTip");
+        break;
+    case Qt::Popup:
+        cname += QStringLiteral("Popup");
+        break;
+    default:
+        break;
+    }
+    if (isGL)
+        cname += QStringLiteral("GL");
+    if (style & CS_DROPSHADOW)
+        cname += QStringLiteral("DropShadow");
+    if (style & CS_SAVEBITS)
+        cname += QStringLiteral("SaveBits");
+    if (style & CS_OWNDC)
+        cname += QStringLiteral("OwnDC");
+    if (icon)
+        cname += QStringLiteral("Icon");
 
-    HBRUSH brush = 0;
-    if (w && !isGL)
-        brush = GetSysColorBrush(COLOR_WINDOW);
-    return registerWindowClass(cname, qWindowsWndProc, style, brush, icon);
+    return registerWindowClass(cname, qWindowsWndProc, style, GetSysColorBrush(COLOR_WINDOW), icon);
 }
 
 QString QWindowsContext::registerWindowClass(QString cname,

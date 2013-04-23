@@ -202,6 +202,8 @@ QCocoaWindow::QCocoaWindow(QWindow *tlw, const QCocoaIntegration *platformIntegr
     , m_menubar(0)
     , m_hasModalSession(false)
     , m_frameStrutEventsEnabled(false)
+    , m_isExposed(false)
+    , m_registerTouchCount(0)
 {
 #ifdef QT_COCOA_ENABLE_WINDOW_DEBUG
     qDebug() << "QCocoaWindow::QCocoaWindow" << this;
@@ -211,9 +213,8 @@ QCocoaWindow::QCocoaWindow(QWindow *tlw, const QCocoaIntegration *platformIntegr
     m_qtView = [[QNSView alloc] initWithQWindow:tlw platformWindow:this];
     m_contentView = m_qtView;
     setGeometry(tlw->geometry());
-
     recreateWindow(parent());
-
+    tlw->setGeometry(geometry());
     m_inConstructor = false;
 }
 
@@ -262,6 +263,9 @@ void QCocoaWindow::setCocoaGeometry(const QRect &rect)
 void QCocoaWindow::setVisible(bool visible)
 {
     QCocoaAutoReleasePool pool;
+    QCocoaWindow *parentCocoaWindow = 0;
+    if (window()->transientParent())
+        parentCocoaWindow = static_cast<QCocoaWindow *>(window()->transientParent()->handle());
 #ifdef QT_COCOA_ENABLE_WINDOW_DEBUG
     qDebug() << "QCocoaWindow::setVisible" << window() << visible;
 #endif
@@ -269,10 +273,7 @@ void QCocoaWindow::setVisible(bool visible)
         // We need to recreate if the modality has changed as the style mask will need updating
         if (m_windowModality != window()->modality())
             recreateWindow(parent());
-        QCocoaWindow *parentCocoaWindow = 0;
-        if (window()->transientParent()) {
-            parentCocoaWindow = static_cast<QCocoaWindow *>(window()->transientParent()->handle());
-
+        if (parentCocoaWindow) {
             // The parent window might have moved while this window was hidden,
             // update the window geometry if there is a parent.
             setGeometry(qhidpiPointToPixel(window()->geometry()));
@@ -282,13 +283,24 @@ void QCocoaWindow::setVisible(bool visible)
             if (window()->type() == Qt::Popup) {
                 // qDebug() << "transientParent and popup" << window()->type() << Qt::Popup << (window()->type() & Qt::Popup);
                 parentCocoaWindow->m_activePopupWindow = window();
+                // QTBUG-30266: a window should not be resizable while a transient popup is open
+                // Since this isn't a native popup, the window manager doesn't close the popup when you click outside
+#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_7
+                if (QSysInfo::QSysInfo::MacintoshVersion >= QSysInfo::MV_10_7
+                    && !([parentCocoaWindow->m_nsWindow styleMask] & NSFullScreenWindowMask))
+#endif
+                [parentCocoaWindow->m_nsWindow setStyleMask:
+                    (parentCocoaWindow->windowStyleMask(parentCocoaWindow->m_windowFlags) & ~NSResizableWindowMask)];
             }
 
         }
 
-        // Make sure the QWindow has a frame ready before we show the NSWindow.
-        QWindowSystemInterface::handleExposeEvent(window(), QRect(QPoint(), geometry().size()));
-        QWindowSystemInterface::flushWindowSystemEvents();
+        // This call is here to handle initial window show correctly:
+        // - top-level windows need to have backing store content ready when the
+        //   window is shown, sendin the expose event here makes that more likely.
+        // - QNSViews for child windows are initialy not hidden and won't get the
+        //   viewDidUnhide message.
+        exposeWindow();
 
         if (m_nsWindow) {
             // setWindowState might have been called while the window was hidden and
@@ -340,8 +352,14 @@ void QCocoaWindow::setVisible(bool visible)
         } else {
             [m_contentView setHidden:YES];
         }
-        if (!QCoreApplication::closingDown())
-            QWindowSystemInterface::handleExposeEvent(window(), QRegion());
+        if (parentCocoaWindow && window()->type() == Qt::Popup
+#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_7
+            && QSysInfo::QSysInfo::MacintoshVersion >= QSysInfo::MV_10_7
+            && !([parentCocoaWindow->m_nsWindow styleMask] & NSFullScreenWindowMask)
+#endif
+           )
+            // QTBUG-30266: a window should not be resizable while a transient popup is open
+            [parentCocoaWindow->m_nsWindow setStyleMask:parentCocoaWindow->windowStyleMask(parentCocoaWindow->m_windowFlags)];
     }
 }
 
@@ -378,7 +396,7 @@ NSUInteger QCocoaWindow::windowStyleMask(Qt::WindowFlags flags)
     NSInteger styleMask = NSBorderlessWindowMask;
 
     if ((type & Qt::Popup) == Qt::Popup) {
-        if (!windowIsPopupType(type))
+        if (!windowIsPopupType(type) && !(flags & Qt::FramelessWindowHint))
             styleMask = (NSUtilityWindowMask | NSResizableWindowMask | NSClosableWindowMask |
                          NSMiniaturizableWindowMask | NSTitledWindowMask);
     } else {
@@ -387,8 +405,11 @@ NSUInteger QCocoaWindow::windowStyleMask(Qt::WindowFlags flags)
                  Qt::WindowMinMaxButtonsHint | Qt::WindowCloseButtonHint;
         if (flags == Qt::Window) {
             styleMask = (NSResizableWindowMask | NSClosableWindowMask | NSMiniaturizableWindowMask | NSTitledWindowMask);
-        } else if ((flags & Qt::Dialog) && (window()->modality() != Qt::NonModal)) {
-            styleMask = NSResizableWindowMask | NSTitledWindowMask;
+        } else if (flags & Qt::Dialog) {
+            if (window()->modality() == Qt::NonModal)
+                styleMask = NSResizableWindowMask | NSClosableWindowMask | NSTitledWindowMask;
+            else
+                styleMask = NSResizableWindowMask | NSTitledWindowMask;
         } else if (!(flags & Qt::FramelessWindowHint)) {
             if ((flags & Qt::Dialog) || (flags & Qt::WindowMaximizeButtonHint))
                 styleMask |= NSResizableWindowMask;
@@ -420,6 +441,8 @@ void QCocoaWindow::setWindowFlags(Qt::WindowFlags flags)
         NSInteger level = this->windowLevel(flags);
         [m_nsWindow setStyleMask:styleMask];
         [m_nsWindow setLevel:level];
+        [m_nsWindow setIgnoresMouseEvents:((flags & Qt::ToolTip) == Qt::ToolTip) ? YES : NO];
+        // TODO deal with WindowTransparentForInput; setIgnoresMouseEvents is too extreme, you can't click the titlebar
         setWindowShadow(flags);
     }
 
@@ -459,6 +482,8 @@ void QCocoaWindow::setWindowIcon(const QIcon &icon)
 
     NSButton *iconButton = [m_nsWindow standardWindowButton:NSWindowDocumentIconButton];
     if (iconButton == nil) {
+        if (icon.isNull())
+            return;
         NSString *title = QCFString::toNSString(window()->title());
         [m_nsWindow setRepresentedURL:[NSURL fileURLWithPath:title]];
         iconButton = [m_nsWindow standardWindowButton:NSWindowDocumentIconButton];
@@ -489,6 +514,19 @@ void QCocoaWindow::lower()
         return;
     if ([m_nsWindow isVisible])
         [m_nsWindow orderBack: m_nsWindow];
+}
+
+bool QCocoaWindow::isExposed() const
+{
+    return m_isExposed;
+}
+
+bool QCocoaWindow::isOpaque() const
+{
+    bool translucent = (window()->format().alphaBufferSize() > 0
+                        || window()->opacity() < 1
+                        || (m_qtView && [m_qtView hasMask]));
+    return !translucent;
 }
 
 void QCocoaWindow::propagateSizeHints()
@@ -529,20 +567,11 @@ void QCocoaWindow::propagateSizeHints()
     }
 }
 
-void QCocoaWindow::updateOpaque()
-{
-    bool translucent = window()->format().alphaBufferSize() > 0
-            || window()->opacity() < 1
-            || (m_contentView && [m_contentView hasMask]);
-    [m_nsWindow setOpaque:!translucent];
-}
-
-
 void QCocoaWindow::setOpacity(qreal level)
 {
     if (m_nsWindow) {
         [m_nsWindow setAlphaValue:level];
-        updateOpaque();
+        [m_nsWindow setOpaque: isOpaque()];
     }
 }
 
@@ -552,7 +581,7 @@ void QCocoaWindow::setMask(const QRegion &region)
         [m_nsWindow setBackgroundColor:[NSColor clearColor]];
 
     [m_qtView setMaskRegion:&region];
-    updateOpaque();
+    [m_nsWindow setOpaque: isOpaque()];
 }
 
 bool QCocoaWindow::setKeyboardGrabEnabled(bool grab)
@@ -887,6 +916,15 @@ QCocoaMenuBar *QCocoaWindow::menubar() const
     return m_menubar;
 }
 
+void QCocoaWindow::registerTouch(bool enable)
+{
+    m_registerTouchCount += enable ? 1 : -1;
+    if (enable && m_registerTouchCount == 1)
+        [m_contentView setAcceptsTouchEvents:YES];
+    else if (m_registerTouchCount == 0)
+        [m_contentView setAcceptsTouchEvents:NO];
+}
+
 qreal QCocoaWindow::devicePixelRatio() const
 {
 #if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_7
@@ -897,6 +935,37 @@ qreal QCocoaWindow::devicePixelRatio() const
     {
         return 1.0;
     }
+}
+
+void QCocoaWindow::exposeWindow()
+{
+    if (!m_isExposed) {
+        m_isExposed = true;
+        QWindowSystemInterface::handleExposeEvent(window(), QRegion(geometry()));
+    }
+}
+
+void QCocoaWindow::obscureWindow()
+{
+    if (m_isExposed) {
+        m_isExposed = false;
+        QWindowSystemInterface::handleExposeEvent(window(), QRegion());
+    }
+}
+
+QWindow *QCocoaWindow::childWindowAt(QPoint windowPoint)
+{
+    QWindow *targetWindow = window();
+    foreach (QObject *child, targetWindow->children()) {
+        if (QWindow *childWindow = qobject_cast<QWindow *>(child)) {
+            if (childWindow->geometry().contains(windowPoint)) {
+                QCocoaWindow* platformWindow = static_cast<QCocoaWindow*>(childWindow->handle());
+                targetWindow = platformWindow->childWindowAt(windowPoint - childWindow->position());
+            }
+        }
+    }
+
+    return targetWindow;
 }
 
 QMargins QCocoaWindow::frameMargins() const

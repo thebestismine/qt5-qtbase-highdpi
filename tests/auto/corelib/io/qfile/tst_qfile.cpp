@@ -1057,7 +1057,7 @@ void tst_QFile::ungetChar()
     QCOMPARE(buf[2], '4');
 }
 
-#ifdef Q_OS_WIN
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE)
 QString driveLetters()
 {
     wchar_t volumeName[MAX_PATH];
@@ -1094,7 +1094,9 @@ void tst_QFile::invalidFile_data()
 #if !defined(Q_OS_WIN)
     QTest::newRow( "x11" ) << QString( "qwe//" );
 #else
+#if !defined(Q_OS_WINCE)
     QTest::newRow( "colon2" ) << invalidDriveLetter() + QString::fromLatin1(":ail:invalid");
+#endif
     QTest::newRow( "colon3" ) << QString( ":failinvalid" );
     QTest::newRow( "forwardslash" ) << QString( "fail/invalid" );
     QTest::newRow( "asterisk" ) << QString( "fail*invalid" );
@@ -1322,7 +1324,7 @@ void tst_QFile::copyFallback()
     QVERIFY(QFile::exists("file-copy-destination.txt"));
     QVERIFY(!file.isOpen());
 
-    file.close(); 
+    file.close();
     QFile::setPermissions("file-copy-destination.txt",
             QFile::ReadOwner | QFile::WriteOwner);
 }
@@ -2928,8 +2930,8 @@ void tst_QFile::map()
     // exotic test to make sure that multiple maps work
 
     // note: windows ce does not reference count mutliple maps
-    // it's essentially just the same reference but it 
-    // cause a resource lock on the file which prevents it 
+    // it's essentially just the same reference but it
+    // cause a resource lock on the file which prevents it
     // from being removed    uchar *memory1 = file.map(0, file.size());
     uchar *memory1 = file.map(0, file.size());
     QCOMPARE(file.error(), QFile::NoError);
@@ -3347,7 +3349,7 @@ void tst_QFile::autocloseHandle()
     {
         QFile file("readonlyfile");
         QVERIFY(openFile(file, QIODevice::ReadOnly, OpenStream, QFile::DontCloseHandle));
-        QCOMPARE(file.handle(), QT_FILENO(stream_));
+        QCOMPARE(file.handle(), int(QT_FILENO(stream_)));
         file.close();
         QCOMPARE(file.handle(), -1);
         //file is not closed, read should succeed

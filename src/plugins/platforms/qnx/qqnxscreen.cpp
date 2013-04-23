@@ -49,7 +49,7 @@
 
 #include <errno.h>
 
-#ifdef QQNXSCREEN_DEBUG
+#if defined(QQNXSCREEN_DEBUG)
 #define qScreenDebug qDebug
 #else
 #define qScreenDebug QT_NO_QDEBUG_MACRO
@@ -498,9 +498,16 @@ void QQnxScreen::onWindowPost(QQnxWindow *window)
     }
 }
 
-QPlatformCursor * QQnxScreen::cursor() const
+void QQnxScreen::adjustOrientation()
 {
-    return m_cursor;
+    if (!m_primaryScreen)
+        return;
+
+    bool ok = false;
+    const int rotation = qgetenv("ORIENTATION").toInt(&ok);
+
+    if (ok)
+        setRotation(rotation);
 }
 
 QPlatformCursor * QQnxScreen::cursor() const

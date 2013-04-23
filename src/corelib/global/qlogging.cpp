@@ -76,7 +76,7 @@ static bool isFatal(QtMsgType msgType)
     if (msgType == QtFatalMsg)
         return true;
 
-    if (msgType == QtWarningMsg) {
+    if (msgType == QtWarningMsg || msgType == QtCriticalMsg) {
         static bool fatalWarnings = !qEnvironmentVariableIsEmpty("QT_FATAL_WARNINGS");
         return fatalWarnings;
     }
@@ -171,9 +171,7 @@ static void qEmergencyOut(QtMsgType msgType, const char *msg, va_list ap) Q_DECL
     fflush(stderr);
 #endif
 
-    if (msgType == QtFatalMsg
-            || (msgType == QtWarningMsg
-                && qEnvironmentVariableIsSet("QT_FATAL_WARNINGS"))) {
+    if (isFatal(msgType)) {
 #if defined(Q_CC_MSVC) && defined(QT_DEBUG) && defined(_DEBUG) && defined(_CRT_ERROR)
         // get the current report mode
         int reportMode = _CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_WNDW);
@@ -878,7 +876,13 @@ static void qDefaultMessageHandler(QtMsgType type, const QMessageLogContext &con
 #if defined(QT_USE_SLOG2)
     slog2_default_handler(type, logMessage.toLocal8Bit().constData());
 #elif defined(Q_OS_ANDROID)
-    android_default_message_handler(type, context, logMessage);
+    static bool logToAndroid = qEnvironmentVariableIsEmpty("QT_ANDROID_PLAIN_LOG");
+    if (logToAndroid) {
+        android_default_message_handler(type, context, logMessage);
+    } else {
+        fprintf(stderr, "%s", logMessage.toLocal8Bit().constData());
+        fflush(stderr);
+    }
 #else
     fprintf(stderr, "%s", logMessage.toLocal8Bit().constData());
     fflush(stderr);
@@ -891,7 +895,7 @@ static void qDefaultMessageHandler(QtMsgType type, const QMessageLogContext &con
 static void qDefaultMsgHandler(QtMsgType type, const char *buf)
 {
     QMessageLogContext emptyContext;
-    qDefaultMessageHandler(type, emptyContext, QLatin1String(buf));
+    qDefaultMessageHandler(type, emptyContext, QString::fromLocal8Bit(buf));
 }
 
 static void qt_message_print(QtMsgType msgType, const QMessageLogContext &context, const QString &message)

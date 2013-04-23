@@ -47,11 +47,17 @@
 
 #include <QtCore/QElapsedTimer>
 
+#include <qpa/qplatformnativeinterface.h>
 #include <qpa/qplatformscreen.h>
+#include <qpa/qplatformintegration.h>
+#include <qpa/qplatformservices.h>
 
 #include <QtGui/private/qfontengine_ft_p.h>
 #include <QtGui/private/qfontengine_p.h>
 #include <QtGui/private/qfontengine_qpa_p.h>
+#include <QtGui/private/qguiapplication_p.h>
+
+#include <QtGui/qguiapplication.h>
 
 #include <ft2build.h>
 #include FT_TRUETYPE_TABLES_H
@@ -134,8 +140,8 @@ static const char *specialLanguages[] = {
     "mn", // Mongolian
     "ja", // Hiragana
     "ja", // Katakana
-    "zh", // Bopomofo
-    "zh", // Han
+    "zh-TW", // Bopomofo
+    "", // Han
     "ii", // Yi
     "ett", // OldItalic
     "got", // Gothic
@@ -350,6 +356,28 @@ static const char *getFcFamilyForStyleHint(const QFont::StyleHint style)
     return stylehint;
 }
 
+static bool isSymbolFont(FontFile *fontFile)
+{
+    if (fontFile == 0 || fontFile->fileName.isEmpty())
+        return false;
+
+    QFontEngine::FaceId id;
+    id.filename = QFile::encodeName(fontFile->fileName);
+    id.index = fontFile->indexValue;
+
+    QFreetypeFace *f = QFreetypeFace::getFace(id);
+    if (f == 0) {
+        qWarning("isSymbolFont: Couldn't open face %s/%d", id.filename.data(), id.index);
+        return false;
+    }
+
+    bool hasSymbolMap = f->symbol_map;
+    f->release(id);
+    return hasSymbolMap;
+}
+
+Q_GUI_EXPORT void qt_registerAliasToFontFamily(const QString &familyName, const QString &alias);
+
 void QFontconfigDatabase::populateFontDatabase()
 {
     FcFontSet  *fonts;
@@ -469,6 +497,23 @@ void QFontconfigDatabase::populateFontDatabase()
         fontFile->fileName = QLatin1String((const char *)file_value);
         fontFile->indexValue = indexValue;
 
+        if (!writingSystems.supported(QFontDatabase::Symbol)) {
+            // Symbol encoding used to encode various crap in the 32..255 character
+            // code range, which belongs to Latin character code range.
+            // Symbol fonts usually don't have any other code ranges support.
+            bool mightBeSymbolFont = true;
+            for (int j = 2; j < QFontDatabase::WritingSystemsCount; ++j) {
+                if (writingSystems.supported(QFontDatabase::WritingSystem(j))) {
+                    mightBeSymbolFont = false;
+                    break;
+                }
+            }
+            if (mightBeSymbolFont && isSymbolFont(fontFile)) {
+                writingSystems.setSupported(QFontDatabase::Latin, false);
+                writingSystems.setSupported(QFontDatabase::Symbol);
+            }
+        }
+
         QFont::Style style = (slant_value == FC_SLANT_ITALIC)
                          ? QFont::StyleItalic
                          : ((slant_value == FC_SLANT_OBLIQUE)
@@ -488,6 +533,9 @@ void QFontconfigDatabase::populateFontDatabase()
         QString styleName = style_value ? QString::fromUtf8((const char *) style_value) : QString();
         QPlatformFontDatabase::registerFont(familyName,styleName,QLatin1String((const char *)foundry_value),weight,style,stretch,antialias,scalable,pixel_size,fixedPitch,writingSystems,fontFile);
 //        qDebug() << familyName << (const char *)foundry_value << weight << style << &writingSystems << scalable << true << pixel_size;
+
+        for (int k = 1; FcPatternGetString(fonts->fonts[i], FC_FAMILY, k, &value) == FcResultMatch; ++k)
+            qt_registerAliasToFontFamily(familyName, QString::fromUtf8((const char *)value));
     }
 
     FcFontSetDestroy (fonts);
@@ -539,7 +587,7 @@ QFontEngine *QFontconfigDatabase::fontEngine(const QFontDef &f, QChar::Script sc
     QFontEngineFT *engine;
     FontFile *fontfile = static_cast<FontFile *> (usrPtr);
     QFontEngine::FaceId fid;
-    fid.filename = fontfile->fileName.toLocal8Bit();
+    fid.filename = QFile::encodeName(fontfile->fileName);
     fid.index = fontfile->indexValue;
 
     bool antialias = !(fontDef.styleStrategy & QFont::NoAntialias);
@@ -598,6 +646,19 @@ QFontEngine *QFontconfigDatabase::fontEngine(const QFontDef &f, QChar::Script sc
                 break;
             }
         }
+
+        if (f.hintingPreference == QFont::PreferDefaultHinting) {
+            QByteArray desktopEnvironment = QGuiApplicationPrivate::platformIntegration()->services()->desktopEnvironment();
+            if (desktopEnvironment == "GNOME" || desktopEnvironment == "UNITY") {
+                void *hintStyleResource =
+                        QGuiApplication::platformNativeInterface()->nativeResourceForScreen("hintstyle",
+                                                                                            QGuiApplication::primaryScreen());
+                int hintStyle = int(reinterpret_cast<qintptr>(hintStyleResource));
+                if (hintStyle > 0)
+                    default_hint_style = QFontEngine::HintStyle(hintStyle - 1);
+            }
+        }
+
         engine->setDefaultHintStyle(default_hint_style);
 
         if (antialias) {
@@ -674,11 +735,11 @@ QStringList QFontconfigDatabase::fallbacksForFamily(const QString &family, QFont
         FcPatternAddLangSet(pattern, FC_LANG, ls);
         FcLangSetDestroy(ls);
     } else if (!family.isEmpty()) {
-        // If script is common then it may include languages like CJK,
+        // If script is Common or Han, then it may include languages like CJK,
         // we should attach system default language set to the pattern
         // to obtain correct font fallback list (i.e. if LANG=zh_CN
         // then we normally want to use a Chinese font for CJK text;
-        // while a Japanese font should be use for that if LANG=ja)
+        // while a Japanese font should be used for that if LANG=ja)
         FcPattern *dummy = FcPatternCreate();
         FcDefaultSubstitute(dummy);
         FcChar8 *lang = 0;

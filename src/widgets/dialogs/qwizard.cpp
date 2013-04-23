@@ -3,7 +3,7 @@
 ** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
 ** Contact: http://www.qt-project.org/legal
 **
-** This file is part of the QtGui module of the Qt Toolkit.
+** This file is part of the QtWidgets module of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
@@ -507,16 +507,18 @@ void QWizardPagePrivate::_q_updateCachedCompleteState()
 
 class QWizardAntiFlickerWidget : public QWidget
 {
-    QWizard *wizard;
-    QWizardPrivate *wizardPrivate;
 public:
+#if !defined(QT_NO_STYLE_WINDOWSVISTA)
+    QWizardPrivate *wizardPrivate;
     QWizardAntiFlickerWidget(QWizard *wizard, QWizardPrivate *wizardPrivate)
         : QWidget(wizard)
-        , wizard(wizard)
         , wizardPrivate(wizardPrivate) {}
-#if !defined(QT_NO_STYLE_WINDOWSVISTA)
 protected:
     void paintEvent(QPaintEvent *);
+#else
+    QWizardAntiFlickerWidget(QWizard *wizard, QWizardPrivate *)
+        : QWidget(wizard)
+    {}
 #endif
 };
 
@@ -1934,7 +1936,7 @@ void QWizardAntiFlickerWidget::paintEvent(QPaintEvent *)
 
     Here, we call QWizardPage::field() to access the contents of the
     \c className field (which was defined in the \c ClassInfoPage)
-    and use it to initialize the \c OuputFilePage. The field's
+    and use it to initialize the \c OutputFilePage. The field's
     contents is returned as a QVariant.
 
     When we create a field using QWizardPage::registerField(), we
@@ -3129,6 +3131,16 @@ bool QWizard::event(QEvent *event)
         d->handleAeroStyleChange();
     }
     else if (d->isVistaThemeEnabled()) {
+        if (event->type() == QEvent::Resize
+                || event->type() == QEvent::LayoutDirectionChange) {
+            const int buttonLeft = (layoutDirection() == Qt::RightToLeft
+                                    ? width() - d->vistaHelper->backButton()->sizeHint().width()
+                                    : 0);
+
+            d->vistaHelper->backButton()->move(buttonLeft,
+                                               d->vistaHelper->backButton()->y());
+        }
+
         d->vistaHelper->mouseEvent(event);
     }
 #endif

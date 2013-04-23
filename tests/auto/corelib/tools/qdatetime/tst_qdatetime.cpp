@@ -478,7 +478,12 @@ void tst_QDateTime::setMSecsSinceEpoch_data()
             // positive value 1 too big for qint64max, causing an overflow.
             << std::numeric_limits<qint64>::min() + 1
             << QDateTime(QDate(-292275056, 5, 16), QTime(16, 47, 4, 193), Qt::UTC)
+#ifdef Q_OS_WIN
+            // Windows applies Daylight Time to dates before 1980, Olsen does not
+            << QDateTime(QDate(-292275056, 5, 16), QTime(18, 47, 4, 193), Qt::LocalTime);
+#else
             << QDateTime(QDate(-292275056, 5, 16), QTime(17, 47, 4, 193), Qt::LocalTime);
+#endif
     QTest::newRow("max")
             << std::numeric_limits<qint64>::max()
             << QDateTime(QDate(292278994, 8, 17), QTime(7, 12, 55, 807), Qt::UTC)
@@ -844,10 +849,20 @@ void tst_QDateTime::toTimeSpec_data()
 
     QTest::newRow("-271821/4/20 00:00 UTC (JavaScript min date, start of day)")
         << QDateTime(QDate(-271821, 4, 20), QTime(0, 0, 0), Qt::UTC)
+#ifdef Q_OS_WIN
+        // Windows applies Daylight Time to dates before 1980, Olsen does not
+        << QDateTime(QDate(-271821, 4, 20), QTime(2, 0, 0), Qt::LocalTime);
+#else
         << QDateTime(QDate(-271821, 4, 20), QTime(1, 0, 0), Qt::LocalTime);
+#endif
     QTest::newRow("-271821/4/20 23:00 UTC (JavaScript min date, end of day)")
         << QDateTime(QDate(-271821, 4, 20), QTime(23, 0, 0), Qt::UTC)
+#ifdef Q_OS_WIN
+        // Windows applies Daylight Time to dates before 1980, Olsen does not
+        << QDateTime(QDate(-271821, 4, 21), QTime(1, 0, 0), Qt::LocalTime);
+#else
         << QDateTime(QDate(-271821, 4, 21), QTime(0, 0, 0), Qt::LocalTime);
+#endif
 
     QTest::newRow("QDate min")
         << QDateTime(QDate::fromJulianDay(minJd()), QTime(0, 0, 0), Qt::UTC)
@@ -1481,16 +1496,10 @@ void tst_QDateTime::toString_strformat_data()
     QTest::newRow( "datetime13" ) << QDateTime(QDate(1974, 12, 1), QTime(14, 14, 20))
                                  << QString("hh''mm''ss dd''MM''yyyy")
                                  << QString("14'14'20 01'12'1974");
-    QTest::newRow( "missing p and P" ) << QDateTime(QDate(1999, 12, 31), QTime(3, 59, 59, 999))
-                                 << QString("hhhhhaA") << QString("03033aA");
-    QTest::newRow( "OK A, bad P" ) << QDateTime(QDate(1999, 12, 31), QTime(0, 59, 59, 999))
-        << QString("hhAX") << QString("00AX");
     QTest::newRow( "single, 0 => 12 AM" ) << QDateTime(QDate(1999, 12, 31), QTime(0, 59, 59, 999))
         << QString("hAP") << QString("12AM");
     QTest::newRow( "double, 0 => 12 AM" ) << QDateTime(QDate(1999, 12, 31), QTime(0, 59, 59, 999))
         << QString("hhAP") << QString("12AM");
-    QTest::newRow( "double, garbage" ) << QDateTime(QDate(1999, 12, 31), QTime(0, 59, 59, 999))
-        << QString("hhAX") << QString("00AX");
     QTest::newRow( "dddd" ) << QDateTime(QDate(1999, 12, 31), QTime(0, 59, 59, 999))
         << QString("dddd") << QString("Friday");
     QTest::newRow( "ddd" ) << QDateTime(QDate(1999, 12, 31), QTime(0, 59, 59, 999))

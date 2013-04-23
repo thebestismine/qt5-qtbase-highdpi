@@ -299,27 +299,27 @@ bool QCocoaEventDispatcher::hasPendingEvents()
 static bool IsMouseOrKeyEvent( NSEvent* event )
 {
     bool    result    = false;
-    
+
     switch( [event type] )
     {
-        case NSLeftMouseDown:              
-        case NSLeftMouseUp:      
-        case NSRightMouseDown:   
-        case NSRightMouseUp:     
+        case NSLeftMouseDown:
+        case NSLeftMouseUp:
+        case NSRightMouseDown:
+        case NSRightMouseUp:
         case NSMouseMoved:                // ??
-        case NSLeftMouseDragged: 
+        case NSLeftMouseDragged:
         case NSRightMouseDragged:
-        case NSMouseEntered:     
-        case NSMouseExited:      
-        case NSKeyDown:          
-        case NSKeyUp:            
+        case NSMouseEntered:
+        case NSMouseExited:
+        case NSKeyDown:
+        case NSKeyUp:
         case NSFlagsChanged:            // key modifiers changed?
         case NSCursorUpdate:            // ??
-        case NSScrollWheel:      
-        case NSTabletPoint:      
-        case NSTabletProximity:  
-        case NSOtherMouseDown:   
-        case NSOtherMouseUp:     
+        case NSScrollWheel:
+        case NSTabletPoint:
+        case NSTabletProximity:
+        case NSOtherMouseDown:
+        case NSOtherMouseUp:
         case NSOtherMouseDragged:
 #ifndef QT_NO_GESTURES
         case NSEventTypeGesture: // touch events
@@ -639,7 +639,7 @@ static void setChildrenWorksWhenModal(QWindow *window, bool worksWhenModal)
     Q_UNUSED(worksWhenModal)
 
     // For NSPanels (but not NSWindows, sadly), we can set the flag
-    // worksWhenModal, so that they are active even when they are not modal. 
+    // worksWhenModal, so that they are active even when they are not modal.
 /*
     ### not ported
     QList<QDialog *> dialogs = window->findChildren<QDialog *>();
@@ -680,7 +680,7 @@ void QCocoaEventDispatcherPrivate::cleanupModalSessions()
     // this to actually end the sessions for real (rather than at the
     // point they were marked as stopped), is that ending a session
     // when no other session runs below it on the stack will make cocoa
-    // drop some events on the floor. 
+    // drop some events on the floor.
     QCocoaAutoReleasePool pool;
     int stackSize = cocoaModalSessionStack.size();
 
@@ -741,11 +741,14 @@ void QCocoaEventDispatcherPrivate::endModalSession(QWindow *window)
     // when we stop the _current_ modal session (which is the session on top of
     // the stack, and might not belong to 'window').
     int stackSize = cocoaModalSessionStack.size();
+    int endedSessions = 0;
     for (int i=stackSize-1; i>=0; --i) {
         QCocoaModalSessionInfo &info = cocoaModalSessionStack[i];
+        if (!info.window)
+            endedSessions++;
         if (info.window == window) {
             info.window = 0;
-            if (i == stackSize-1) {
+            if (i + endedSessions == stackSize-1) {
                 // The top sessions ended. Interrupt the event dispatcher to
                 // start spinning the correct session immediately. Like in
                 // beginModalSession(), we call interrupt() before clearing
@@ -859,7 +862,7 @@ void QCocoaEventDispatcherPrivate::processPostedEvents()
         if (currentExecIsNSAppRun) {
             // The event dispatcher has been interrupted. But since
             // [NSApplication run] is running the event loop, we
-            // delayed stopping it until now (to let cocoa process 
+            // delayed stopping it until now (to let cocoa process
             // pending cocoa events first).
             if (currentModalSessionCached)
                 temporarilyStopAllModalSessions();

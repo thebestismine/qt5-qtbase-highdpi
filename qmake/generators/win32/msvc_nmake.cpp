@@ -49,7 +49,7 @@
 
 QT_BEGIN_NAMESPACE
 
-NmakeMakefileGenerator::NmakeMakefileGenerator() : Win32MakefileGenerator(), init_flag(false)
+NmakeMakefileGenerator::NmakeMakefileGenerator() : Win32MakefileGenerator(), init_flag(false), usePCH(false)
 {
 
 }
@@ -307,7 +307,6 @@ void NmakeMakefileGenerator::init()
         project->values("QMAKE_CLEAN").append(project->first("DESTDIR") + project->first("TARGET") + version + ".ilk");
         project->values("QMAKE_CLEAN").append("vc*.pdb");
         project->values("QMAKE_CLEAN").append("vc*.idb");
-        project->values("DEFINES").removeAll("NDEBUG");
     } else {
         ProStringList &defines = project->values("DEFINES");
         if (!defines.contains("NDEBUG"))
@@ -451,7 +450,7 @@ void NmakeMakefileGenerator::writeBuildRulesPart(QTextStream &t)
         }
     }
     QString signature = !project->isEmpty("SIGNATURE_FILE") ? var("SIGNATURE_FILE") : var("DEFAULT_SIGNATURE");
-    bool useSignature = !signature.isEmpty() && !project->isActiveConfig("staticlib") && 
+    bool useSignature = !signature.isEmpty() && !project->isActiveConfig("staticlib") &&
                         !project->isEmpty("CE_SDK") && !project->isEmpty("CE_ARCH");
     if(useSignature) {
         t << "\n\tsigntool sign /F " << signature << " $(DESTDIR_TARGET)";

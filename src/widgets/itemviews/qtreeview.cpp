@@ -3,7 +3,7 @@
 ** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
 ** Contact: http://www.qt-project.org/legal
 **
-** This file is part of the QtGui module of the Qt Toolkit.
+** This file is part of the QtWidgets module of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
@@ -55,7 +55,7 @@
 #include <QMetaMethod>
 #ifndef QT_NO_ACCESSIBILITY
 #include <qaccessible.h>
-#include <qaccessible2.h>
+#include <private/qaccessible2_p.h>
 #endif
 
 #include <private/qtreeview_p.h>
@@ -3739,6 +3739,8 @@ QPair<int,int> QTreeViewPrivate::startAndEndColumns(const QRect &rect) const
 bool QTreeViewPrivate::hasVisibleChildren(const QModelIndex& parent) const
 {
     Q_Q(const QTreeView);
+    if (parent.flags() & Qt::ItemNeverHasChildren)
+        return false;
     if (model->hasChildren(parent)) {
         if (hiddenIndexes.isEmpty())
             return true;

@@ -153,7 +153,6 @@ void tst_QScroller::kineticScroll( tst_QScrollerWidget *sw, QPointF from, QPoint
     QCOMPARE( s1->state(), QScroller::Inactive );
 
     QScrollerProperties sp1 = QScroller::scroller(sw)->scrollerProperties();
-    int fps = 60;
 
     QTouchEvent::TouchPoint rawTouchPoint;
     rawTouchPoint.setId(0);
@@ -192,8 +191,7 @@ void tst_QScroller::kineticScroll( tst_QScrollerWidget *sw, QPointF from, QPoint
     QCOMPARE( sw->receivedPrepare, true );
 
 
-    QTest::qWait(1000 / fps * 2); // wait until the first scroll move
-    QCOMPARE( sw->receivedFirst, true );
+    QTRY_COMPARE( sw->receivedFirst, true );
     QCOMPARE( sw->receivedScroll, true );
     QCOMPARE( sw->receivedOvershoot, false );
 
@@ -365,6 +363,9 @@ void tst_QScroller::scrollerProperties()
 
 void tst_QScroller::scrollTo()
 {
+#ifdef Q_OS_MAC
+    QSKIP("Flakey test - https://bugreports.qt-project.org/browse/QTBUG-29950");
+#endif
     {
         tst_QScrollerWidget *sw = new tst_QScrollerWidget();
         sw->scrollArea = QRectF( 0, 0, 1000, 1000 );
@@ -391,6 +392,9 @@ void tst_QScroller::scrollTo()
 
 void tst_QScroller::scroll()
 {
+#ifdef Q_OS_MAC
+    QSKIP("Flakey test - https://bugreports.qt-project.org/browse/QTBUG-30133");
+#endif
 #ifndef QT_NO_GESTURES
     // -- good case. normal scroll
     tst_QScrollerWidget *sw = new tst_QScrollerWidget();
@@ -401,7 +405,7 @@ void tst_QScroller::scroll()
     QScroller *s1 = QScroller::scroller(sw);
     kineticScroll(sw, QPointF(500, 500), QPoint(0, 0), QPoint(100, 100), QPoint(200, 200));
     // now we should be scrolling
-    QCOMPARE( s1->state(), QScroller::Scrolling );
+    QTRY_COMPARE( s1->state(), QScroller::Scrolling );
 
     // wait until finished, check that no further first scroll is send
     sw->receivedFirst = false;
@@ -433,6 +437,9 @@ void tst_QScroller::scroll()
 
 void tst_QScroller::overshoot()
 {
+#ifdef Q_OS_MAC
+    QSKIP("Flakey test - https://bugreports.qt-project.org/browse/QTBUG-29950");
+#endif
 #ifndef QT_NO_GESTURES
     tst_QScrollerWidget *sw = new tst_QScrollerWidget();
     sw->scrollArea = QRectF(0, 0, 1000, 1000);

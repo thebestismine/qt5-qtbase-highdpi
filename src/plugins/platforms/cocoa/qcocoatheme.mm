@@ -74,6 +74,8 @@ QCocoaTheme::QCocoaTheme()
 QCocoaTheme::~QCocoaTheme()
 {
     delete m_systemPalette;
+    qDeleteAll(m_palettes);
+    qDeleteAll(m_fonts);
 }
 
 bool QCocoaTheme::usePlatformNativeDialog(DialogType dialogType) const
@@ -288,6 +290,8 @@ QVariant QCocoaTheme::themeHint(ThemeHint hint) const
         sizes << 16 << 32 << 64 << 128;
         return QVariant::fromValue(sizes);
     }
+    case QPlatformTheme::PasswordMaskDelay:
+        return QVariant(QChar(kBulletUnicode));
     default:
         break;
     }

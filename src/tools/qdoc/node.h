@@ -167,7 +167,11 @@ public:
     void setAccess(Access access) { access_ = access; }
     void setLocation(const Location& location) { loc = location; }
     void setDoc(const Doc& doc, bool replace = false);
-    void setStatus(Status status) { status_ = status; }
+    void setStatus(Status status) {
+        if (status_ == Obsolete && status == Deprecated)
+            return;
+        status_ = status;
+    }
     void setThreadSafeness(ThreadSafeness safeness) { safeness_ = safeness; }
     void setSince(const QString &since);
     void setRelates(InnerNode* pseudoParent);
@@ -218,6 +222,8 @@ public:
     QString url() const;
     virtual QString nameForLists() const { return name_; }
     virtual QString outputFileName() const { return QString(); }
+    virtual QString obsoleteLink() const { return QString(); }
+    virtual void setObsoleteLink(const QString& ) { };
 
     Access access() const { return access_; }
     QString accessString() const;
@@ -253,6 +259,7 @@ public:
     QmlClassNode* qmlClassNode();
     ClassNode* declarativeCppNode();
     const QString& outputSubdirectory() const { return outSubDir_; }
+    void setOutputSubdirectory(const QString& t) { outSubDir_ = t; }
     QString fullDocumentName() const;
     static QString cleanId(QString str);
     QString idForNode() const;
@@ -430,6 +437,8 @@ public:
     ClassNode(InnerNode* parent, const QString& name);
     virtual ~ClassNode() { }
     virtual bool isClass() const { return true; }
+    virtual QString obsoleteLink() const { return obsoleteLink_; }
+    virtual void setObsoleteLink(const QString& t) { obsoleteLink_ = t; };
 
     void addBaseClass(Access access,
                       ClassNode* node,
@@ -439,9 +448,6 @@ public:
     const QList<RelatedClass> &baseClasses() const { return bases; }
     const QList<RelatedClass> &derivedClasses() const { return derived; }
     const QList<RelatedClass> &ignoredBaseClasses() const { return ignoredBases; }
-
-    bool hideFromMainList() const { return hidden; }
-    void setHideFromMainList(bool value) { hidden = value; }
 
     QString serviceName() const { return sname; }
     void setServiceName(const QString& value) { sname = value; }
@@ -456,9 +462,9 @@ private:
     QList<RelatedClass> bases;
     QList<RelatedClass> derived;
     QList<RelatedClass> ignoredBases;
-    bool hidden;
     bool abstract_;
     QString sname;
+    QString obsoleteLink_;
     QmlClassNode* qmlelement;
 };
 
@@ -565,6 +571,8 @@ public:
     virtual void setAbstract(bool b) { abstract_ = b; }
     virtual bool isInternal() const { return (status() == Internal); }
     virtual QString qmlFullBaseName() const;
+    virtual QString obsoleteLink() const { return obsoleteLink_; }
+    virtual void setObsoleteLink(const QString& t) { obsoleteLink_ = t; };
     const ImportList& importList() const { return importList_; }
     void setImportList(const ImportList& il) { importList_ = il; }
     const QString& qmlBaseName() const { return baseName_; }
@@ -586,6 +594,7 @@ private:
     bool cnodeRequired_;
     ClassNode*    cnode_;
     QString      baseName_;
+    QString             obsoleteLink_;
     QmlClassNode*       baseNode_;
     ImportList          importList_;
 };

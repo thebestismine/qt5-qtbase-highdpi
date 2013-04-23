@@ -164,14 +164,14 @@ QLocale::Country QLocalePrivate::codeToCountry(const QString &code)
     return QLocale::AnyCountry;
 }
 
-QString QLocalePrivate::languageCode() const
+QString QLocalePrivate::languageToCode(QLocale::Language language)
 {
-    if (m_data->m_language_id == QLocale::AnyLanguage)
+    if (language == QLocale::AnyLanguage)
         return QString();
-    if (m_data->m_language_id == QLocale::C)
+    if (language == QLocale::C)
         return QLatin1String("C");
 
-    const unsigned char *c = language_code_list + 3*(uint(m_data->m_language_id));
+    const unsigned char *c = language_code_list + 3*(uint(language));
 
     QString code(c[2] == 0 ? 2 : 3, Qt::Uninitialized);
 
@@ -183,20 +183,20 @@ QString QLocalePrivate::languageCode() const
     return code;
 }
 
-QString QLocalePrivate::scriptCode() const
+QString QLocalePrivate::scriptToCode(QLocale::Script script)
 {
-    if (m_data->m_script_id == QLocale::AnyScript || m_data->m_script_id > QLocale::LastScript)
+    if (script == QLocale::AnyScript || script > QLocale::LastScript)
         return QString();
-    const unsigned char *c = script_code_list + 4*(uint(m_data->m_script_id));
+    const unsigned char *c = script_code_list + 4*(uint(script));
     return QString::fromLatin1((const char *)c, 4);
 }
 
-QString QLocalePrivate::countryCode() const
+QString QLocalePrivate::countryToCode(QLocale::Country country)
 {
-    if (m_data->m_country_id == QLocale::AnyCountry)
+    if (country == QLocale::AnyCountry)
         return QString();
 
-    const unsigned char *c = country_code_list + 3*(uint(m_data->m_country_id));
+    const unsigned char *c = country_code_list + 3*(uint(country));
 
     QString code(c[2] == 0 ? 2 : 3, Qt::Uninitialized);
 
@@ -736,13 +736,13 @@ QLocale::QLocale(QLocalePrivate &dd)
     The separator can be either underscore or a minus sign.
 
     If the string violates the locale format, or language is not
-    a valid ISO 369 code, the "C" locale is used instead. If country
+    a valid ISO 639 code, the "C" locale is used instead. If country
     is not present, or is not a valid ISO 3166 code, the most
     appropriate country is chosen for the specified language.
 
     The language, script and country codes are converted to their respective
     \c Language, \c Script and \c Country enums. After this conversion is
-    performed the constructor behaves exactly like QLocale(Country, Script,
+    performed, the constructor behaves exactly like QLocale(Country, Script,
     Language).
 
     This constructor is much slower than QLocale(Country, Script, Language).
@@ -2458,20 +2458,27 @@ QLocale::MeasurementSystem QLocale::measurementSystem() const
 */
 Qt::LayoutDirection QLocale::textDirection() const
 {
-    switch (language()) {
-    case QLocale::Arabic:
-    case QLocale::Hebrew:
-    case QLocale::Persian:
-    case QLocale::Pashto:
-    case QLocale::Urdu:
-    case QLocale::Syriac:
-    case QLocale::Divehi:
+    switch (script()) {
+    case QLocale::ArabicScript:
+    case QLocale::AvestanScript:
+    case QLocale::CypriotScript:
+    case QLocale::HebrewScript:
+    case QLocale::ImperialAramaicScript:
+    case QLocale::InscriptionalPahlaviScript:
+    case QLocale::InscriptionalParthianScript:
+    case QLocale::KharoshthiScript:
+    case QLocale::LydianScript:
+    case QLocale::MandaeanScript:
+    case QLocale::MeroiticCursiveScript:
+    case QLocale::MeroiticScript:
+    case QLocale::SamaritanScript:
+    case QLocale::SyriacScript:
+    case QLocale::ThaanaScript:
+    case QLocale::NkoScript:
+    case QLocale::OldSouthArabianScript:
+    case QLocale::OrkhonScript:
+    case QLocale::PhoenicianScript:
         return Qt::RightToLeft;
-    case QLocale::Punjabi:
-    case QLocale::Uzbek:
-        if (script() == QLocale::ArabicScript)
-            return Qt::RightToLeft;
-        // fall through
     default:
         break;
     }

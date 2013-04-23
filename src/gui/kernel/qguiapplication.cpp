@@ -180,7 +180,7 @@ static void initPalette()
         if (const QPalette *themePalette = QGuiApplicationPrivate::platformTheme()->palette())
             QGuiApplicationPrivate::app_pal = new QPalette(*themePalette);
     if (!QGuiApplicationPrivate::app_pal)
-        QGuiApplicationPrivate::app_pal = new QPalette(Qt::black);
+        QGuiApplicationPrivate::app_pal = new QPalette(Qt::gray);
 }
 
 static inline void clearPalette()
@@ -602,6 +602,12 @@ bool QGuiApplicationPrivate::isWindowBlocked(QWindow *window, QWindow **blocking
     return false;
 }
 
+bool QGuiApplicationPrivate::synthesizeMouseFromTouchEventsEnabled()
+{
+    return QCoreApplication::testAttribute(Qt::AA_SynthesizeMouseForUnhandledTouchEvents)
+            && QGuiApplicationPrivate::platformIntegration()->styleHint(QPlatformIntegration::SynthesizeMouseFromTouchEvents).toBool();
+}
+
 /*!
     Returns the QWindow that receives events tied to focus,
     such as key events.
@@ -666,7 +672,7 @@ QWindowList QGuiApplication::topLevelWindows()
     const QWindowList &list = QGuiApplicationPrivate::window_list;
     QWindowList topLevelWindows;
     for (int i = 0; i < list.size(); i++) {
-        if (!list.at(i)->parent()) {
+        if (!list.at(i)->parent() && list.at(i)->type() != Qt::Desktop) {
             // Top windows of embedded QAxServers do not have QWindow parents,
             // but they are not true top level windows, so do not include them.
             const bool embedded = list.at(i)->handle() && list.at(i)->handle()->isEmbedded(0);
@@ -928,6 +934,8 @@ static bool runningUnderDebugger()
 
 void QGuiApplicationPrivate::init()
 {
+    QCoreApplicationPrivate::is_app_running = false; // Starting up.
+
     bool doGrabUnderDebugger = false;
     QList<QByteArray> pluginList;
     // Get command line params
@@ -1006,6 +1014,7 @@ void QGuiApplicationPrivate::init()
     // and QImage conversion functions
     qInitImageConversions();
 
+    initPalette();
     QFont::initialize();
 
 #ifndef QT_NO_CURSOR
@@ -1583,6 +1592,11 @@ void QGuiApplicationPrivate::processActivatedEvent(QWindowSystemInterfacePrivate
     if (previous == newFocus)
         return;
 
+    if (newFocus)
+        if (QPlatformWindow *platformWindow = newFocus->handle())
+            if (platformWindow->isAlertState())
+                platformWindow->setAlertState(false);
+
     QObject *previousFocusObject = previous ? previous->focusObject() : 0;
 
     if (previous) {
@@ -1595,13 +1609,15 @@ void QGuiApplicationPrivate::processActivatedEvent(QWindowSystemInterfacePrivate
         return;
 
     if (previous) {
-        QFocusEvent focusOut(QEvent::FocusOut);
+        QFocusEvent focusOut(QEvent::FocusOut, e->reason);
         QCoreApplication::sendSpontaneousEvent(previous, &focusOut);
         QObject::disconnect(previous, SIGNAL(focusObjectChanged(QObject*)),
                             qApp, SLOT(_q_updateFocusObject(QObject*)));
     } else if (!platformIntegration()->hasCapability(QPlatformIntegration::ApplicationState)) {
         QEvent appActivate(QEvent::ApplicationActivate);
         qApp->sendSpontaneousEvent(qApp, &appActivate);
+        QApplicationStateChangeEvent appState(Qt::ApplicationActive);
+        qApp->sendSpontaneousEvent(qApp, &appState);
     }
 
     if (QGuiApplicationPrivate::focus_window) {
@@ -1612,6 +1628,8 @@ void QGuiApplicationPrivate::processActivatedEvent(QWindowSystemInterfacePrivate
     } else if (!platformIntegration()->hasCapability(QPlatformIntegration::ApplicationState)) {
         QEvent appActivate(QEvent::ApplicationDeactivate);
         qApp->sendSpontaneousEvent(qApp, &appActivate);
+        QApplicationStateChangeEvent appState(Qt::ApplicationInactive);
+        qApp->sendSpontaneousEvent(qApp, &appState);
     }
 
     if (self) {
@@ -1648,7 +1666,12 @@ void QGuiApplicationPrivate::processApplicationStateChangedEvent(QWindowSystemIn
         QEvent appDeactivate(QEvent::ApplicationDeactivate);
         qApp->sendSpontaneousEvent(qApp, &appDeactivate);
         break; }
+    default:
+        break;
     }
+
+    QApplicationStateChangeEvent event(applicationState);
+    qApp->sendSpontaneousEvent(qApp, &event);
 }
 
 void QGuiApplicationPrivate::processThemeChanged(QWindowSystemInterfacePrivate::ThemeChangeEvent *tce)
@@ -2043,7 +2066,7 @@ void QGuiApplicationPrivate::processTouchEvent(QWindowSystemInterfacePrivate::To
         }
 
         QGuiApplication::sendSpontaneousEvent(w, &touchEvent);
-        if (!e->synthetic && !touchEvent.isAccepted() && qApp->testAttribute(Qt::AA_SynthesizeMouseForUnhandledTouchEvents)) {
+        if (!e->synthetic && !touchEvent.isAccepted() && synthesizeMouseFromTouchEventsEnabled()) {
             // exclude touchpads as those generate their own mouse events
             if (touchEvent.device()->type() != QTouchDevice::TouchPad) {
                 Qt::MouseButtons b = eventType == QEvent::TouchEnd ? Qt::NoButton : Qt::LeftButton;

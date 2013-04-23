@@ -30,7 +30,8 @@ contains(QT_CONFIG, opengl)|contains(QT_CONFIG, opengles2) {
                opengl/qrbtree_p.h \
                opengl/qopenglversionfunctions.h \
                opengl/qopenglversionfunctionsfactory_p.h \
-               opengl/qopenglvertexarrayobject.h
+               opengl/qopenglvertexarrayobject.h \
+               opengl/qopengldebug.h
 
     SOURCES += opengl/qopengl.cpp \
                opengl/qopenglfunctions.cpp \
@@ -49,8 +50,8 @@ contains(QT_CONFIG, opengl)|contains(QT_CONFIG, opengles2) {
                opengl/qtriangulator.cpp \
                opengl/qopenglversionfunctions.cpp \
                opengl/qopenglversionfunctionsfactory.cpp \
-               opengl/qopenglvertexarrayobject.cpp
-
+               opengl/qopenglvertexarrayobject.cpp \
+               opengl/qopengldebug.cpp
 
     !contains(QT_CONFIG, opengles2) {
         HEADERS += opengl/qopenglfunctions_1_0.h \
@@ -74,7 +75,9 @@ contains(QT_CONFIG, opengl)|contains(QT_CONFIG, opengles2) {
                    opengl/qopenglfunctions_4_0_compatibility.h \
                    opengl/qopenglfunctions_4_1_compatibility.h \
                    opengl/qopenglfunctions_4_2_compatibility.h \
-                   opengl/qopenglfunctions_4_3_compatibility.h
+                   opengl/qopenglfunctions_4_3_compatibility.h \
+                   opengl/qopenglqueryhelper_p.h \
+                   opengl/qopengltimerquery.h
 
         SOURCES += opengl/qopenglfunctions_1_0.cpp \
                    opengl/qopenglfunctions_1_1.cpp \
@@ -97,7 +100,8 @@ contains(QT_CONFIG, opengl)|contains(QT_CONFIG, opengles2) {
                    opengl/qopenglfunctions_4_0_compatibility.cpp \
                    opengl/qopenglfunctions_4_1_compatibility.cpp \
                    opengl/qopenglfunctions_4_2_compatibility.cpp \
-                   opengl/qopenglfunctions_4_3_compatibility.cpp
+                   opengl/qopenglfunctions_4_3_compatibility.cpp \
+                   opengl/qopengltimerquery.cpp
     }
 
     contains(QT_CONFIG, opengles2) {

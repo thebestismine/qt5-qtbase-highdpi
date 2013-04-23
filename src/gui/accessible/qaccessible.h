@@ -39,10 +39,13 @@
 **
 ****************************************************************************/
 
+#include <QtCore/qglobal.h>
+
 #ifndef QT_NO_ACCESSIBILITY
 #ifndef QACCESSIBLE_H
 #define QACCESSIBLE_H
 
+#include <QtCore/qdebug.h>
 #include <QtCore/qglobal.h>
 #include <QtCore/qobject.h>
 #include <QtCore/qrect.h>
@@ -56,10 +59,10 @@
 
 QT_BEGIN_NAMESPACE
 
-
 class QAccessibleInterface;
 class QAccessibleEvent;
 class QWindow;
+class QTextCursor;
 
 // We need to inherit QObject to expose the enums to QML.
 class Q_GUI_EXPORT QAccessible
@@ -329,9 +332,20 @@ public:
         TableCellInterface
     };
 
+    enum TextBoundaryType {
+        CharBoundary,
+        WordBoundary,
+        SentenceBoundary,
+        ParagraphBoundary,
+        LineBoundary,
+        NoBoundary
+    };
+
     typedef QAccessibleInterface*(*InterfaceFactory)(const QString &key, QObject*);
     typedef void(*UpdateHandler)(QAccessibleEvent *event);
     typedef void(*RootObjectHandler)(QObject*);
+
+    typedef unsigned Id;
 
     static void installFactory(InterfaceFactory);
     static void removeFactory(InterfaceFactory);
@@ -339,6 +353,12 @@ public:
     static RootObjectHandler installRootObjectHandler(RootObjectHandler);
 
     static QAccessibleInterface *queryAccessibleInterface(QObject *);
+    static Id uniqueId(QAccessibleInterface *iface);
+    static QAccessibleInterface *accessibleInterface(Id uniqueId);
+    static Id registerAccessibleInterface(QAccessibleInterface *iface);
+    static void deleteAccessibleInterface(Id uniqueId);
+
+
 #if QT_DEPRECATED_SINCE(5, 0)
     QT_DEPRECATED static inline void updateAccessibility(QObject *object, int child, Event reason);
 #endif
@@ -349,6 +369,8 @@ public:
 
     static void cleanup();
 
+    static QPair< int, int > qAccessibleTextBoundaryHelper(const QTextCursor &cursor, TextBoundaryType boundaryType);
+
 private:
     static UpdateHandler updateHandler;
     static RootObjectHandler rootObjectHandler;
@@ -358,6 +380,8 @@ private:
       it is not supposed to be instantiated.
     */
     QAccessible() {}
+
+    friend class QAccessibleCache;
 };
 
 Q_GUI_EXPORT bool operator==(const QAccessible::State &first, const QAccessible::State &second);
@@ -375,8 +399,10 @@ class QAccessibleTableCellInterface;
 
 class Q_GUI_EXPORT QAccessibleInterface
 {
+protected:
+    virtual ~QAccessibleInterface();
+
 public:
-    virtual ~QAccessibleInterface() {}
     // check for valid pointers
     virtual bool isValid() const = 0;
     virtual QObject *object() const = 0;
@@ -429,7 +455,9 @@ public:
 
     virtual void *interface_cast(QAccessible::InterfaceType)
     { return 0; }
-private:
+
+protected:
+    friend class QAccessibleCache;
 };
 
 class Q_GUI_EXPORT QAccessibleEvent

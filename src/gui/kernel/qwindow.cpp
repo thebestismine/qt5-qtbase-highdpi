@@ -59,6 +59,7 @@
 
 #include <private/qevent_p.h>
 
+#include <QtCore/QTimer>
 #include <QtCore/QDebug>
 
 #include <QStyleHints>
@@ -782,6 +783,7 @@ void QWindow::lower()
 /*!
     \property QWindow::opacity
     \brief The opacity of the window in the windowing system.
+    \since 5.1
 
     If the windowing system supports window opacity, this can be used to fade the
     window in and out, or to make it semitransparent.
@@ -905,6 +907,7 @@ bool QWindow::isActive() const
 /*!
     \property QWindow::contentOrientation
     \brief the orientation of the window's contents
+    \since 5.1
 
     This is a hint to the window manager in case it needs to display
     additional content like popups, dialogs, status bars, or similar
@@ -1161,6 +1164,7 @@ void QWindow::setHeight(int arg)
 /*!
     \property QWindow::minimumWidth
     \brief the minimum width of the window's geometry
+    \since 5.1
 */
 void QWindow::setMinimumWidth(int w)
 {
@@ -1170,6 +1174,7 @@ void QWindow::setMinimumWidth(int w)
 /*!
     \property QWindow::minimumHeight
     \brief the minimum height of the window's geometry
+    \since 5.1
 */
 void QWindow::setMinimumHeight(int h)
 {
@@ -1202,6 +1207,7 @@ void QWindow::setMaximumSize(const QSize &size)
 /*!
     \property QWindow::maximumWidth
     \brief the maximum width of the window's geometry
+    \since 5.1
 */
 void QWindow::setMaximumWidth(int w)
 {
@@ -1211,6 +1217,7 @@ void QWindow::setMaximumWidth(int w)
 /*!
     \property QWindow::maximumHeight
     \brief the maximum height of the window's geometry
+    \since 5.1
 */
 void QWindow::setMaximumHeight(int h)
 {
@@ -1430,7 +1437,12 @@ void QWindow::resize(const QSize &newSize)
     if (d->platformWindow) {
         d->platformWindow->setGeometry(qhidpiPointToPixel(QRect(position(), newSize)));
     } else {
+        const QSize oldSize = d->geometry.size();
         d->geometry.setSize(newSize);
+        if (newSize.width() != oldSize.width())
+            emit widthChanged(newSize.width());
+        if (newSize.height() != oldSize.height())
+            emit heightChanged(newSize.height());
     }
 }
 
@@ -1614,10 +1626,10 @@ QAccessibleInterface *QWindow::accessibleRoot() const
 }
 
 /*!
-    \fn QWindow::focusObjectChanged(QObject *focusObject)
+    \fn QWindow::focusObjectChanged(QObject *object)
 
-    This signal is emitted when final receiver of events tied to focus is
-    changed to \a focusObject.
+    This signal is emitted when the final receiver of events tied to focus
+    is changed to \a object.
 
     \sa focusObject()
 */
@@ -2155,6 +2167,33 @@ QWindow *QWindow::fromWinId(WId id)
     return window;
 }
 
+/*!
+    Causes an alert to be shown for \a msec miliseconds. If \a msec is \c 0 (the
+    default), then the alert is shown indefinitely until the window becomes
+    active again.
+
+    In alert state, the window indicates that it demands attention, for example by
+    flashing or bouncing the taskbar entry.
+
+    \since 5.1
+*/
+
+void QWindow::alert(int msec)
+{
+    Q_D(QWindow);
+    if (!d->platformWindow || d->platformWindow->isAlertState())
+        return;
+    d->platformWindow->setAlertState(true);
+    if (d->platformWindow->isAlertState() && msec)
+        QTimer::singleShot(msec, this, SLOT(_q_clearAlert()));
+}
+
+void QWindowPrivate::_q_clearAlert()
+{
+    if (platformWindow && platformWindow->isAlertState())
+        platformWindow->setAlertState(false);
+}
+
 #ifndef QT_NO_CURSOR
 /*!
     \brief set the cursor shape for this window
@@ -2238,3 +2277,5 @@ void QWindowPrivate::applyCursor()
 #endif // QT_NO_CURSOR
 
 QT_END_NAMESPACE
+
+#include "moc_qwindow.cpp"

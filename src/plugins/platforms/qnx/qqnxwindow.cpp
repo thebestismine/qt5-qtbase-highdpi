@@ -40,7 +40,7 @@
 ****************************************************************************/
 
 #include "qqnxwindow.h"
-#ifndef QT_NO_OPENGL
+#if !defined(QT_NO_OPENGL)
 #include "qqnxglcontext.h"
 #endif
 #include "qqnxintegration.h"
@@ -53,7 +53,12 @@
 
 #include <errno.h>
 
-#ifdef QQNXWINDOW_DEBUG
+#if defined(Q_OS_BLACKBERRY)
+#include <sys/pps.h>
+#include <bps/navigator.h>
+#endif
+
+#if defined(QQNXWINDOW_DEBUG)
 #define qWindowDebug qDebug
 #else
 #define qWindowDebug QT_NO_QDEBUG_MACRO
@@ -67,7 +72,7 @@ QQnxWindow::QQnxWindow(QWindow *window, screen_context_t context)
       m_window(0),
       m_currentBufferIndex(-1),
       m_previousBufferIndex(-1),
-#ifndef QT_NO_OPENGL
+#if !defined(QT_NO_OPENGL)
       m_platformOpenGLContext(0),
 #endif
       m_screen(0),
@@ -167,6 +172,7 @@ void QQnxWindow::setGeometry(const QRect &rect)
 {
     const QRect oldGeometry = setGeometryHelper(rect);
 
+#if !defined(QT_NO_OPENGL)
     // If this is an OpenGL window we need to request that the GL context updates
     // the EGLsurface on which it is rendering. The surface will be recreated the
     // next time QQnxGLContext::makeCurrent() is called.
@@ -179,6 +185,7 @@ void QQnxWindow::setGeometry(const QRect &rect)
         if (m_platformOpenGLContext != 0 && bufferSize() != rect.size())
             m_platformOpenGLContext->requestSurfaceChange();
     }
+#endif
 
     // Send a geometry change event to Qt (triggers resizeEvent() in QWindow/QWidget).
 
@@ -348,13 +355,12 @@ void QQnxWindow::setBufferSize(const QSize &size)
 
     // Create window buffers if they do not exist
     if (m_bufferSize.isEmpty()) {
-#ifndef QT_NO_OPENGL
+        val[0] = m_screen->nativeFormat();
+#if !defined(QT_NO_OPENGL)
         // Get pixel format from EGL config if using OpenGL;
         // otherwise inherit pixel format of window's screen
         if (m_platformOpenGLContext != 0) {
             val[0] = platformWindowFormatToNativeFormat(m_platformOpenGLContext->format());
-        } else {
-            val[0] = m_screen->nativeFormat();
         }
 #endif
 
@@ -624,11 +630,19 @@ void QQnxWindow::setWindowState(Qt::WindowState state)
 
     switch (state) {
 
-    // WindowMinimized is not supported - navigator does not have an API to minimize a window
     // WindowActive is not an accepted parameter according to the docs
-    case Qt::WindowMinimized:
     case Qt::WindowActive:
         return;
+
+    case Qt::WindowMinimized:
+        minimize();
+
+        if (m_unmaximizedGeometry.isValid())
+            setGeometry(m_unmaximizedGeometry);
+        else
+            setGeometry(m_screen->geometry());
+
+        break;
 
     case Qt::WindowMaximized:
     case Qt::WindowFullScreen:
@@ -653,7 +667,7 @@ void QQnxWindow::gainedFocus()
     QWindowSystemInterface::handleWindowActivated(window());
 }
 
-#ifndef QT_NO_OPENGL
+#if !defined(QT_NO_OPENGL)
 void QQnxWindow::setPlatformOpenGLContext(QQnxGLContext *platformOpenGLContext)
 {
     // This function does not take ownership of the platform gl context.
@@ -687,6 +701,27 @@ void QQnxWindow::blitFrom(QQnxWindow *sourceWindow, const QPoint &sourceOffset, 
     QQnxBuffer &targetBuffer = renderBuffer();
 
     blitHelper(sourceBuffer, targetBuffer, sourceOffset, QPoint(0, 0), targetRegion, true);
+}
+
+void QQnxWindow::minimize()
+{
+#if defined(Q_OS_BLACKBERRY) && !defined(Q_OS_BLACKBERRY_TABLET)
+    qWindowDebug() << Q_FUNC_INFO;
+
+    pps_encoder_t encoder;
+
+    pps_encoder_initialize(&encoder, false);
+    pps_encoder_add_string(&encoder, "msg", "minimizeWindow");
+
+    if (navigator_raw_write(pps_encoder_buffer(&encoder),
+                pps_encoder_length(&encoder)) != BPS_SUCCESS) {
+        qWindowDebug() << Q_FUNC_INFO << "navigator_raw_write failed:" << strerror(errno);
+    }
+
+    pps_encoder_cleanup(&encoder);
+#else
+    qWarning("Qt::WindowMinimized is not supported by this OS version");
+#endif
 }
 
 void QQnxWindow::updateZorder(int &topZorder)

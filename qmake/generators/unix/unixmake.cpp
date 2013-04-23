@@ -142,6 +142,7 @@ UnixMakefileGenerator::init()
     project->values("QMAKE_L_FLAG")
             << (project->isActiveConfig("rvct_linker") ? "--userlibpath "
               : project->isActiveConfig("armcc_linker") ? "-L--userlibpath="
+              : project->isActiveConfig("ti_linker") ? "--search_path="
               : "-L");
     ProStringList ldadd;
     if(!project->isEmpty("QMAKE_LIBDIR")) {
@@ -255,10 +256,10 @@ UnixMakefileGenerator::init()
 
         const ProKey runComp("QMAKE_RUN_" + compiler);
         if(project->isEmpty(runComp))
-            project->values(runComp).append("$(" + compiler + ") " + compile_flag + " -o $obj $src");
+            project->values(runComp).append("$(" + compiler + ") " + compile_flag + " " + var("QMAKE_CC_O_FLAG") + "$obj $src");
         const ProKey runCompImp("QMAKE_RUN_" + compiler + "_IMP");
         if(project->isEmpty(runCompImp))
-            project->values(runCompImp).append("$(" + compiler + ") " + compile_flag + " -o \"$@\" \"$<\"");
+            project->values(runCompImp).append("$(" + compiler + ") " + compile_flag + " " + var("QMAKE_CC_O_FLAG") + "\"$@\" \"$<\"");
     }
 
     if(project->isActiveConfig("macx") && !project->isEmpty("TARGET") && !project->isActiveConfig("compile_libtool") &&
@@ -490,6 +491,8 @@ UnixMakefileGenerator::findLibraries()
                 } else if(opt.startsWith("-l")) {
                     if (project->isActiveConfig("rvct_linker") || project->isActiveConfig("armcc_linker")) {
                         (*it) = "lib" + opt.mid(2) + ".so";
+                    } else if (project->isActiveConfig("ti_linker")) {
+                        (*it) = opt.mid(2);
                     } else {
                         stub = opt.mid(2);
                     }

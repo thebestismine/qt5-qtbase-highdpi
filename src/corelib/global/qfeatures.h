@@ -301,6 +301,11 @@
 #define QT_NO_IM
 #endif
 
+// QImageIOPlugin
+#if !defined(QT_NO_IMAGEFORMATPLUGIN) && (defined(QT_NO_LIBRARY))
+#define QT_NO_IMAGEFORMATPLUGIN
+#endif
+
 // QLocalServer
 #if !defined(QT_NO_LOCALSERVER) && (defined(QT_NO_TEMPORARYFILE))
 #define QT_NO_LOCALSERVER

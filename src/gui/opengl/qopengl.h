@@ -42,16 +42,44 @@
 #ifndef QOPENGL_H
 #define QOPENGL_H
 
+#include <QtCore/qglobal.h>
+
 #ifndef QT_NO_OPENGL
 
-#include <QtCore/qglobal.h>
+// Windows always needs this to ensure that APIENTRY gets defined
+#if defined(Q_OS_WIN)
+# include <QtCore/qt_windows.h>
+#endif
+
+// Note: Mac OSX is a "controlled platform" for OpenGL ABI so we
+// use the system provided headers there. Controlled means that the
+// headers always match the actual driver implementation so there
+// is no possibility of drivers exposing additional functionality
+// from the system headers. Also it means that the vendor can
+// (and does) make different choices about some OpenGL types. For
+// e.g. Apple uses void* for GLhandleARB whereas other platforms
+// use unsigned int.
+//
+// For the "uncontrolled" Windows and Linux platforms we use the
+// official Khronos headers. On these platforms this gives
+// access to additional functionality the drivers may expose but
+// which the system headers do not.
 
 #if defined(QT_OPENGL_ES_2)
 # if defined(Q_OS_MAC)
 #  include <OpenGLES/ES2/gl.h>
-# else
+#  include <OpenGLES/ES2/glext.h>
+
+/*
+   OES_EGL_image_external is not included in the Apple provided
+   system headers yet, but we define the missing typedef so that
+   the qopenglextensions.cpp code will magically work once Apple
+   include the extension in their drivers.
+*/
+typedef void* GLeglImageOES;
+
+# else // "uncontrolled" platforms
 #  include <GLES2/gl2.h>
-# endif
 
 /*
    Some GLES2 implementations (like the one on Harmattan) are missing the
@@ -61,27 +89,15 @@
 */
 typedef char GLchar;
 
-# include <QtGui/qopengles2ext.h>
-# ifndef GL_DOUBLE
-#  define GL_DOUBLE GL_FLOAT
-# endif
-# ifndef GLdouble
+#  include <QtGui/qopengles2ext.h>
+#  ifndef GL_DOUBLE
+#   define GL_DOUBLE GL_FLOAT
+#  endif
+#  ifndef GLdouble
 typedef GLfloat GLdouble;
-# endif
+#  endif
+# endif // Q_OS_MAC
 #else
-// Mac OSX is a "controlled platform" for OpenGL ABI so we use
-// the system provided headers there. Controlled means that the
-// headers always match the actual driver implementation so there
-// is no possibility of drivers exposing additional functionality
-// from the system headers. Also it means that the vendor can
-// (and does) make different choices about some OpenGL types. For
-// e.g. Apple uses void* for GLhandleARB whereas other platforms
-// use unsigned int.
-//
-// For the "uncontrolled" Windows and Linux platforms we use the
-// official Khronos glext.h header. On these platforms this gives
-// access to additional functionality the drivers may expose but
-// which the system headers do not.
 # if defined(Q_OS_MAC)
 #  include <OpenGL/gl.h>
 #  if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_7
@@ -90,9 +106,6 @@ typedef GLfloat GLdouble;
 #  endif
 #  include <OpenGL/glext.h>
 # else
-#  if defined(Q_OS_WIN)
-#   include <QtCore/qt_windows.h>
-#  endif
 #  define GL_GLEXT_LEGACY // Prevents GL/gl.h form #including system glext.h
 #  include <GL/gl.h>
 #  include <QtGui/qopenglext.h>

@@ -68,15 +68,15 @@ typedef struct pg_result PGresult;
 QT_BEGIN_NAMESPACE
 
 class QPSQLResultPrivate;
-class QPSQLDriverPrivate;
 class QPSQLDriver;
 class QSqlRecordInfo;
 
 class QPSQLResult : public QSqlResult
 {
-    friend class QPSQLResultPrivate;
+    Q_DECLARE_PRIVATE(QPSQLResult)
+
 public:
-    QPSQLResult(const QPSQLDriver* db, const QPSQLDriverPrivate* p);
+    QPSQLResult(const QPSQLDriver* db);
     ~QPSQLResult();
 
     QVariant handle() const;
@@ -96,13 +96,15 @@ protected:
     QVariant lastInsertId() const;
     bool prepare(const QString& query);
     bool exec();
-
-private:
-    QPSQLResultPrivate *d;
 };
+
+class QPSQLDriverPrivate;
 
 class Q_EXPORT_SQLDRIVER_PSQL QPSQLDriver : public QSqlDriver
 {
+    friend class QPSQLResultPrivate;
+    Q_DECLARE_PRIVATE(QPSQLDriver)
+
     Q_OBJECT
 public:
     enum Protocol {
@@ -154,10 +156,6 @@ protected:
 
 private Q_SLOTS:
     void _q_handleNotification(int);
-
-private:
-    void init();
-    QPSQLDriverPrivate *d;
 };
 
 QT_END_NAMESPACE

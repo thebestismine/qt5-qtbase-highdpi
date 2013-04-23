@@ -1004,7 +1004,7 @@ void QWindowsNativeFileDialogBase::setMode(QFileDialogOptions::FileMode mode, QF
         qErrnoWarning("%s: SetOptions() failed", __FUNCTION__);
 }
 
-#ifndef Q_OS_WINCE
+#if !defined(Q_OS_WINCE) && defined(__IShellLibrary_INTERFACE_DEFINED__) // Windows SDK 7
 
 // Helper for "Libraries": collections of folders appearing from Windows 7
 // on, visible in the file dialogs.
@@ -1057,19 +1057,19 @@ QString QWindowsNativeFileDialogBase::libraryItemDefaultSaveFolder(IShellItem *i
     return result;
 }
 
-#else // !Q_OS_WINCE
+#else // !Q_OS_WINCE && __IShellLibrary_INTERFACE_DEFINED__
 
-QStringList QWindowsNativeFileDialogBase::libraryItemPaths(IShellItem *)
+QStringList QWindowsNativeFileDialogBase::libraryItemFolders(IShellItem *)
 {
     return QStringList();
 }
 
-QString QWindowsNativeFileDialogBase::libraryDefaultSaveFolder(IShellItem *)
+QString QWindowsNativeFileDialogBase::libraryItemDefaultSaveFolder(IShellItem *)
 {
     return QString();
 }
 
-#endif // Q_OS_WINCE
+#endif // Q_OS_WINCE || !__IShellLibrary_INTERFACE_DEFINED__
 
 QString QWindowsNativeFileDialogBase::itemPath(IShellItem *item)
 {
@@ -1340,7 +1340,9 @@ static inline QString appendSuffix(const QString &fileName, const QString &filte
     if (suffixPos < 0)
         return fileName;
     suffixPos += 3;
-    int endPos = filter.indexOf(QLatin1Char(';'), suffixPos + 1);
+    int endPos = filter.indexOf(QLatin1Char(' '), suffixPos + 1);
+    if (endPos < 0)
+        endPos = filter.indexOf(QLatin1Char(';'), suffixPos + 1);
     if (endPos < 0)
         endPos = filter.indexOf(QLatin1Char(')'), suffixPos + 1);
     if (endPos < 0)
@@ -1455,9 +1457,7 @@ class QWindowsFileDialogHelper : public QWindowsDialogHelperBase<QPlatformFileDi
 {
 public:
     QWindowsFileDialogHelper() {}
-    // For Qt 4 compatibility, do not create native non-modal dialogs on widgets,
-    // but only on QQuickWindows, which do not have a fallback.
-    virtual bool supportsNonModalDialog(const QWindow *parent = 0) const { return isQQuickWindow(parent); }
+    virtual bool supportsNonModalDialog(const QWindow * /* parent */ = 0) const { return false; }
     virtual bool defaultNameFilterDisables() const
         { return true; }
     virtual void setDirectory(const QString &directory);
@@ -1851,7 +1851,7 @@ class QWindowsXpFileDialogHelper : public QWindowsDialogHelperBase<QPlatformFile
 {
 public:
     QWindowsXpFileDialogHelper() {}
-    virtual bool supportsNonModalDialog(const QWindow *parent = 0) const { return isQQuickWindow(parent); }
+    virtual bool supportsNonModalDialog(const QWindow * /* parent */ = 0) const { return false; }
     virtual bool defaultNameFilterDisables() const
         { return true; }
     virtual void setDirectory(const QString &directory);

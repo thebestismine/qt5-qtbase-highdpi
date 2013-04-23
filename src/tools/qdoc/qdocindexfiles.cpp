@@ -64,6 +64,7 @@ QDocIndexFiles* QDocIndexFiles::qdocIndexFiles_ = NULL;
   Constructs the singleton QDocIndexFiles.
  */
 QDocIndexFiles::QDocIndexFiles()
+    : gen_( 0 )
 {
     qdb_ = QDocDatabase::qdocDB();
 }
@@ -135,6 +136,7 @@ void QDocIndexFiles::readIndexFile(const QString& path)
             QDir installDir(path.section('/', 0, -3) + "/outputdir");
             indexUrl = installDir.relativeFilePath(path).section('/', 0, -2);
         }
+        project_ = indexElement.attribute("project", QString());
 
         basesList_.clear();
         relatedList_.clear();
@@ -458,7 +460,7 @@ void QDocIndexFiles::readIndexSection(const QDomElement& element,
     else if (status == "obsolete")
         node->setStatus(Node::Obsolete);
     else if (status == "deprecated")
-        node->setStatus(Node::Deprecated);
+        node->setStatus(Node::Obsolete);
     else if (status == "preliminary")
         node->setStatus(Node::Preliminary);
     else if (status == "commendable")
@@ -502,6 +504,7 @@ void QDocIndexFiles::readIndexSection(const QDomElement& element,
     Doc doc(location, location, " ", emptySet); // placeholder
     node->setDoc(doc);
     node->setIndexNodeFlag();
+    node->setOutputSubdirectory(project_.toLower());
 
     if (node->isInnerNode()) {
         InnerNode* inner = static_cast<InnerNode*>(node);
@@ -711,7 +714,7 @@ bool QDocIndexFiles::generateIndexSection(QXmlStreamWriter& writer,
         status = "obsolete";
         break;
     case Node::Deprecated:
-        status = "deprecated";
+        status = "obsolete";
         break;
     case Node::Preliminary:
         status = "preliminary";
@@ -1202,6 +1205,7 @@ void QDocIndexFiles::generateIndex(const QString& fileName,
     writer.writeAttribute("url", url);
     writer.writeAttribute("title", title);
     writer.writeAttribute("version", qdb_->version());
+    writer.writeAttribute("project", g->config()->getString(CONFIG_PROJECT));
 
     generateIndexSections(writer, qdb_->treeRoot(), generateInternalNodes);
 

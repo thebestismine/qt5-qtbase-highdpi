@@ -74,9 +74,7 @@
 #  include "qandroidopenglplatformwindow.h"
 #endif
 
-#if __ANDROID_API__ > 8
-# include <android/native_window_jni.h>
-#endif
+#include <android/native_window_jni.h>
 
 static jmethodID m_redrawSurfaceMethodID = 0;
 
@@ -123,10 +121,9 @@ static QAndroidPlatformIntegration *m_androidPlatformIntegration = 0;
 
 static int m_desktopWidthPixels  = 0;
 static int m_desktopHeightPixels = 0;
+static double m_scaledDensity = 0;
 
 static volatile bool m_pauseApplication;
-
-static jmethodID m_setFullScreenMethodID = 0;
 
 static AndroidAssetsFileEngineHandler *m_androidAssetsFileEngineHandler = 0;
 
@@ -266,22 +263,10 @@ namespace QtAndroid
         m_surfaceMutex.unlock();
     }
 
-    void setFullScreen(QWidget *widget)
+    QAndroidPlatformIntegration *androidPlatformIntegration()
     {
-        AttachedJNIEnv env;
-        if (!env.jniEnv)
-            return;
-
-        bool fullScreen = widget->isFullScreen();
-        if (!fullScreen) {
-            foreach (QWidget *w, qApp->topLevelWidgets()) {
-                fullScreen |= w->isFullScreen();
-                if (fullScreen)
-                    break;
-            }
-        }
-
-        env.jniEnv->CallStaticVoidMethod(m_applicationClass, m_setFullScreenMethodID, fullScreen);
+        QMutexLocker locker(&m_surfaceMutex);
+        return m_androidPlatformIntegration;
     }
 
     QWindow *topLevelWindowAt(const QPoint &globalPos)
@@ -299,6 +284,11 @@ namespace QtAndroid
     int desktopHeightPixels()
     {
         return m_desktopHeightPixels;
+    }
+
+    double scaledDensity()
+    {
+        return m_scaledDensity;
     }
 
     JavaVM *javaVM()
@@ -551,32 +541,6 @@ static void terminateQt(JNIEnv *env, jclass /*clazz*/)
     env->DeleteGlobalRef(m_bitmapDrawableClass);
 }
 
-#ifdef ANDROID_PLUGIN_OPENGL
-#if __ANDROID_API__ < 9
-struct FakeNativeWindow
-{
-    long long dummyNativeWindow;// force 64 bits alignment
-};
-
-class FakeSurface: public FakeNativeWindow
-{
-public:
-    virtual void FakeSurfaceMethod()
-    {
-        fakeSurface = 0;
-    }
-
-    int fakeSurface;
-};
-
-EGLNativeWindowType ANativeWindow_fromSurface(JNIEnv *env, jobject jSurface)
-{
-    FakeSurface *surface = static_cast<FakeSurface *>(env->GetIntField(jSurface, m_surfaceFieldID));
-    return static_cast<EGLNativeWindowType>(static_cast<FakeNativeWindow*>(surface));
-}
-#endif // __ANDROID_API__ < 9
-#endif // ANDROID_PLUGIN_OPENGL
-
 static void setSurface(JNIEnv *env, jobject /*thiz*/, jobject jSurface)
 {
 #ifndef ANDROID_PLUGIN_OPENGL
@@ -595,7 +559,6 @@ static void setSurface(JNIEnv *env, jobject /*thiz*/, jobject jSurface)
         m_surfaceMutex.unlock();
         m_androidPlatformIntegration->surfaceChanged();
     } else if (m_androidPlatformIntegration && sameNativeWindow) {
-        QAndroidOpenGLPlatformWindow *window = m_androidPlatformIntegration->primaryWindow();
         QPlatformScreen *screen = m_androidPlatformIntegration->screen();
         QSize size = QtAndroid::nativeWindowSize();
 
@@ -603,13 +566,19 @@ static void setSurface(JNIEnv *env, jobject /*thiz*/, jobject jSurface)
         QWindowSystemInterface::handleScreenAvailableGeometryChange(screen->screen(), geometry);
         QWindowSystemInterface::handleScreenGeometryChange(screen->screen(), geometry);
 
-        if (window != 0) {
-            window->lock();
-            window->scheduleResize(size);
+        // Resize all top level windows, since they share the same surface
+        foreach (QWindow *w, QGuiApplication::topLevelWindows()) {
+            QAndroidOpenGLPlatformWindow *window =
+                    static_cast<QAndroidOpenGLPlatformWindow *>(w->handle());
 
-            QWindowSystemInterface::handleExposeEvent(window->window(),
-                                                      QRegion(window->window()->geometry()));
-            window->unlock();
+            if (window != 0) {
+                window->lock();
+                window->scheduleResize(size);
+
+                QWindowSystemInterface::handleExposeEvent(window->window(),
+                                                          QRegion(window->window()->geometry()));
+                window->unlock();
+            }
         }
 
         m_surfaceMutex.unlock();
@@ -637,10 +606,11 @@ static void destroySurface(JNIEnv *env, jobject /*thiz*/)
 static void setDisplayMetrics(JNIEnv */*env*/, jclass /*clazz*/,
                             jint /*widthPixels*/, jint /*heightPixels*/,
                             jint desktopWidthPixels, jint desktopHeightPixels,
-                            jdouble xdpi, jdouble ydpi)
+                            jdouble xdpi, jdouble ydpi, jdouble scaledDensity)
 {
     m_desktopWidthPixels = desktopWidthPixels;
     m_desktopHeightPixels = desktopHeightPixels;
+    m_scaledDensity = scaledDensity;
 
     if (!m_androidPlatformIntegration) {
         QAndroidPlatformIntegration::setDefaultDisplayMetrics(desktopWidthPixels,desktopHeightPixels,
@@ -668,9 +638,9 @@ static void updateWindow(JNIEnv */*env*/, jobject /*thiz*/)
     if (!m_androidPlatformIntegration)
         return;
 
-    if (qApp != 0) {
-        foreach (QWidget *w, qApp->topLevelWidgets())
-            w->update();
+    if (QGuiApplication::instance() != 0) {
+        foreach (QWindow *w, QGuiApplication::topLevelWindows())
+            QWindowSystemInterface::handleExposeEvent(w, QRegion(w->geometry()));
     }
 
 #ifndef ANDROID_PLUGIN_OPENGL
@@ -701,7 +671,7 @@ static JNINativeMethod methods[] = {
     {"resumeQtApp", "()V", (void *)resumeQtApp},
     {"quitQtAndroidPlugin", "()V", (void *)quitQtAndroidPlugin},
     {"terminateQt", "()V", (void *)terminateQt},
-    {"setDisplayMetrics", "(IIIIDD)V", (void *)setDisplayMetrics},
+    {"setDisplayMetrics", "(IIIIDDD)V", (void *)setDisplayMetrics},
     {"setSurface", "(Ljava/lang/Object;)V", (void *)setSurface},
     {"destroySurface", "()V", (void *)destroySurface},
     {"lockSurface", "()V", (void *)lockSurface},
@@ -757,16 +727,10 @@ static int registerNatives(JNIEnv *env)
     }
 
     GET_AND_CHECK_STATIC_METHOD(m_redrawSurfaceMethodID, m_applicationClass, "redrawSurface", "(IIII)V");
-    GET_AND_CHECK_STATIC_METHOD(m_setFullScreenMethodID, m_applicationClass, "setFullScreen", "(Z)V");
 
 #ifdef ANDROID_PLUGIN_OPENGL
     FIND_AND_CHECK_CLASS("android/view/Surface");
-#if __ANDROID_API__ < 9
-# define ANDROID_VIEW_SURFACE_JNI_ID "mSurface"
-#else
-# define ANDROID_VIEW_SURFACE_JNI_ID "mNativeSurface"
-#endif
-    GET_AND_CHECK_FIELD(m_surfaceFieldID, clazz, ANDROID_VIEW_SURFACE_JNI_ID, "I");
+    GET_AND_CHECK_FIELD(m_surfaceFieldID, clazz, "mNativeSurface", "I");
 #endif
 
     jmethodID methodID;

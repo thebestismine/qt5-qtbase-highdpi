@@ -56,7 +56,6 @@ QT_BEGIN_NAMESPACE
 class QXcbScreen;
 class QXcbEGLSurface;
 class QIcon;
-
 class QXcbWindow : public QXcbObject, public QPlatformWindow
 {
 public:
@@ -119,6 +118,9 @@ public:
 #if !defined(QT_NO_SHAPE)
     void setMask(const QRegion &region);
 #endif // !QT_NO_SHAPE
+
+    void setAlertState(bool enabled);
+    bool isAlertState() const { return m_alertState; }
 
     xcb_window_t xcb_window() const { return m_window; }
     uint depth() const { return m_depth; }
@@ -189,10 +191,12 @@ private:
 
     bool m_mapped;
     bool m_transparent;
+    bool m_usingSyncProtocol;
     bool m_deferredActivation;
     bool m_deferredExpose;
     bool m_configureNotifyPending;
     bool m_embedded;
+    bool m_alertState;
     xcb_window_t m_netWmUserTimeWindow;
 
     QSurfaceFormat m_format;

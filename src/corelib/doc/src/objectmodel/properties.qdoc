@@ -62,7 +62,7 @@
     A property behaves like a class data member, but it has additional
     features accessible through the \l {Meta-Object System}.
 
-    \list 
+    \list
 
     \li A \c READ accessor function is required if no \c MEMBER variable was
     specified. It is for reading the property value. Ideally, a const function
@@ -101,7 +101,8 @@
 
     \li A \c REVISION number is optional. If included, it defines
     the property and its notifier signal to be used in a particular
-    revision of the API that is exposed to QML.
+    revision of the API (usually for exposure to QML). If not included, it
+    defaults to 0.
 
     \li The \c DESIGNABLE attribute indicates whether the property
     should be visible in the property editor of GUI design tool (e.g.,
@@ -130,7 +131,7 @@
     gets and sets a widget's \c USER property.
 
     \li The presence of the \c CONSTANT attibute indicates that the property
-    value is constant.  For a given object instance, the READ method of a 
+    value is constant.  For a given object instance, the READ method of a
     constant property must return the same value every time it is called.  This
     constant value may be different for different instances of the object.  A
     constant property cannot have a WRITE method or a NOTIFY signal.
@@ -194,7 +195,7 @@
 
     Suppose we have a class MyClass, which is derived from QObject and
     which uses the Q_OBJECT macro in its private section. We want to
-    declare a property in MyClass to keep track of a priorty
+    declare a property in MyClass to keep track of a priority
     value. The name of the property will be \e priority, and its type
     will be an enumeration type named \e Priority, which is defined in
     MyClass.
@@ -272,7 +273,7 @@
     Q_DECLARE_METATYPE() macro so that their values can be stored in
     QVariant objects. This makes them suitable for use with both
     static properties declared using the Q_PROPERTY() macro in class
-    definitions and dynamic properties created at run-time. 
+    definitions and dynamic properties created at run-time.
 
     \sa Q_DECLARE_METATYPE(), QMetaType, QVariant
 

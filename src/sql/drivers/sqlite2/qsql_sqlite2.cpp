@@ -51,6 +51,7 @@
 #include <qsqlindex.h>
 #include <qsqlquery.h>
 #include <QtSql/private/qsqlcachedresult_p.h>
+#include <QtSql/private/qsqldriver_p.h>
 #include <qstringlist.h>
 #include <qvector.h>
 
@@ -82,7 +83,7 @@ static QVariant::Type nameToType(const QString& typeName)
     return QVariant::String;
 }
 
-class QSQLite2DriverPrivate
+class QSQLite2DriverPrivate : public QSqlDriverPrivate
 {
 public:
     QSQLite2DriverPrivate();
@@ -90,9 +91,10 @@ public:
     bool utf8;
 };
 
-QSQLite2DriverPrivate::QSQLite2DriverPrivate() : access(0)
+QSQLite2DriverPrivate::QSQLite2DriverPrivate() : QSqlDriverPrivate(), access(0)
 {
     utf8 = (qstrcmp(sqlite_encoding, "UTF-8") == 0);
+    dbmsType = SQLite;
 }
 
 class QSQLite2ResultPrivate;
@@ -195,7 +197,7 @@ void QSQLite2ResultPrivate::init(const char **cnames, int numCols)
     for (int i = 0; i < numCols; ++i) {
         const char* lastDot = strrchr(cnames[i], '.');
         const char* fieldName = lastDot ? lastDot + 1 : cnames[i];
-        
+
         //remove quotations around the field name if any
         QString fieldStr = QString::fromLatin1(fieldName);
         QLatin1Char quote('\"');
@@ -244,7 +246,7 @@ bool QSQLite2ResultPrivate::fetchNext(QSqlCachedResult::ValueCache &values, int 
         firstRow.clear();
         firstRow.resize(colNum);
     }
-    
+
     switch(res) {
     case SQLITE_ROW:
         // check to see if should fill out columns
@@ -279,8 +281,8 @@ QSQLite2Result::QSQLite2Result(const QSQLite2Driver* db)
 : QSqlCachedResult(db)
 {
     d = new QSQLite2ResultPrivate(this);
-    d->access = db->d->access;
-    d->utf8 = db->d->utf8;
+    d->access = db->d_func()->access;
+    d->utf8 = db->d_func()->utf8;
 }
 
 QSQLite2Result::~QSQLite2Result()
@@ -374,16 +376,15 @@ QVariant QSQLite2Result::handle() const
 
 /////////////////////////////////////////////////////////
 
-QSQLite2Driver::QSQLite2Driver(QObject * parent)
-    : QSqlDriver(parent)
+QSQLite2Driver::QSQLite2Driver(QObject *parent)
+  : QSqlDriver(*new QSQLite2DriverPrivate, parent)
 {
-    d = new QSQLite2DriverPrivate();
 }
 
 QSQLite2Driver::QSQLite2Driver(sqlite *connection, QObject *parent)
-    : QSqlDriver(parent)
+    : QSqlDriver(*new QSQLite2DriverPrivate, parent)
 {
-    d = new QSQLite2DriverPrivate();
+    Q_D(QSQLite2Driver);
     d->access = connection;
     setOpen(true);
     setOpenError(false);
@@ -392,11 +393,11 @@ QSQLite2Driver::QSQLite2Driver(sqlite *connection, QObject *parent)
 
 QSQLite2Driver::~QSQLite2Driver()
 {
-    delete d;
 }
 
 bool QSQLite2Driver::hasFeature(DriverFeature f) const
 {
+    Q_D(const QSQLite2Driver);
     switch (f) {
     case Transactions:
     case SimpleLocking:
@@ -414,6 +415,7 @@ bool QSQLite2Driver::hasFeature(DriverFeature f) const
 */
 bool QSQLite2Driver::open(const QString & db, const QString &, const QString &, const QString &, int, const QString &)
 {
+    Q_D(QSQLite2Driver);
     if (isOpen())
         close();
 
@@ -440,6 +442,7 @@ bool QSQLite2Driver::open(const QString & db, const QString &, const QString &, 
 
 void QSQLite2Driver::close()
 {
+    Q_D(QSQLite2Driver);
     if (isOpen()) {
         sqlite_close(d->access);
         d->access = 0;
@@ -455,6 +458,7 @@ QSqlResult *QSQLite2Driver::createResult() const
 
 bool QSQLite2Driver::beginTransaction()
 {
+    Q_D(QSQLite2Driver);
     if (!isOpen() || isOpenError())
         return false;
 
@@ -472,6 +476,7 @@ bool QSQLite2Driver::beginTransaction()
 
 bool QSQLite2Driver::commitTransaction()
 {
+    Q_D(QSQLite2Driver);
     if (!isOpen() || isOpenError())
         return false;
 
@@ -489,6 +494,7 @@ bool QSQLite2Driver::commitTransaction()
 
 bool QSQLite2Driver::rollbackTransaction()
 {
+    Q_D(QSQLite2Driver);
     if (!isOpen() || isOpenError())
         return false;
 
@@ -585,6 +591,7 @@ QSqlRecord QSQLite2Driver::record(const QString &tbl) const
 
 QVariant QSQLite2Driver::handle() const
 {
+    Q_D(const QSQLite2Driver);
     return QVariant::fromValue(d->access);
 }
 

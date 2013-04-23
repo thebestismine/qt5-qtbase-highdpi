@@ -43,6 +43,7 @@
 #include "qabstracteventdispatcher.h"
 #include "androidjnimain.h"
 #include <QtGui/private/qpixmap_raster_p.h>
+#include <QtGui/qguiapplication.h>
 #include <qpa/qwindowsysteminterface.h>
 #include <QThread>
 #include <qpa/qplatformwindow.h>
@@ -84,9 +85,7 @@ void *QAndroidPlatformNativeInterface::nativeResourceForIntegration(const QByteA
 }
 
 QAndroidPlatformIntegration::QAndroidPlatformIntegration(const QStringList &paramList)
-#ifdef ANDROID_PLUGIN_OPENGL
-    : m_primaryWindow(0)
-#endif
+    : m_touchDevice(0)
 {
     Q_UNUSED(paramList);
 
@@ -115,6 +114,7 @@ bool QAndroidPlatformIntegration::hasCapability(Capability cap) const
 {
     switch (cap) {
         case ThreadedPixmaps: return true;
+        case NonFullScreenWindows: return false;
         default:
 #ifndef ANDROID_PLUGIN_OPENGL
         return QPlatformIntegration::hasCapability(cap);
@@ -142,28 +142,32 @@ QAbstractEventDispatcher *QAndroidPlatformIntegration::guiThreadEventDispatcher(
 #else // !ANDROID_PLUGIN_OPENGL
 QPlatformWindow *QAndroidPlatformIntegration::createPlatformWindow(QWindow *window) const
 {
-    if (m_primaryWindow != 0) {
-        qWarning("QAndroidPlatformIntegration::createPlatformWindow: Unsupported case: More than "
-                 "one top-level window created.");
-    }
-
-    m_primaryWindow = new QAndroidOpenGLPlatformWindow(window);
-    m_primaryWindow->requestActivateWindow();
+    QAndroidOpenGLPlatformWindow *platformWindow = new QAndroidOpenGLPlatformWindow(window);
+    platformWindow->create();
+    platformWindow->requestActivateWindow();
     QtAndroidMenu::setActiveTopLevelWindow(window);
 
-    return m_primaryWindow;
+    return platformWindow;
 }
 
 void QAndroidPlatformIntegration::invalidateNativeSurface()
 {
-    if (m_primaryWindow != 0)
-        m_primaryWindow->invalidateSurface();
+    foreach (QWindow *w, QGuiApplication::topLevelWindows()) {
+        QAndroidOpenGLPlatformWindow *window =
+                static_cast<QAndroidOpenGLPlatformWindow *>(w->handle());
+        if (window != 0)
+            window->invalidateSurface();
+    }
 }
 
 void QAndroidPlatformIntegration::surfaceChanged()
 {
-    if (m_primaryWindow != 0)
-        m_primaryWindow->resetSurface();
+    foreach (QWindow *w, QGuiApplication::topLevelWindows()) {
+        QAndroidOpenGLPlatformWindow *window =
+                static_cast<QAndroidOpenGLPlatformWindow *>(w->handle());
+        if (window != 0)
+            window->resetSurface();
+    }
 }
 
 QPlatformOpenGLContext *QAndroidPlatformIntegration::createPlatformOpenGLContext(QOpenGLContext *context) const
@@ -179,6 +183,7 @@ QAndroidPlatformIntegration::~QAndroidPlatformIntegration()
 {
     delete m_androidPlatformNativeInterface;
     delete m_androidFDB;
+    delete m_touchDevice;
     QtAndroid::setAndroidPlatformIntegration(NULL);
 }
 QPlatformFontDatabase *QAndroidPlatformIntegration::fontDatabase() const

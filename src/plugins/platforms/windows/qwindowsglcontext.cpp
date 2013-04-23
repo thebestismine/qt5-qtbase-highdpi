@@ -279,7 +279,7 @@ static PIXELFORMATDESCRIPTOR
 
     if (format.stereo())
         pfd.dwFlags |= PFD_STEREO;
-    if (format.swapBehavior() == QSurfaceFormat::DoubleBuffer && !isPixmap)
+    if (format.swapBehavior() != QSurfaceFormat::SingleBuffer && !isPixmap)
         pfd.dwFlags |= PFD_DOUBLEBUFFER;
     pfd.cDepthBits =
         format.depthBufferSize() >= 0 ? format.depthBufferSize() : 32;
@@ -389,12 +389,11 @@ static int choosePixelFormat(HDC hdc,
     iAttributes[i++] = WGL_COLOR_BITS_ARB;
     iAttributes[i++] = 24;
     switch (format.swapBehavior()) {
-    case QSurfaceFormat::DefaultSwapBehavior:
-        break;
     case QSurfaceFormat::SingleBuffer:
         iAttributes[i++] = WGL_DOUBLE_BUFFER_ARB;
         iAttributes[i++] = FALSE;
         break;
+    case QSurfaceFormat::DefaultSwapBehavior:
     case QSurfaceFormat::DoubleBuffer:
     case QSurfaceFormat::TripleBuffer:
         iAttributes[i++] = WGL_DOUBLE_BUFFER_ARB;
@@ -1053,8 +1052,16 @@ bool QWindowsGLContext::makeCurrent(QPlatformSurface *surface)
     // Do we already have a DC entry for that window?
     QWindowsWindow *window = static_cast<QWindowsWindow *>(surface);
     const HWND hwnd = window->handle();
-    if (const QOpenGLContextData *contextData = findByHWND(m_windowContexts, hwnd))
+    if (const QOpenGLContextData *contextData = findByHWND(m_windowContexts, hwnd)) {
+        // Repeated calls to wglMakeCurrent when vsync is enabled in the driver will
+        // often result in 100% cpuload. This check is cheap and avoids the problem.
+        // This is reproducable on NVidia cards and Intel onboard chips.
+        if (wglGetCurrentContext() == contextData->renderingContext
+                && wglGetCurrentDC() == contextData->hdc) {
+            return true;
+        }
         return wglMakeCurrent(contextData->hdc, contextData->renderingContext);
+    }
     // Create a new entry.
     const QOpenGLContextData newContext(m_renderingContext, hwnd, GetDC(hwnd));
     if (!newContext.hdc)

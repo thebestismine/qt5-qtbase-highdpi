@@ -59,6 +59,7 @@
 #include <qsqlindex.h>
 #include <qsqlquery.h>
 #include <QtSql/private/qsqlcachedresult_p.h>
+#include <QtSql/private/qsqldriver_p.h>
 #include <qstringlist.h>
 #include <qvector.h>
 
@@ -136,10 +137,10 @@ QSqlError qMakeError(const QString& err, QSqlError::ErrorType type, int errNo = 
     return QSqlError(QLatin1String("QTDS: ") + err, QString(), type, errNo);
 }
 
-class QTDSDriverPrivate
+class QTDSDriverPrivate : public QSqlDriverPrivate
 {
 public:
-    QTDSDriverPrivate(): login(0), initialized(false) {}
+    QTDSDriverPrivate() : QSqlDriverPrivate(), login(0), initialized(false) { dbmsType = Sybase; }
     LOGINREC* login;  // login information
     QString hostName;
     QString db;
@@ -326,12 +327,12 @@ QTDSResult::QTDSResult(const QTDSDriver* db)
     : QSqlCachedResult(db)
 {
     d = new QTDSResultPrivate();
-    d->login = db->d->login;
+    d->login = db->d_func()->login;
 
-    d->dbproc = dbopen(d->login, const_cast<char*>(db->d->hostName.toLatin1().constData()));
+    d->dbproc = dbopen(d->login, const_cast<char*>(db->d_func()->hostName.toLatin1().constData()));
     if (!d->dbproc)
         return;
-    if (dbuse(d->dbproc, const_cast<char*>(db->d->db.toLatin1().constData())) == FAIL)
+    if (dbuse(d->dbproc, const_cast<char*>(db->d_func()->db.toLatin1().constData())) == FAIL)
         return;
 
     // insert d in error handler dict
@@ -354,7 +355,7 @@ void QTDSResult::cleanup()
     d->clearErrorMsgs();
     d->rec.clear();
     for (int i = 0; i < d->buffer.size(); ++i)
-        free(d->buffer.at(i * 2).data);
+        free(d->buffer.at(i).data);
     d->buffer.clear();
     // "can" stands for "cancel"... very clever.
     dbcanquery(d->dbproc);
@@ -540,14 +541,15 @@ QSqlRecord QTDSResult::record() const
 ///////////////////////////////////////////////////////////////////
 
 QTDSDriver::QTDSDriver(QObject* parent)
-    : QSqlDriver(parent)
+    : QSqlDriver(*new QTDSDriverPrivate, parent)
 {
     init();
 }
 
 QTDSDriver::QTDSDriver(LOGINREC* rec, const QString& host, const QString &db, QObject* parent)
-    : QSqlDriver(parent)
+    : QSqlDriver(*new QTDSDriverPrivate, parent)
 {
+    Q_D(QTDSDriver);
     init();
     d->login = rec;
     d->hostName = host;
@@ -560,12 +562,13 @@ QTDSDriver::QTDSDriver(LOGINREC* rec, const QString& host, const QString &db, QO
 
 QVariant QTDSDriver::handle() const
 {
+    Q_D(const QTDSDriver);
     return QVariant(qRegisterMetaType<LOGINREC *>("LOGINREC*"), &d->login);
 }
 
 void QTDSDriver::init()
 {
-    d = new QTDSDriverPrivate();
+    Q_D(QTDSDriver);
     d->initialized = (dbinit() == SUCCEED);
     // the following two code-lines will fail compilation on some FreeTDS versions
     // just comment them out if you have FreeTDS (you won't get any errors and warnings then)
@@ -579,7 +582,6 @@ QTDSDriver::~QTDSDriver()
     dbmsghandle(0);
     // dbexit also calls dbclose if necessary
     dbexit();
-    delete d;
 }
 
 bool QTDSDriver::hasFeature(DriverFeature f) const
@@ -606,6 +608,7 @@ bool QTDSDriver::open(const QString & db,
                        int /*port*/,
                        const QString& /*connOpts*/)
 {
+    Q_D(QTDSDriver);
     if (isOpen())
         close();
     if (!d->initialized) {
@@ -645,6 +648,7 @@ bool QTDSDriver::open(const QString & db,
 
 void QTDSDriver::close()
 {
+    Q_D(QTDSDriver);
     if (isOpen()) {
 #ifdef Q_USE_SYBASE
         dbloginfree(d->login);

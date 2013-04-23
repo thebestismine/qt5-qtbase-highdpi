@@ -225,15 +225,24 @@ QTransform QPainterPrivate::viewTransform() const
     return QTransform();
 }
 
-QTransform QPainterPrivate::hidpiScaleTransform() const
+int QPainterPrivate::effectiveDevicePixelRatio() const
 {
     // Limited feature introduction for Qt 5.0.0, remove ifdef in a later release.
-    if (device->devType() == QInternal::Printer || device->physicalDpiX() == 0 || device->logicalDpiX() == 0)
-        return QTransform();
-    const qreal deviceScale = qreal(device->physicalDpiX()) / qreal(device->logicalDpiX());
-    if (deviceScale > 1.0)
-        return QTransform::fromScale(deviceScale, deviceScale);
-    return QTransform();
+#ifdef Q_OS_MAC
+    // Special cases for devices that does not support PdmDevicePixelRatio go here:
+    if (device->devType() == QInternal::Printer)
+        return 1;
+
+    return qMax(1, device->metric(QPaintDevice::PdmDevicePixelRatio));
+#else
+    return 1;
+#endif
+}
+
+QTransform QPainterPrivate::hidpiScaleTransform() const
+{
+    int devicePixelRatio = effectiveDevicePixelRatio();
+    return QTransform::fromScale(devicePixelRatio, devicePixelRatio);
 }
 
 /*
@@ -1845,9 +1854,7 @@ bool QPainter::begin(QPaintDevice *pd)
 
     Q_ASSERT(d->engine->isActive());
 
-    const bool isHighDpi = (pd->devType() == QInternal::Printer || d->device->physicalDpiX() == 0 || d->device->logicalDpiX() == 0) ?
-                           false : (qreal(d->device->physicalDpiX()) / qreal(d->device->logicalDpiX()) > 1.0);
-    if (!d->state->redirectionMatrix.isIdentity() || isHighDpi)
+    if (!d->state->redirectionMatrix.isIdentity() || d->effectiveDevicePixelRatio() > 1)
         d->updateMatrix();
 
     Q_ASSERT(d->engine->isActive());
@@ -5615,13 +5622,13 @@ void QPainterPrivate::drawGlyphs(const quint32 *glyphArray, QFixedPoint *positio
 
         QVarLengthArray<QFixed, 128> advances(glyphCount);
         QVarLengthArray<QGlyphJustification, 128> glyphJustifications(glyphCount);
-        QVarLengthArray<HB_GlyphAttributes, 128> glyphAttributes(glyphCount);
-        memset(glyphAttributes.data(), 0, glyphAttributes.size() * sizeof(HB_GlyphAttributes));
+        QVarLengthArray<QGlyphAttributes, 128> glyphAttributes(glyphCount);
+        memset(glyphAttributes.data(), 0, glyphAttributes.size() * sizeof(QGlyphAttributes));
         memset(advances.data(), 0, advances.size() * sizeof(QFixed));
         memset(glyphJustifications.data(), 0, glyphJustifications.size() * sizeof(QGlyphJustification));
 
         textItem.glyphs.numGlyphs = glyphCount;
-        textItem.glyphs.glyphs = reinterpret_cast<HB_Glyph *>(const_cast<quint32 *>(glyphArray));
+        textItem.glyphs.glyphs = const_cast<glyph_t *>(glyphArray);
         textItem.glyphs.offsets = positions;
         textItem.glyphs.advances_x = advances.data();
         textItem.glyphs.advances_y = advances.data();
@@ -5844,7 +5851,7 @@ void QPainter::drawText(const QPointF &p, const QString &str, int tf, int justif
         return;
 
     if (tf & Qt::TextBypassShaping) {
-        // Skip harfbuzz complex shaping, shape using glyph advances only
+        // Skip complex shaping, shape using glyph advances only
         int len = str.length();
         int numGlyphs = len;
         QVarLengthGlyphLayoutArray glyphs(len);

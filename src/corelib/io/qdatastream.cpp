@@ -571,6 +571,7 @@ void QDataStream::setByteOrder(ByteOrder bo)
 
     \table
     \header \li Qt Version       \li QDataStream Version
+    \row \li Qt 5.0                  \li 13
     \row \li Qt 4.6                  \li 12
     \row \li Qt 4.5                  \li 11
     \row \li Qt 4.4                  \li 10
@@ -743,7 +744,7 @@ QDataStream &QDataStream::operator>>(bool &i)
 */
 
 QDataStream &QDataStream::operator>>(float &f)
-{    
+{
     if (version() >= QDataStream::Qt_4_6
         && floatingPointPrecision() == QDataStream::DoublePrecision) {
         double d;

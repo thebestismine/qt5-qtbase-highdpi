@@ -3,7 +3,7 @@
 ** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
 ** Contact: http://www.qt-project.org/legal
 **
-** This file is part of the QtGui module of the Qt Toolkit.
+** This file is part of the QtWidgets module of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
@@ -93,8 +93,13 @@ public:
 
     QAction *addSeparator();
 
+    QAction *addSection(const QString &text);
+    QAction *addSection(const QIcon &icon, const QString &text);
+
     QAction *insertMenu(QAction *before, QMenu *menu);
     QAction *insertSeparator(QAction *before);
+    QAction *insertSection(QAction *before, const QString &text);
+    QAction *insertSection(QAction *before, const QIcon &icon, const QString &text);
 
     bool isEmpty() const;
     void clear();

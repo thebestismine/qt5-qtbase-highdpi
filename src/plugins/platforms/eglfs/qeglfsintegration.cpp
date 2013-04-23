@@ -66,6 +66,8 @@
 #include <QtGui/QOffscreenSurface>
 #include <qpa/qplatformcursor.h>
 
+#include <qpa/qplatforminputcontextfactory_p.h>
+
 #include "qeglfscontext.h"
 
 #include <EGL/egl.h>
@@ -115,6 +117,8 @@ QEglFSIntegration::QEglFSIntegration()
 
     mScreen = new QEglFSScreen(mDisplay);
     screenAdded(mScreen);
+
+    mInputContext = QPlatformInputContextFactory::create();
 }
 
 QEglFSIntegration::~QEglFSIntegration()
@@ -141,7 +145,8 @@ bool QEglFSIntegration::hasCapability(QPlatformIntegration::Capability cap) cons
 
 QPlatformWindow *QEglFSIntegration::createPlatformWindow(QWindow *window) const
 {
-    QPlatformWindow *w = new QEglFSWindow(window);
+    QEglFSWindow *w = new QEglFSWindow(window);
+    w->create();
     w->requestActivateWindow();
     return w;
 }

@@ -3,7 +3,7 @@
 ** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
 ** Contact: http://www.qt-project.org/legal
 **
-** This file is part of the QtGui module of the Qt Toolkit.
+** This file is part of the QtWidgets module of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
@@ -139,9 +139,9 @@ void QLineEdit::initStyleOption(QStyleOptionFrame *option) const
 
     The length of the text can be constrained to maxLength(). The text
     can be arbitrarily constrained using a validator() or an
-    inputMask(), or both. When switching between a validator and an input mask 
-    on the same line edit, it is best to clear the validator or input mask to 
-    prevent undefined behavior. 
+    inputMask(), or both. When switching between a validator and an input mask
+    on the same line edit, it is best to clear the validator or input mask to
+    prevent undefined behavior.
 
 
     A related class is QTextEdit which allows multi-line, rich text
@@ -360,9 +360,9 @@ void QLineEdit::setPlaceholderText(const QString& placeholderText)
     \brief the displayed text
 
     If \l echoMode is \l Normal this returns the same as text(); if
-    \l EchoMode is \l Password or \l PasswordEchoOnEdit it returns a string of asterisks
-    text().length() characters long, e.g. "******"; if \l EchoMode is
-    \l NoEcho returns an empty string, "".
+    \l EchoMode is \l Password or \l PasswordEchoOnEdit it returns a string of
+    platform-dependent password mask characters text().length() in size,
+    e.g. "******"; if \l EchoMode is \l NoEcho returns an empty string, "".
 
     By default, this property contains an empty string.
 
@@ -440,10 +440,11 @@ void QLineEdit::setFrame(bool enable)
     \value NoEcho   Do not display anything. This may be appropriate
                     for passwords where even the length of the
                     password should be kept secret.
-    \value Password  Display asterisks instead of the characters
-                    actually entered.
+    \value Password  Display platform-dependent password mask characters instead
+                    of the characters actually entered.
     \value PasswordEchoOnEdit Display characters as they are entered
-                    while editing otherwise display asterisks.
+                    while editing otherwise display characters as with
+                    \c Password.
 
     \sa setEchoMode(), echoMode()
 */

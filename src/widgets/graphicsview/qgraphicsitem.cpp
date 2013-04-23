@@ -3,7 +3,7 @@
 ** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
 ** Contact: http://www.qt-project.org/legal
 **
-** This file is part of the QtGui module of the Qt Toolkit.
+** This file is part of the QtWidgets module of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
@@ -745,9 +745,6 @@
 #include <QtGui/qevent.h>
 #include <QtGui/qinputmethod.h>
 #include <QtWidgets/qgraphicseffect.h>
-#ifndef QT_NO_ACCESSIBILITY
-# include "qaccessible.h"
-#endif
 
 #include <private/qgraphicsitem_p.h>
 #include <private/qgraphicswidget_p.h>
@@ -7357,12 +7354,6 @@ void QGraphicsItem::updateMicroFocus()
                 if (scene()->views().at(i) == fw) {
                     if (qApp)
                         qApp->inputMethod()->update(Qt::ImQueryAll);
-
-#ifndef QT_NO_ACCESSIBILITY
-                    // ##### is this correct
-                    if (toGraphicsObject())
-                        QAccessible::updateAccessibility(toGraphicsObject(), 0, QAccessible::StateChanged);
-#endif
                     break;
                     }
                 }

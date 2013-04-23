@@ -53,6 +53,7 @@ class QXcbConnection;
 
 class QXcbNativeInterface : public QPlatformNativeInterface
 {
+    Q_OBJECT
 public:
     enum ResourceType {
         Display,
@@ -63,7 +64,8 @@ public:
         EglContext,
         GLXContext,
         AppTime,
-        AppUserTime
+        AppUserTime,
+        ScreenHintStyle
     };
 
     QXcbNativeInterface();
@@ -88,6 +90,8 @@ public:
     static void setAppUserTime(QScreen *screen, xcb_timestamp_t time);
     static void *eglContextForContext(QOpenGLContext *context);
     static void *glxContextForContext(QOpenGLContext *context);
+
+    Q_INVOKABLE void beep();
 
 private:
     const QByteArray m_genericEventFilterType;

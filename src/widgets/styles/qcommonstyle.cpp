@@ -3,7 +3,7 @@
 ** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
 ** Contact: http://www.qt-project.org/legal
 **
-** This file is part of the QtGui module of the Qt Toolkit.
+** This file is part of the QtWidgets module of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
@@ -3008,7 +3008,7 @@ QRect QCommonStyle::subElementRect(SubElement sr, const QStyleOption *opt,
     case SE_ToolBarHandle:
         if (const QStyleOptionToolBar *tbopt = qstyleoption_cast<const QStyleOptionToolBar *>(opt)) {
             if (tbopt->features & QStyleOptionToolBar::Movable) {
-                ///we need to access the widget here because the style option doesn't 
+                ///we need to access the widget here because the style option doesn't
                 //have all the information we need (ie. the layout's margin)
                 const QToolBar *tb = qobject_cast<const QToolBar*>(widget);
                 const int margin = tb && tb->layout() ? tb->layout()->margin() : 2;
@@ -4905,20 +4905,12 @@ int QCommonStyle::styleHint(StyleHint sh, const QStyleOption *opt, const QWidget
             ret = -1;
         break;
     case SH_LineEdit_PasswordCharacter: {
-        const QFontMetrics &fm = opt ? opt->fontMetrics
-                                     : (widget ? widget->fontMetrics() : QFontMetrics(QFont()));
-        ret = 0;
-        if (fm.inFont(QChar(0x25CF))) {
-            ret = 0x25CF;
-        } else if (fm.inFont(QChar(0x2022))) {
-            ret = 0x2022;
-        } else {
-            ret = '*';
-        }
+        const QPlatformTheme *theme = QGuiApplicationPrivate::platformTheme();
+        const QPlatformTheme::ThemeHint hintType = QPlatformTheme::PasswordMaskCharacter;
+        const QVariant hint = theme ? theme->themeHint(hintType) : QPlatformTheme::defaultThemeHint(hintType);
+        ret = hint.toChar().unicode();
         break;
     }
-
-
     case SH_ToolBox_SelectedPageTitleBold:
         ret = 1;
         break;
@@ -5112,6 +5104,9 @@ int QCommonStyle::styleHint(StyleHint sh, const QStyleOption *opt, const QWidget
 #endif
         break;
     case SH_ScrollBar_Transient:
+        ret = false;
+        break;
+    case SH_Menu_SupportsSections:
         ret = false;
         break;
     default:

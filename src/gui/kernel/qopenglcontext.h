@@ -42,6 +42,8 @@
 #ifndef QOPENGLCONTEXT_H
 #define QOPENGLCONTEXT_H
 
+#include <QtCore/qglobal.h>
+
 #ifndef QT_NO_OPENGL
 
 #include <QtCore/qnamespace.h>
@@ -99,7 +101,7 @@ private:
     QOpenGLVersionProfilePrivate* d;
 };
 
-inline uint qHash(const QOpenGLVersionProfile &v, uint seed)
+inline uint qHash(const QOpenGLVersionProfile &v, uint seed = 0)
 {
     return qHash(static_cast<int>(v.profile() * 1000)
                + v.version().first * 100 + v.version().second * 10, seed);

@@ -3,7 +3,7 @@
 ** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
 ** Contact: http://www.qt-project.org/legal
 **
-** This file is part of the QtGui module of the Qt Toolkit.
+** This file is part of the QtWidgets module of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
@@ -678,7 +678,7 @@ void QWidget::setAutoFillBackground(bool enabled)
     (to move the keyboard focus), and passes on most of the other events to
     one of the more specialized handlers above.
 
-    Events and the mechanism used to deliver them are covered in 
+    Events and the mechanism used to deliver them are covered in
     \l{The Event System}.
 
     \section1 Groups of Functions and Properties
@@ -1083,7 +1083,8 @@ void QWidgetPrivate::adjustFlags(Qt::WindowFlags &flags, QWidget *w)
     else
         flags |= Qt::WindowTitleHint | Qt::WindowSystemMenuHint | Qt::WindowMinimizeButtonHint |
                 Qt::WindowMaximizeButtonHint | Qt::WindowCloseButtonHint | Qt::WindowFullscreenButtonHint;
-
+    if (w->testAttribute(Qt::WA_TransparentForMouseEvents))
+        flags |= Qt::WindowTransparentForInput;
 }
 
 void QWidgetPrivate::init(QWidget *parentWidget, Qt::WindowFlags f)
@@ -1805,11 +1806,10 @@ QRegion QWidgetPrivate::clipRegion() const
 
 void QWidgetPrivate::setSystemClip(QPaintDevice *paintDevice, const QRegion &region)
 {
-// Transform the system clip region from device-independent pixels to device pixels
+    // Transform the system clip region from device-independent pixels to device pixels
     QPaintEngine *paintEngine = paintDevice->paintEngine();
-    const qreal devicePixelRatio = (paintDevice->physicalDpiX() == 0 || paintDevice->logicalDpiX() == 0) ?
-                                    1.0 : qreal(paintDevice->physicalDpiX()) / qreal(paintDevice->logicalDpiX());
     QTransform scaleTransform;
+    const qreal devicePixelRatio = paintDevice->devicePixelRatio();
     scaleTransform.scale(devicePixelRatio, devicePixelRatio);
     paintEngine->d_func()->systemClip = scaleTransform.map(region);
 }
@@ -8252,7 +8252,7 @@ bool QWidget::event(QEvent *event)
 #ifndef QT_NO_PROPERTIES
     case QEvent::DynamicPropertyChange: {
         const QByteArray &propName = static_cast<QDynamicPropertyChangeEvent *>(event)->propertyName();
-        if (!qstrncmp(propName, "_q_customDpi", 12) && propName.length() == 13) {
+        if (propName.length() == 13 && !qstrncmp(propName, "_q_customDpi", 12)) {
             uint value = property(propName.constData()).toUInt();
             if (!d->extra)
                 d->createExtra();
@@ -9278,7 +9278,7 @@ int QWidget::heightForWidth(int w) const
     \since 5.0
 
     Returns true if the widget's preferred height depends on its width; otherwise returns false.
-*/ 
+*/
 bool QWidget::hasHeightForWidth() const
 {
     Q_D(const QWidget);
@@ -9509,6 +9509,9 @@ void QWidget::setParent(QWidget *parent, Qt::WindowFlags f)
     bool resized = testAttribute(Qt::WA_Resized);
     bool wasCreated = testAttribute(Qt::WA_WState_Created);
     QWidget *oldtlw = window();
+
+    if (f & Qt::Window) // Frame geometry likely changes, refresh.
+        d->data.fstrut_dirty = true;
 
     QWidget *desktopWidget = 0;
     if (parent && parent->windowType() == Qt::Desktop)

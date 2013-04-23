@@ -57,6 +57,10 @@
 #include "qglxintegration.h"
 #endif
 
+#ifndef XCB_USE_XLIB
+#  include <stdio.h>
+#endif
+
 QT_BEGIN_NAMESPACE
 
 class QXcbResourceMap : public QMap<QByteArray, QXcbNativeInterface::ResourceType>
@@ -73,6 +77,7 @@ public:
         insert("glxcontext",QXcbNativeInterface::GLXContext);
         insert("apptime",QXcbNativeInterface::AppTime);
         insert("appusertime",QXcbNativeInterface::AppUserTime);
+        insert("hintstyle", QXcbNativeInterface::ScreenHintStyle);
     }
 };
 
@@ -82,6 +87,16 @@ QXcbNativeInterface::QXcbNativeInterface() :
     m_genericEventFilterType(QByteArrayLiteral("xcb_generic_event_t"))
 
 {
+}
+
+void QXcbNativeInterface::beep() // For QApplication::beep()
+{
+#ifdef XCB_USE_XLIB
+    ::Display *display = (::Display *)nativeResourceForScreen(QByteArrayLiteral("display"), QGuiApplication::primaryScreen());
+    XBell(display, 0);
+#else
+    fputc(7, stdout);
+#endif
 }
 
 void *QXcbNativeInterface::nativeResourceForContext(const QByteArray &resourceString, QOpenGLContext *context)
@@ -125,6 +140,8 @@ void *QXcbNativeInterface::nativeResourceForScreen(const QByteArray &resource, Q
     case AppUserTime:
         result = appUserTime(xcbScreen);
         break;
+    case ScreenHintStyle:
+        result = reinterpret_cast<void *>(xcbScreen->hintStyle() + 1);
     default:
         break;
     }

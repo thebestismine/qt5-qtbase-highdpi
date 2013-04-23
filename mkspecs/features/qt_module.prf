@@ -20,11 +20,25 @@
 load(qt_build_config) # loads qmodule.pri if hasn't been loaded already
 
 isEmpty(MODULE):MODULE = $$section($$list($$basename(_PRO_FILE_)), ., 0, 0)
-isEmpty(VERSION):VERSION = $$QT_VERSION
+isEmpty(VERSION): VERSION = $$MODULE_VERSION
+isEmpty(VERSION): error("Module does not define version.")
 
 # Compile as shared/DLL or static according to the option given to configure
 # unless overridden. Host builds are always static
 host_build|staticlib: CONFIG += static
+
+host_build {
+    QT -= gui   # no host module will ever use gui
+    force_bootstrap {
+        !build_pass: CONFIG += release
+        contains(QT, core(-private)?|xml) {
+            QT -= core core-private xml
+            QT += bootstrap-private
+        }
+    } else {
+        !build_pass:contains(QT_CONFIG, build_all): CONFIG += release
+    }
+}
 
 ucmodule = $$upper($$MODULE)
 
@@ -121,7 +135,7 @@ unix|win32-g++* {
    !isEmpty(_QMAKE_SUPER_CACHE_): \
       rplbase = $$dirname(_QMAKE_SUPER_CACHE_)/[^/][^/]*
    else: \
-      rplbase = $$MODULE_QMAKE_OUTDIR
+      rplbase = $$MODULE_BASE_OUTDIR
    include_replace.match = $$rplbase/include
    include_replace.replace = $$[QT_INSTALL_HEADERS/raw]
    lib_replace.match = $$rplbase/lib

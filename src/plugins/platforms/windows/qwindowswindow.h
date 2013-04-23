@@ -131,7 +131,9 @@ public:
         FrameStrutEventsEnabled = 0x200,
         SynchronousGeometryChangeEvent = 0x400,
         WithinSetStyle = 0x800,
-        WithinDestroy = 0x1000
+        WithinDestroy = 0x1000,
+        TouchRegistered = 0x2000,
+        AlertState = 0x4000
     };
 
     struct WindowData
@@ -254,6 +256,8 @@ public:
     void setWindowIcon(const QIcon &icon);
 
 #ifndef Q_OS_WINCE
+    void setAlertState(bool enabled);
+    bool isAlertState() const { return testFlag(AlertState); }
     void alertWindow(int durationMs = 0);
     void stopAlertWindow();
 #endif

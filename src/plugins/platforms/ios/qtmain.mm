@@ -53,10 +53,11 @@ extern int qt_main(int argc, char *argv[]);
 
 @implementation QIOSMainWrapperApplicationDelegate
 
-- (BOOL)application:(UIApplication *)application willFinishLaunchingWithOptions:(NSDictionary *)launchOptions
+- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
 {
     self.window = [[[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]] autorelease];
-    self.window.rootViewController = [[[QIOSViewController alloc] init] autorelease];
+    self.qiosViewController = [[[QIOSViewController alloc] init] autorelease];
+    self.window.rootViewController = self.qiosViewController;
 
 #ifdef QT_DEBUG
     self.window.backgroundColor = [UIColor cyanColor];
@@ -70,7 +71,7 @@ extern int qt_main(int argc, char *argv[]);
         selector:@selector(runUserMain) userInfo:nil repeats:NO];
 
     if ([QIOSApplicationDelegate instancesRespondToSelector:_cmd])
-        return [super application:application willFinishLaunchingWithOptions:launchOptions];
+        return [super application:application didFinishLaunchingWithOptions:launchOptions];
     else
         return YES;
 }

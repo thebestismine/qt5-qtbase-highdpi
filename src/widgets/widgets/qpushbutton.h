@@ -3,7 +3,7 @@
 ** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
 ** Contact: http://www.qt-project.org/legal
 **
-** This file is part of the QtGui module of the Qt Toolkit.
+** This file is part of the QtWidgets module of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
@@ -103,7 +103,7 @@ public:
 private:
     Q_DISABLE_COPY(QPushButton)
     Q_DECLARE_PRIVATE(QPushButton)
-#ifndef QT_NO_MENU        
+#ifndef QT_NO_MENU
     Q_PRIVATE_SLOT(d_func(), void _q_popupPressed())
 #endif
 };
