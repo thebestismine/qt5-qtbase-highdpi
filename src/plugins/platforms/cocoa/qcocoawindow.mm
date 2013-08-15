@@ -195,8 +195,9 @@ static bool isMouseEvent(NSEvent *ev)
 
 const int QCocoaWindow::NoAlertRequest = -1;
 
-QCocoaWindow::QCocoaWindow(QWindow *tlw)
+QCocoaWindow::QCocoaWindow(QWindow *tlw, const QCocoaIntegration *platformIntegration)
     : QPlatformWindow(tlw)
+    , m_platformIntegration(platformIntegration)
     , m_contentView(nil)
     , m_qtView(nil)
     , m_nsWindow(0)
