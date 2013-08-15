@@ -40,6 +40,7 @@
 ****************************************************************************/
 
 #include "qbitarray.h"
+#include <qalgorithms.h>
 #include <qdatastream.h>
 #include <qdebug.h>
 #include <string.h>
@@ -122,7 +123,8 @@ QT_BEGIN_NAMESPACE
 */
 QBitArray::QBitArray(int size, bool value)
 {
-    if (!size) {
+    Q_ASSERT_X(size >= 0, "QBitArray::QBitArray", "Size must be greater than or equal to 0.");
+    if (size <= 0) {
         d.resize(0);
         return;
     }
@@ -159,24 +161,18 @@ int QBitArray::count(bool on) const
     for (int i = 0; i < len; ++i)
         numBits += testBit(i);
 #else
-    // See http://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel
     const quint8 *bits = reinterpret_cast<const quint8 *>(d.data()) + 1;
     while (len >= 32) {
         quint32 v = quint32(bits[0]) | (quint32(bits[1]) << 8) | (quint32(bits[2]) << 16) | (quint32(bits[3]) << 24);
-        quint32 c = ((v & 0xfff) * Q_UINT64_C(0x1001001001001) & Q_UINT64_C(0x84210842108421)) % 0x1f;
-        c += (((v & 0xfff000) >> 12) * Q_UINT64_C(0x1001001001001) & Q_UINT64_C(0x84210842108421)) % 0x1f;
-        c += ((v >> 24) * Q_UINT64_C(0x1001001001001) & Q_UINT64_C(0x84210842108421)) % 0x1f;
         len -= 32;
         bits += 4;
-        numBits += int(c);
+        numBits += int(qPopulationCount(v));
     }
     while (len >= 24) {
         quint32 v = quint32(bits[0]) | (quint32(bits[1]) << 8) | (quint32(bits[2]) << 16);
-        quint32 c =  ((v & 0xfff) * Q_UINT64_C(0x1001001001001) & Q_UINT64_C(0x84210842108421)) % 0x1f;
-        c += (((v & 0xfff000) >> 12) * Q_UINT64_C(0x1001001001001) & Q_UINT64_C(0x84210842108421)) % 0x1f;
         len -= 24;
         bits += 3;
-        numBits += int(c);
+        numBits += int(qPopulationCount(v));
     }
     while (len >= 0) {
         if (bits[len / 8] & (1 << ((len - 1) & 7)))

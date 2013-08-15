@@ -39,9 +39,14 @@
 **
 ****************************************************************************/
 
-#import "qiosapplicationdelegate.h"
+#include "qiosapplicationdelegate.h"
+
+#include "qiosviewcontroller.h"
 #include "qioswindow.h"
+
 #include <QtCore/QtCore>
+
+extern int qt_user_main(int argc, char *argv[]);
 
 @implementation QIOSApplicationDelegate
 
@@ -50,39 +55,42 @@
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
 {
-    Q_UNUSED(application)
-    Q_UNUSED(launchOptions)
+    Q_UNUSED(application);
+    Q_UNUSED(launchOptions);
+
+    self.window = [[[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]] autorelease];
+    self.qiosViewController = [[[QIOSViewController alloc] init] autorelease];
+    self.window.rootViewController = self.qiosViewController;
+
+#ifdef QT_DEBUG
+    self.window.backgroundColor = [UIColor cyanColor];
+#endif
+
+    [self.window makeKeyAndVisible];
+
+    // We schedule the main-redirection for the next eventloop pass so that we
+    // can return from this function and let UIApplicationMain finish its job.
+    [NSTimer scheduledTimerWithTimeInterval:.01f target:self
+        selector:@selector(runUserMain) userInfo:nil repeats:NO];
 
     return YES;
 }
 
-- (void)applicationWillResignActive:(UIApplication *)application
+- (void)runUserMain
 {
-    Q_UNUSED(application)
+    NSArray *arguments = [[NSProcessInfo processInfo] arguments];
+    int argc = arguments.count;
+    char **argv = new char*[argc];
+    for (int i = 0; i < argc; ++i) {
+        NSString *arg = [arguments objectAtIndex:i];
+        argv[i] = reinterpret_cast<char *>(malloc([arg lengthOfBytesUsingEncoding:[NSString defaultCStringEncoding]]));
+        strcpy(argv[i], [arg cStringUsingEncoding:[NSString defaultCStringEncoding]]);
+    }
+
+    qt_user_main(argc, argv);
+    delete[] argv;
 }
 
-- (void)applicationDidEnterBackground:(UIApplication *)application
-{
-    Q_UNUSED(application)
-}
-
-- (void)applicationWillEnterForeground:(UIApplication *)application
-{
-    Q_UNUSED(application)
-    // Called as part of the transition from the background to the inactive state; here you can undo many of the changes made on entering the background.
-}
-
-- (void)applicationDidBecomeActive:(UIApplication *)application
-{
-    Q_UNUSED(application)
-    // Restart any tasks that were paused (or not yet started) while the application was inactive. If the application was previously in the background, optionally refresh the user interface.
-}
-
-- (void)applicationWillTerminate:(UIApplication *)application
-{
-    Q_UNUSED(application)
-    // Called when the application is about to terminate. Save data if appropriate. See also applicationDidEnterBackground:.
-}
 
 - (void)dealloc
 {
@@ -92,5 +100,4 @@
 }
 
 @end
-
 

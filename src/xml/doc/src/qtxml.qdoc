@@ -29,7 +29,7 @@
     \module QtXml
     \title Qt XML C++ Classes
     \ingroup modules
-    \ingroup technology-apis
+    \qtvariable xml
 
     \brief The Qt XML module provides C++ implementations of the SAX and DOM standards for XML.
 

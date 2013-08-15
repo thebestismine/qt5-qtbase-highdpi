@@ -47,12 +47,14 @@
 #include <QtGui/QRegion>
 #include <QtGui/private/qemulatedhidpi_p.h>
 
+#include "qxcbintegration.h"
 #include "qxcbconnection.h"
 #include "qxcbscreen.h"
 #include "qxcbdrag.h"
 #include "qxcbkeyboard.h"
 #include "qxcbwmsupport.h"
 #include "qxcbimage.h"
+#include "qxcbnativeinterface.h"
 
 #include <qpa/qplatformintegration.h>
 
@@ -171,7 +173,9 @@ static inline QImage::Format imageFormatForDepth(int depth)
         case 32: return QImage::Format_ARGB32_Premultiplied;
         case 24: return QImage::Format_RGB32;
         case 16: return QImage::Format_RGB16;
-        default: return QImage::Format_Invalid;
+        default:
+                 qWarning("Unsupported screen depth: %d", depth);
+                 return QImage::Format_Invalid;
     }
 }
 
@@ -222,7 +226,7 @@ void QXcbWindow::create()
         m_window = m_screen->root();
         m_depth = m_screen->screen()->root_depth;
         m_imageFormat = imageFormatForDepth(m_depth);
-        connection()->addWindow(m_window, this);
+        connection()->addWindowEventListener(m_window, this);
         return;
     }
 
@@ -236,7 +240,7 @@ void QXcbWindow::create()
         // XCB_CW_BACK_PIXMAP
         XCB_NONE,
         // XCB_CW_OVERRIDE_REDIRECT
-        type == Qt::Popup || type == Qt::ToolTip,
+        type == Qt::Popup || type == Qt::ToolTip || (window()->flags() & Qt::BypassWindowManagerHint),
         // XCB_CW_SAVE_UNDER
         type == Qt::Popup || type == Qt::Tool || type == Qt::SplashScreen || type == Qt::ToolTip || type == Qt::Drawer,
         // XCB_CW_EVENT_MASK
@@ -345,7 +349,7 @@ void QXcbWindow::create()
                                      0));                             // value list
     }
 
-    connection()->addWindow(m_window, this);
+    connection()->addWindowEventListener(m_window, this);
 
     Q_XCB_CALL(xcb_change_window_attributes(xcb_connection(), m_window, mask, values));
 
@@ -375,6 +379,13 @@ void QXcbWindow::create()
                                    properties));
     m_syncValue.hi = 0;
     m_syncValue.lo = 0;
+
+    const QByteArray wmClass = static_cast<QXcbIntegration *>(QGuiApplicationPrivate::platformIntegration())->wmClass();
+    if (!wmClass.isEmpty()) {
+        Q_XCB_CALL(xcb_change_property(xcb_connection(), XCB_PROP_MODE_REPLACE,
+                                       m_window, atom(QXcbAtom::WM_CLASS),
+                                       XCB_ATOM_STRING, 8, wmClass.size(), wmClass.constData()));
+    }
 
     if (m_usingSyncProtocol) {
         m_syncCounter = xcb_generate_id(xcb_connection());
@@ -455,6 +466,8 @@ void QXcbWindow::create()
     const qreal opacity = qt_window_private(window())->opacity;
     if (!qFuzzyCompare(opacity, qreal(1.0)))
         setOpacity(opacity);
+    if (window()->isTopLevel())
+        setWindowIcon(window()->icon());
 }
 
 QXcbWindow::~QXcbWindow()
@@ -479,7 +492,7 @@ void QXcbWindow::destroy()
             xcb_destroy_window(xcb_connection(), m_netWmUserTimeWindow);
             m_netWmUserTimeWindow = XCB_NONE;
         }
-        connection()->removeWindow(m_window);
+        connection()->removeWindowEventListener(m_window);
         Q_XCB_CALL(xcb_destroy_window(xcb_connection(), m_window));
         m_window = 0;
     }
@@ -627,7 +640,7 @@ void QXcbWindow::show()
         const QWindow *tp = window()->transientParent();
         if (isTransient(window()) || tp != 0) {
             xcb_window_t transientXcbParent = 0;
-            if (tp)
+            if (tp && tp->handle())
                 transientXcbParent = static_cast<const QXcbWindow *>(tp->handle())->winId();
             // Default to client leader if there is no transient parent, else modal dialogs can
             // be hidden by their parents.
@@ -652,6 +665,9 @@ void QXcbWindow::show()
         updateNetWmUserTime(connection()->time());
 
     Q_XCB_CALL(xcb_map_window(xcb_connection(), m_window));
+
+    m_screen->windowShown(this);
+
     xcb_flush(xcb_connection());
 
     connection()->sync();
@@ -1361,9 +1377,9 @@ void QXcbWindow::requestActivateWindow()
         event.data.data32[4] = 0;
 
         Q_XCB_CALL(xcb_send_event(xcb_connection(), 0, m_screen->root(), XCB_EVENT_MASK_STRUCTURE_NOTIFY | XCB_EVENT_MASK_SUBSTRUCTURE_REDIRECT, (const char *)&event));
-    } else {
-        Q_XCB_CALL(xcb_set_input_focus(xcb_connection(), XCB_INPUT_FOCUS_PARENT, m_window, connection()->time()));
     }
+
+    Q_XCB_CALL(xcb_set_input_focus(xcb_connection(), XCB_INPUT_FOCUS_PARENT, m_window, connection()->time()));
 
     connection()->sync();
 }
@@ -1442,6 +1458,14 @@ private:
     bool m_pending;
 };
 
+bool QXcbWindow::handleGenericEvent(xcb_generic_event_t *event, long *result)
+{
+    return QWindowSystemInterface::handleNativeEvent(window(),
+                                                     connection()->nativeInterface()->genericEventFilterType(),
+                                                     event,
+                                                     result);
+}
+
 void QXcbWindow::handleExposeEvent(const xcb_expose_event_t *event)
 {
     QRect rect(event->x, event->y, event->width, event->height);
@@ -1487,6 +1511,10 @@ void QXcbWindow::handleClientMessageEvent(const xcb_client_message_event_t *even
             connection()->setTime(event->data.data32[1]);
             m_syncValue.lo = event->data.data32[2];
             m_syncValue.hi = event->data.data32[3];
+#ifndef QT_NO_WHATSTHIS
+        } else if (event->data.data32[0] == atom(QXcbAtom::_NET_WM_CONTEXT_HELP)) {
+            QWindowSystemInterface::handleEnterWhatsThisEvent();
+#endif
         } else {
             qWarning() << "QXcbWindow: Unhandled WM_PROTOCOLS message:" << connection()->atomName(event->data.data32[0]);
         }
@@ -1502,6 +1530,9 @@ void QXcbWindow::handleClientMessageEvent(const xcb_client_message_event_t *even
 #endif
     } else if (event->type == atom(QXcbAtom::_XEMBED)) {
         handleXEmbedMessage(event);
+    } else if (event->type == atom(QXcbAtom::MANAGER) || event->type == atom(QXcbAtom::_NET_ACTIVE_WINDOW)) {
+        // Ignore _NET_ACTIVE_WINDOW which is received when the user clicks on a system tray icon and
+        // MANAGER which indicates the creation of a system tray.
     } else {
         qWarning() << "QXcbWindow: Unhandled client message:" << connection()->atomName(event->type);
     }
@@ -1615,7 +1646,8 @@ void QXcbWindow::handleButtonPressEvent(const xcb_button_press_event_t *event)
 {
     if (window() != QGuiApplication::focusWindow()) {
         QWindow *w = static_cast<QWindowPrivate *>(QObjectPrivate::get(window()))->eventReceiver();
-        w->requestActivate();
+        if (!(w->flags() & Qt::WindowDoesNotAcceptFocus))
+            w->requestActivate();
     }
 
     updateNetWmUserTime(event->time);
@@ -1671,6 +1703,8 @@ void QXcbWindow::handleMotionNotifyEvent(const xcb_motion_notify_event_t *event)
 
     handleMouseEvent(event->time, local, global, modifiers);
 }
+
+QXcbWindow *QXcbWindow::toWindow() { return this; }
 
 void QXcbWindow::handleMouseEvent(xcb_timestamp_t time, const QPoint &local, const QPoint &global, Qt::KeyboardModifiers modifiers)
 {

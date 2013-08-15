@@ -1,4 +1,4 @@
-!IF "$(QMAKESPEC)" == "win32-msvc" || "$(QMAKESPEC)" == "win32-msvc.net" || "$(QMAKESPEC)" == "win32-msvc2002" || "$(QMAKESPEC)" == "win32-msvc2003" || "$(QMAKESPEC)" == "win32-msvc2005" || "$(QMAKESPEC)" == "win32-msvc2008" || "$(QMAKESPEC)" == "win32-msvc2010" || "$(QMAKESPEC)" == "win32-msvc2012" || "$(QMAKESPEC)" == "win32-icc"
+!IF "$(QMAKESPEC)" == "win32-msvc" || "$(QMAKESPEC)" == "win32-msvc.net" || "$(QMAKESPEC)" == "win32-msvc2002" || "$(QMAKESPEC)" == "win32-msvc2003" || "$(QMAKESPEC)" == "win32-msvc2005" || "$(QMAKESPEC)" == "win32-msvc2008" || "$(QMAKESPEC)" == "win32-msvc2010" || "$(QMAKESPEC)" == "win32-msvc2012" || "$(QMAKESPEC)" == "win32-msvc2013" || "$(QMAKESPEC)" == "win32-icc"
 
 !if "$(SOURCE_PATH)" == ""
 SOURCE_PATH = ..
@@ -26,7 +26,7 @@ LINKER  = link
 #
 !if "$(QMAKESPEC)" == "win32-msvc2005"
 CFLAGS_EXTRA      = /Zc:wchar_t-
-!elseif "$(QMAKESPEC)" == "win32-msvc2008" || "$(QMAKESPEC)" == "win32-msvc2010" || "$(QMAKESPEC)" == "win32-msvc2012"
+!elseif "$(QMAKESPEC)" == "win32-msvc2008" || "$(QMAKESPEC)" == "win32-msvc2010" || "$(QMAKESPEC)" == "win32-msvc2012" || "$(QMAKESPEC)" == "win32-msvc2013"
 CFLAGS_EXTRA      = /MP
 !endif
 
@@ -34,11 +34,11 @@ CFLAGS_BARE = -c -Fo./ \
               -W3 -nologo -O1 \
               $(CFLAGS_EXTRA) \
               -I$(QMKSRC) -I$(QMKSRC)\library -I$(QMKSRC)\generators -I$(QMKSRC)\generators\unix -I$(QMKSRC)\generators\win32 -I$(QMKSRC)\generators\mac -I$(QMKSRC)\generators\integrity \
-              -I$(BUILD_PATH)\include -I$(BUILD_PATH)\include\QtCore -I$(BUILD_PATH)\include\QtCore\$(QT_VERSION) -I$(BUILD_PATH)\include\QtCore\$(QT_VERSION)\QtCore \
+              -I$(INC_PATH) -I$(INC_PATH)\QtCore -I$(INC_PATH)\QtCore\$(QT_VERSION) -I$(INC_PATH)\QtCore\$(QT_VERSION)\QtCore \
               -I$(BUILD_PATH)\src\corelib\global -DHAVE_QCONFIG_CPP \
               -I$(SOURCE_PATH)\mkspecs\$(QMAKESPEC)  \
               -I$(SOURCE_PATH)\tools\shared \
-              -DQT_BUILD_QMAKE -DQT_BOOTSTRAPPED -DPROEVALUATOR_FULL -DPROEVALUATOR_DEBUG \
+              -DQT_BUILD_QMAKE -DQT_BOOTSTRAPPED -DPROEVALUATOR_FULL \
               -DQT_NO_TEXTCODEC -DQT_NO_UNICODETABLES -DQT_NO_COMPONENT -DQT_NO_COMPRESS \
               -DQT_NO_THREAD -DQT_NO_QOBJECT -DQT_NO_GEOM_VARIANT -DQT_NO_DATASTREAM \
               -DUNICODE
@@ -57,7 +57,7 @@ ADDCLEAN    = vc60.pdb vc70.pdb qmake.pdb qmake.ilk
 !ENDIF
 
 #qmake code
-OBJS        = project.obj main.obj ioutils.obj proitems.obj \
+OBJS        = project.obj main.obj ioutils.obj proitems.obj qmakevfs.obj \
               qmakeglobals.obj qmakeparser.obj qmakeevaluator.obj qmakebuiltins.obj \
               makefile.obj unixmake.obj unixmake2.obj mingw_make.obj \
               option.obj winmakefile.obj projectgenerator.obj property.obj meta.obj \

@@ -45,11 +45,11 @@
 
 #include <stddef.h>
 
-#define QT_VERSION_STR   "5.1.0"
+#define QT_VERSION_STR   "5.2.0"
 /*
    QT_VERSION is (major << 16) + (minor << 8) + patch.
 */
-#define QT_VERSION 0x050100
+#define QT_VERSION 0x050200
 /*
    can be used like #if (QT_VERSION >= QT_VERSION_CHECK(4, 4, 0))
 */
@@ -68,11 +68,14 @@
 #define QT_STRINGIFY(x) QT_STRINGIFY2(x)
 
 #include <QtCore/qsystemdetection.h>
-#include <QtCore/qcompilerdetection.h>
 #include <QtCore/qprocessordetection.h>
+#include <QtCore/qcompilerdetection.h>
 
 #if defined (__ELF__)
 #  define Q_OF_ELF
+#endif
+#if defined (__MACH__) && defined (__APPLE__)
+#  define Q_OF_MACH_O
 #endif
 
 #ifdef __cplusplus
@@ -203,7 +206,11 @@ typedef quint64 qulonglong;
 QT_BEGIN_INCLUDE_NAMESPACE
 typedef unsigned char uchar;
 typedef unsigned short ushort;
+#if defined(Q_QDOC) || !defined(Q_OS_ANDROID)
 typedef unsigned int uint;
+#else
+# include <sys/types.h>
+#endif
 typedef unsigned long ulong;
 QT_END_INCLUDE_NAMESPACE
 

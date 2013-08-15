@@ -67,7 +67,7 @@ QT_BEGIN_NAMESPACE
 
 class QNetworkProxy;
 
-static inline bool isSeparator(register char c)
+static inline bool isSeparator(char c)
 {
     static const char separators[] = "()<>@,;:\\\"/[]?={}";
     return isLWS(c) || strchr(separators, c) != 0;
@@ -123,7 +123,7 @@ static QHash<QByteArray, QByteArray> parseHttpOptionHeader(const QByteArray &hea
                 // quoted-pair    = "\" CHAR
                 ++pos;
                 while (pos < header.length()) {
-                    register char c = header.at(pos);
+                    char c = header.at(pos);
                     if (c == '"') {
                         // end of quoted text
                         break;
@@ -141,7 +141,7 @@ static QHash<QByteArray, QByteArray> parseHttpOptionHeader(const QByteArray &hea
             } else {
                 // case: token
                 while (pos < header.length()) {
-                    register char c = header.at(pos);
+                    char c = header.at(pos);
                     if (isSeparator(c))
                         break;
                     value += c;
@@ -629,10 +629,15 @@ void QNetworkReplyHttpImplPrivate::postRequest()
     QUrl url = request.url();
     httpRequest.setUrl(url);
 
-    bool ssl = url.scheme().toLower() == QLatin1String("https");
+    QString scheme = url.scheme().toLower();
+    bool ssl = (scheme == QLatin1String("https")
+                || scheme == QLatin1String("preconnect-https"));
     q->setAttribute(QNetworkRequest::ConnectionEncryptedAttribute, ssl);
     httpRequest.setSsl(ssl);
 
+    bool preConnect = (scheme == QLatin1String("preconnect-http")
+                       || scheme == QLatin1String("preconnect-https"));
+    httpRequest.setPreConnect(preConnect);
 
 #ifndef QT_NO_NETWORKPROXY
     QNetworkProxy transparentProxy, cacheProxy;

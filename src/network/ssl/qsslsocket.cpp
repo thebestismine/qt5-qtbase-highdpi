@@ -903,6 +903,8 @@ void QSslSocket::setSslConfiguration(const QSslConfiguration &configuration)
     d->configuration.peerVerifyMode = configuration.peerVerifyMode();
     d->configuration.protocol = configuration.protocol();
     d->configuration.sslOptions = configuration.d->sslOptions;
+    d->configuration.sslSession = configuration.session();
+    d->configuration.sslSessionTicketLifeTimeHint = configuration.sessionTicketLifeTimeHint();
 
     // if the CA certificates were set explicitly (either via
     // QSslConfiguration::setCaCertificates() or QSslSocket::setCaCertificates(),
@@ -1908,6 +1910,7 @@ QSslSocketPrivate::QSslSocketPrivate()
     , mode(QSslSocket::UnencryptedMode)
     , autoStartHandshake(false)
     , connectionEncrypted(false)
+    , shutdown(false)
     , ignoreAllSslErrors(false)
     , readyReadEmittedPointer(0)
     , allowRootCertOnDemandLoading(true)
@@ -1933,6 +1936,7 @@ void QSslSocketPrivate::init()
     autoStartHandshake = false;
     connectionEncrypted = false;
     ignoreAllSslErrors = false;
+    shutdown = false;
 
     // we don't want to clear the ignoreErrorsList, so
     // that it is possible setting it before connecting

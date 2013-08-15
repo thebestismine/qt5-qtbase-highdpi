@@ -2089,11 +2089,14 @@ public:
 
 void tst_QWidget::resizeEvent()
 {
+    QSKIP("QTBUG-30744");
+
     {
         QWidget wParent;
         wParent.resize(200, 200);
         ResizeWidget wChild(&wParent);
         wParent.show();
+        QTest::qWaitForWindowExposed(&wParent);
         QCOMPARE (wChild.m_resizeEventCount, 1); // initial resize event before paint
         wParent.hide();
         QSize safeSize(640,480);
@@ -2109,6 +2112,7 @@ void tst_QWidget::resizeEvent()
         ResizeWidget wTopLevel;
         wTopLevel.resize(200, 200);
         wTopLevel.show();
+        QTest::qWaitForWindowExposed(&wTopLevel);
         QCOMPARE (wTopLevel.m_resizeEventCount, 1); // initial resize event before paint for toplevels
         wTopLevel.hide();
         QSize safeSize(640,480);
@@ -2117,6 +2121,7 @@ void tst_QWidget::resizeEvent()
         wTopLevel.resize(safeSize);
         QCOMPARE (wTopLevel.m_resizeEventCount, 1);
         wTopLevel.show();
+        QTest::qWaitForWindowExposed(&wTopLevel);
         QCOMPARE (wTopLevel.m_resizeEventCount, 2);
     }
 }
@@ -4005,10 +4010,6 @@ void tst_QWidget::update()
 
     QApplication::processEvents();
     QApplication::processEvents();
-
-#ifdef Q_OS_MAC
-    QEXPECT_FAIL(0, "Cocoa compositor says to paint this twice.", Continue);
-#endif
     QTRY_COMPARE(w.numPaintEvents, 1);
 
     QCOMPARE(w.visibleRegion(), QRegion(w.rect()));
@@ -4428,11 +4429,8 @@ void tst_QWidget::setWindowGeometry()
 
         widget.setGeometry(rect);
         widget.show();
-        QVERIFY(QTest::qWaitForWindowExposed(&widget));
-        if (m_platform == QStringLiteral("windows")) {
-            QEXPECT_FAIL("130,100 0x200, flags 0", "QTBUG-26424", Continue);
-            QEXPECT_FAIL("130,50 0x0, flags 0", "QTBUG-26424", Continue);
-        }
+        if (rect.isValid())
+            QVERIFY(QTest::qWaitForWindowExposed(&widget));
         QTRY_COMPARE(widget.geometry(), rect);
 
         // setGeometry() while shown
@@ -4462,7 +4460,8 @@ void tst_QWidget::setWindowGeometry()
 
         // show() again, geometry() should still be the same
         widget.show();
-        QVERIFY(QTest::qWaitForWindowExposed(&widget));
+        if (rect.isValid())
+            QVERIFY(QTest::qWaitForWindowExposed(&widget));
         QTRY_COMPARE(widget.geometry(), rect);
 
         // final hide(), again geometry() should be unchanged
@@ -4478,7 +4477,8 @@ void tst_QWidget::setWindowGeometry()
             widget.setWindowFlags(Qt::WindowFlags(windowFlags));
 
         widget.show();
-        QVERIFY(QTest::qWaitForWindowExposed(&widget));
+        if (rect.isValid())
+            QVERIFY(QTest::qWaitForWindowExposed(&widget));
         widget.setGeometry(rect);
         QTest::qWait(10);
         QTRY_COMPARE(widget.geometry(), rect);
@@ -4510,7 +4510,8 @@ void tst_QWidget::setWindowGeometry()
 
         // show() again, geometry() should still be the same
         widget.show();
-        QVERIFY(QTest::qWaitForWindowExposed(&widget));
+        if (rect.isValid())
+            QVERIFY(QTest::qWaitForWindowExposed(&widget));
         QTest::qWait(10);
         QTRY_COMPARE(widget.geometry(), rect);
 
@@ -4655,7 +4656,8 @@ void tst_QWidget::windowMoveResize()
 
         // show() again, pos() should be the same
         widget.show();
-        QVERIFY(QTest::qWaitForWindowExposed(&widget));
+        if (rect.isValid())
+            QVERIFY(QTest::qWaitForWindowExposed(&widget));
         QApplication::processEvents();
         QTRY_COMPARE(widget.pos(), rect.topLeft());
         QTRY_COMPARE(widget.size(), rect.size());
@@ -4674,7 +4676,8 @@ void tst_QWidget::windowMoveResize()
             widget.setWindowFlags(Qt::WindowFlags(windowFlags));
 
         widget.show();
-        QVERIFY(QTest::qWaitForWindowExposed(&widget));
+        if (rect.isValid())
+            QVERIFY(QTest::qWaitForWindowExposed(&widget));
         QApplication::processEvents();
         widget.move(rect.topLeft());
         widget.resize(rect.size());
@@ -4724,7 +4727,8 @@ void tst_QWidget::windowMoveResize()
 
         // show() again, pos() should be the same
         widget.show();
-        QVERIFY(QTest::qWaitForWindowExposed(&widget));
+        if (rect.isValid())
+            QVERIFY(QTest::qWaitForWindowExposed(&widget));
         QTest::qWait(10);
         QTRY_COMPARE(widget.pos(), rect.topLeft());
         QTRY_COMPARE(widget.size(), rect.size());

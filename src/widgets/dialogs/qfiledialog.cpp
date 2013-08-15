@@ -86,14 +86,26 @@ Q_GLOBAL_STATIC(QString, lastVisitedDir)
 typedef QString (*_qt_filedialog_existing_directory_hook)(QWidget *parent, const QString &caption, const QString &dir, QFileDialog::Options options);
 Q_WIDGETS_EXPORT _qt_filedialog_existing_directory_hook qt_filedialog_existing_directory_hook = 0;
 
+typedef QUrl (*_qt_filedialog_existing_directory_url_hook)(QWidget *parent, const QString &caption, const QUrl &dir, QFileDialog::Options options, const QStringList &supportedSchemes);
+Q_WIDGETS_EXPORT _qt_filedialog_existing_directory_url_hook qt_filedialog_existing_directory_url_hook = 0;
+
 typedef QString (*_qt_filedialog_open_filename_hook)(QWidget * parent, const QString &caption, const QString &dir, const QString &filter, QString *selectedFilter, QFileDialog::Options options);
 Q_WIDGETS_EXPORT _qt_filedialog_open_filename_hook qt_filedialog_open_filename_hook = 0;
+
+typedef QUrl (*_qt_filedialog_open_file_url_hook)(QWidget * parent, const QString &caption, const QUrl &dir, const QString &filter, QString *selectedFilter, QFileDialog::Options options, const QStringList &supportedSchemes);
+Q_WIDGETS_EXPORT _qt_filedialog_open_file_url_hook qt_filedialog_open_file_url_hook = 0;
 
 typedef QStringList (*_qt_filedialog_open_filenames_hook)(QWidget * parent, const QString &caption, const QString &dir, const QString &filter, QString *selectedFilter, QFileDialog::Options options);
 Q_WIDGETS_EXPORT _qt_filedialog_open_filenames_hook qt_filedialog_open_filenames_hook = 0;
 
+typedef QList<QUrl> (*_qt_filedialog_open_file_urls_hook)(QWidget * parent, const QString &caption, const QUrl &dir, const QString &filter, QString *selectedFilter, QFileDialog::Options options, const QStringList &supportedSchemes);
+Q_WIDGETS_EXPORT _qt_filedialog_open_file_urls_hook qt_filedialog_open_file_urls_hook = 0;
+
 typedef QString (*_qt_filedialog_save_filename_hook)(QWidget * parent, const QString &caption, const QString &dir, const QString &filter, QString *selectedFilter, QFileDialog::Options options);
 Q_WIDGETS_EXPORT _qt_filedialog_save_filename_hook qt_filedialog_save_filename_hook = 0;
+
+typedef QUrl (*_qt_filedialog_save_file_url_hook)(QWidget * parent, const QString &caption, const QUrl &dir, const QString &filter, QString *selectedFilter, QFileDialog::Options options, const QStringList &supportedSchemes);
+Q_WIDGETS_EXPORT _qt_filedialog_save_file_url_hook qt_filedialog_save_file_url_hook = 0;
 
 /*!
   \class QFileDialog
@@ -243,6 +255,11 @@ Q_WIDGETS_EXPORT _qt_filedialog_save_filename_hook qt_filedialog_save_filename_h
     static functions will always be an application modal dialog. If
     you want to use sheets, use QFileDialog::open() instead.
 
+    \value DontUseCustomDirectoryIcons Always use the default directory icon.
+    Some platforms allow the user to set a different icon. Custom icon lookup
+    cause a big performance impact over network or removable drives.
+    Setting this will enable the QFileIconProvider::DontUseCustomDirectoryIcons
+    option in the icon provider. This enum value was added in Qt 5.2.
 */
 
 /*!
@@ -258,37 +275,76 @@ Q_WIDGETS_EXPORT _qt_filedialog_save_filename_hook qt_filedialog_save_filename_h
 /*!
     \fn void QFileDialog::filesSelected(const QStringList &selected)
 
-    When the selection changes and the dialog is accepted, this signal is
-    emitted with the (possibly empty) list of \a selected files.
+    When the selection changes for local operations and the dialog is
+    accepted, this signal is emitted with the (possibly empty) list
+    of \a selected files.
 
     \sa currentChanged(), QDialog::Accepted
 */
 
+/*!
+    \fn void QFileDialog::urlsSelected(const QList<QUrl> &urls)
+
+    When the selection changes and the dialog is accepted, this signal is
+    emitted with the (possibly empty) list of selected \a urls.
+
+    \sa currentUrlChanged(), QDialog::Accepted
+    \since 5.2
+*/
 
 /*!
     \fn void QFileDialog::fileSelected(const QString &file)
 
-    When the selection changes and the dialog is accepted, this signal is
-    emitted with the (possibly empty) selected \a file.
+    When the selection changes for local operations and the dialog is
+    accepted, this signal is emitted with the (possibly empty)
+    selected \a file.
 
     \sa currentChanged(), QDialog::Accepted
 */
 
+/*!
+    \fn void QFileDialog::urlSelected(const QUrl &url)
+
+    When the selection changes and the dialog is accepted, this signal is
+    emitted with the (possibly empty) selected \a url.
+
+    \sa currentUrlChanged(), QDialog::Accepted
+    \since 5.2
+*/
 
 /*!
     \fn void QFileDialog::currentChanged(const QString &path)
 
-    When the current file changes, this signal is emitted with the
-    new file name as the \a path parameter.
+    When the current file changes for local operations, this signal is
+    emitted with the new file name as the \a path parameter.
 
     \sa filesSelected()
+*/
+
+/*!
+    \fn void QFileDialog::currentUrlChanged(const QUrl &url)
+
+    When the current file changes, this signal is emitted with the
+    new file URL as the \a url parameter.
+
+    \sa urlsSelected()
+    \since 5.2
 */
 
 /*!
   \fn void QFileDialog::directoryEntered(const QString &directory)
   \since 4.3
 
+  This signal is emitted for local operations when the user enters
+  a \a directory.
+*/
+
+/*!
+  \fn void QFileDialog::directoryUrlEntered(const QUrl &directory)
+
   This signal is emitted when the user enters a \a directory.
+
+  \since 5.2
 */
 
 /*!
@@ -532,11 +588,10 @@ QFileDialogPrivate::~QFileDialogPrivate()
 void QFileDialogPrivate::initHelper(QPlatformDialogHelper *h)
 {
     QFileDialog *d = q_func();
-    QObject::connect(h, SIGNAL(fileSelected(QString)), d, SIGNAL(fileSelected(QString)));
-    QObject::connect(h, SIGNAL(filesSelected(QStringList)), d, SIGNAL(filesSelected(QStringList)));
-    QObject::connect(h, SIGNAL(currentChanged(QString)), d, SIGNAL(currentChanged(QString)));
-    QObject::connect(h, SIGNAL(directoryEntered(QString)), d, SIGNAL(directoryEntered(QString)));
-    QObject::connect(h, SIGNAL(directoryEntered(QString)), d, SLOT(_q_nativeEnterDirectory(QString)));
+    QObject::connect(h, SIGNAL(fileSelected(QUrl)), d, SLOT(_q_nativeFileSelected(QUrl)));
+    QObject::connect(h, SIGNAL(filesSelected(QList<QUrl>)), d, SLOT(_q_nativeFilesSelected(QList<QUrl>)));
+    QObject::connect(h, SIGNAL(currentChanged(QUrl)), d, SLOT(_q_nativeCurrentChanged(QUrl)));
+    QObject::connect(h, SIGNAL(directoryEntered(QUrl)), d, SLOT(_q_nativeEnterDirectory(QUrl)));
     QObject::connect(h, SIGNAL(filterSelected(QString)), d, SIGNAL(filterSelected(QString)));
     static_cast<QPlatformFileDialogHelper *>(h)->setOptions(options);
 }
@@ -550,8 +605,8 @@ void QFileDialogPrivate::helperPrepareShow(QPlatformDialogHelper *)
     options->setSidebarUrls(qFileDialogUi->sidebar->urls());
     const QDir directory = q->directory();
     options->setInitialDirectory(directory.exists() ?
-                                 directory.absolutePath() :
-                                 QString());
+                                 QUrl::fromLocalFile(directory.absolutePath()) :
+                                 QUrl());
     options->setInitiallySelectedNameFilter(q->selectedNameFilter());
     options->setInitiallySelectedFiles(userSelectedFiles());
 }
@@ -742,6 +797,15 @@ void QFileDialog::setOptions(Options options)
 
     if (changed & ShowDirsOnly)
         setFilter((options & ShowDirsOnly) ? filter() & ~QDir::Files : filter() | QDir::Files);
+
+    if (changed & DontUseCustomDirectoryIcons) {
+        QFileIconProvider::Options providerOptions = iconProvider()->options();
+        if (options & DontUseCustomDirectoryIcons)
+            providerOptions |= QFileIconProvider::DontUseCustomDirectoryIcons;
+        else
+            providerOptions &= ~QFileIconProvider::DontUseCustomDirectoryIcons;
+        iconProvider()->setOptions(providerOptions);
+    }
 }
 
 QFileDialog::Options QFileDialog::options() const
@@ -850,7 +914,7 @@ void QFileDialog::setDirectory(const QString &directory)
     d->setLastVisitedDirectory(newDirectory);
 
     if (d->nativeDialogInUse){
-        d->setDirectory_sys(newDirectory);
+        d->setDirectory_sys(QUrl::fromLocalFile(newDirectory));
         return;
     }
     if (d->rootPath() == newDirectory)
@@ -875,7 +939,42 @@ void QFileDialog::setDirectory(const QString &directory)
 QDir QFileDialog::directory() const
 {
     Q_D(const QFileDialog);
-    return QDir(d->nativeDialogInUse ? d->directory_sys() : d->rootPath());
+    return QDir(d->nativeDialogInUse ? d->directory_sys().toLocalFile() : d->rootPath());
+}
+
+/*!
+    Sets the file dialog's current \a directory url.
+
+    \note The non-native QFileDialog supports only local files.
+
+    \since 5.2
+*/
+void QFileDialog::setDirectoryUrl(const QUrl &directory)
+{
+    Q_D(QFileDialog);
+    if (!directory.isValid())
+        return;
+
+    if (d->nativeDialogInUse)
+        d->setDirectory_sys(directory);
+    else if (directory.isLocalFile())
+        setDirectory(directory.toLocalFile());
+    else
+        qWarning() << "Non-native QFileDialog supports only local files";
+}
+
+/*!
+    Returns the url of the directory currently being displayed in the dialog.
+
+    \since 5.2
+*/
+QUrl QFileDialog::directoryUrl() const
+{
+    Q_D(const QFileDialog);
+    if (d->nativeDialogInUse)
+        return d->directory_sys();
+    else
+        return QUrl::fromLocalFile(directory().absolutePath());
 }
 
 /*!
@@ -890,7 +989,7 @@ void QFileDialog::selectFile(const QString &filename)
         return;
 
     if (d->nativeDialogInUse){
-        d->selectFile_sys(filename);
+        d->selectFile_sys(QUrl::fromLocalFile(filename));
         return;
     }
 
@@ -925,6 +1024,28 @@ void QFileDialog::selectFile(const QString &filename)
     d->qFileDialogUi->listView->selectionModel()->clear();
     if (!isVisible() || !d->lineEdit()->hasFocus())
         d->lineEdit()->setText(file);
+}
+
+/*!
+    Selects the given \a url in the file dialog.
+
+    \note The non-native QFileDialog supports only local files.
+
+    \sa selectedUrls()
+    \since 5.2
+*/
+void QFileDialog::selectUrl(const QUrl &url)
+{
+    Q_D(QFileDialog);
+    if (!url.isValid())
+        return;
+
+    if (d->nativeDialogInUse)
+        d->selectFile_sys(url);
+    else if (url.isLocalFile())
+        selectFile(url.toLocalFile());
+    else
+        qWarning() << "Non-native QFileDialog supports only local files";
 }
 
 #ifdef Q_OS_UNIX
@@ -1015,17 +1136,19 @@ QStringList QFileDialogPrivate::typedFiles() const
 // Return selected files without defaulting to the root of the file system model
 // used for initializing QFileDialogOptions for native dialogs. The default is
 // not suitable for native dialogs since it mostly equals directory().
-QStringList QFileDialogPrivate::userSelectedFiles() const
+QList<QUrl> QFileDialogPrivate::userSelectedFiles() const
 {
-    if (nativeDialogInUse)
-        return addDefaultSuffixToFiles(selectedFiles_sys());
+    QList<QUrl> files;
 
-    QStringList files;
+    if (nativeDialogInUse)
+        return addDefaultSuffixToUrls(selectedFiles_sys());
+
     foreach (const QModelIndex &index, qFileDialogUi->listView->selectionModel()->selectedRows())
-        files.append(index.data(QFileSystemModel::FilePathRole).toString());
+        files.append(QUrl::fromLocalFile(index.data(QFileSystemModel::FilePathRole).toString()));
 
     if (files.isEmpty() && !lineEdit()->text().isEmpty())
-        files = typedFiles();
+        foreach (const QString &path, typedFiles())
+            files.append(QUrl::fromLocalFile(path));
 
     return files;
 }
@@ -1056,6 +1179,20 @@ QStringList QFileDialogPrivate::addDefaultSuffixToFiles(const QStringList filesT
     return files;
 }
 
+QList<QUrl> QFileDialogPrivate::addDefaultSuffixToUrls(const QList<QUrl> &urlsToFix) const
+{
+    QList<QUrl> urls;
+    for (int i=0; i<urlsToFix.size(); ++i) {
+        QUrl url = urlsToFix.at(i);
+        // if the filename has no suffix, add the default suffix
+        const QString defaultSuffix = options->defaultSuffix();
+        if (!defaultSuffix.isEmpty() && !url.path().endsWith(QLatin1Char('/')) && url.path().lastIndexOf(QLatin1Char('.')) == -1)
+            url.setPath(url.path() + QLatin1Char('.') + defaultSuffix);
+        urls.append(url);
+    }
+    return urls;
+}
+
 
 /*!
     Returns a list of strings containing the absolute paths of the
@@ -1068,13 +1205,36 @@ QStringList QFileDialog::selectedFiles() const
 {
     Q_D(const QFileDialog);
 
-    QStringList files = d->userSelectedFiles();
+    QStringList files;
+    foreach (const QUrl &file, d->userSelectedFiles())
+        files.append(file.toLocalFile());
     if (files.isEmpty()) {
         const FileMode fm = fileMode();
         if (fm != ExistingFile && fm != ExistingFiles)
             files.append(d->rootIndex().data(QFileSystemModel::FilePathRole).toString());
     }
     return files;
+}
+
+/*!
+    Returns a list of urls containing the selected files in the dialog.
+    If no files are selected, or the mode is not ExistingFiles or
+    ExistingFile, selectedUrls() contains the current path in the viewport.
+
+    \sa selectedNameFilter(), selectUrl()
+    \since 5.2
+*/
+QList<QUrl> QFileDialog::selectedUrls() const
+{
+    Q_D(const QFileDialog);
+    if (d->nativeDialogInUse) {
+        return d->userSelectedFiles();
+    } else {
+        QList<QUrl> urls;
+        foreach (const QString &file, selectedFiles())
+            urls.append(QUrl::fromLocalFile(file));
+        return urls;
+    }
 }
 
 /*
@@ -1526,6 +1686,8 @@ bool QFileDialog::confirmOverwrite() const
     filename if it has no suffix already. The suffix is typically
     used to indicate the file type (e.g. "txt" indicates a text
     file).
+
+    If the first character is a dot ('.'), it is removed.
 */
 void QFileDialog::setDefaultSuffix(const QString &suffix)
 {
@@ -1798,6 +1960,48 @@ QString QFileDialog::getOpenFileName(QWidget *parent,
 }
 
 /*!
+    This is a convenience static function that returns an existing file
+    selected by the user. If the user presses Cancel, it returns an
+    empty url.
+
+    The function is used similarly to QFileDialog::getOpenFileName(). In
+    particular \a parent, \a caption, \a dir, \a filter, \a selectedFilter
+    and \a options are used in the exact same way.
+
+    The main difference with QFileDialog::getOpenFileName() comes from
+    the ability offered to the user to select a remote file. That's why
+    the return type and the type of \a dir is QUrl.
+
+    The \a supportedSchemes argument allows to restrict the type of URLs the
+    user will be able to select. It is a way for the application to declare
+    the protocols it will support to fetch the file content. An empty list
+    means that no restriction is applied (the default).
+    Supported for local files ("file" scheme) is implicit and always enabled.
+    it is not necessary to include in the restriction.
+
+    When possible, this static function will use the native file dialog and
+    not a QFileDialog. On platforms which don't support selecting remote
+    files, Qt will allow to select only local files.
+
+    \sa getOpenFileName(), getOpenFileUrls(), getSaveFileUrl(), getExistingDirectoryUrl()
+    \since 5.2
+*/
+QUrl QFileDialog::getOpenFileUrl(QWidget *parent,
+                                 const QString &caption,
+                                 const QUrl &dir,
+                                 const QString &filter,
+                                 QString *selectedFilter,
+                                 Options options,
+                                 const QStringList &supportedSchemes)
+{
+    if (qt_filedialog_open_file_url_hook && !(options & DontUseNativeDialog))
+        return qt_filedialog_open_file_url_hook(parent, caption, dir, filter, selectedFilter, options, supportedSchemes);
+
+    // Falls back to local file
+    return QUrl::fromLocalFile(getOpenFileName(parent, caption, dir.toLocalFile(), filter, selectedFilter, options));
+}
+
+/*!
     This is a convenience static function that will return one or more existing
     files selected by the user.
 
@@ -1880,6 +2084,55 @@ QStringList QFileDialog::getOpenFileNames(QWidget *parent,
         return dialog.selectedFiles();
     }
     return QStringList();
+}
+
+/*!
+    This is a convenience static function that will return or or more existing
+    files selected by the user. If the user presses Cancel, it returns an
+    empty list.
+
+    The function is used similarly to QFileDialog::getOpenFileNames(). In
+    particular \a parent, \a caption, \a dir, \a filter, \a selectedFilter
+    and \a options are used in the exact same way.
+
+    The main difference with QFileDialog::getOpenFileNames() comes from
+    the ability offered to the user to select remote files. That's why
+    the return type and the type of \a dir are respectively QList<QUrl>
+    and QUrl.
+
+    The \a supportedSchemes argument allows to restrict the type of URLs the
+    user will be able to select. It is a way for the application to declare
+    the protocols it will support to fetch the file content. An empty list
+    means that no restriction is applied (the default).
+    Supported for local files ("file" scheme) is implicit and always enabled.
+    it is not necessary to include in the restriction.
+
+    When possible, this static function will use the native file dialog and
+    not a QFileDialog. On platforms which don't support selecting remote
+    files, Qt will allow to select only local files.
+
+    \sa getOpenFileNames(), getOpenFileUrl(), getSaveFileUrl(), getExistingDirectoryUrl()
+    \since 5.2
+*/
+QList<QUrl> QFileDialog::getOpenFileUrls(QWidget *parent,
+                                         const QString &caption,
+                                         const QUrl &dir,
+                                         const QString &filter,
+                                         QString *selectedFilter,
+                                         Options options,
+                                         const QStringList &supportedSchemes)
+{
+    if (qt_filedialog_open_file_urls_hook && !(options & DontUseNativeDialog))
+        return qt_filedialog_open_file_urls_hook(parent, caption, dir, filter, selectedFilter, options, supportedSchemes);
+
+    // Falls back to local files
+    QList<QUrl> urls;
+
+    const QStringList fileNames = getOpenFileNames(parent, caption, dir.toLocalFile(), filter, selectedFilter, options);
+    foreach (const QString &fileName, fileNames)
+        urls << QUrl::fromLocalFile(fileName);
+
+    return urls;
 }
 
 /*!
@@ -1971,6 +2224,48 @@ QString QFileDialog::getSaveFileName(QWidget *parent,
 }
 
 /*!
+    This is a convenience static function that returns a file selected by
+    the user. The file does not have to exist. If the user presses Cancel,
+    it returns an empty url.
+
+    The function is used similarly to QFileDialog::getSaveFileName(). In
+    particular \a parent, \a caption, \a dir, \a filter, \a selectedFilter
+    and \a options are used in the exact same way.
+
+    The main difference with QFileDialog::getSaveFileName() comes from
+    the ability offered to the user to select a remote file. That's why
+    the return type and the type of \a dir is QUrl.
+
+    The \a supportedSchemes argument allows to restrict the type of URLs the
+    user will be able to select. It is a way for the application to declare
+    the protocols it will support to save the file content. An empty list
+    means that no restriction is applied (the default).
+    Supported for local files ("file" scheme) is implicit and always enabled.
+    it is not necessary to include in the restriction.
+
+    When possible, this static function will use the native file dialog and
+    not a QFileDialog. On platforms which don't support selecting remote
+    files, Qt will allow to select only local files.
+
+    \sa getSaveFileName(), getOpenFileUrl(), getOpenFileUrls(), getExistingDirectoryUrl()
+    \since 5.2
+*/
+QUrl QFileDialog::getSaveFileUrl(QWidget *parent,
+                                 const QString &caption,
+                                 const QUrl &dir,
+                                 const QString &filter,
+                                 QString *selectedFilter,
+                                 Options options,
+                                 const QStringList &supportedSchemes)
+{
+    if (qt_filedialog_save_file_url_hook && !(options & DontUseNativeDialog))
+        return qt_filedialog_save_file_url_hook(parent, caption, dir, filter, selectedFilter, options, supportedSchemes);
+
+    // Falls back to local file
+    return QUrl::fromLocalFile(getSaveFileName(parent, caption, dir.toLocalFile(), filter, selectedFilter, options));
+}
+
+/*!
     This is a convenience static function that will return an existing
     directory selected by the user.
 
@@ -2039,6 +2334,46 @@ QString QFileDialog::getExistingDirectory(QWidget *parent,
         return dialog.selectedFiles().value(0);
     }
     return QString();
+}
+
+/*!
+    This is a convenience static function that will return an existing
+    directory selected by the user. If the user presses Cancel, it
+    returns an empty url.
+
+    The function is used similarly to QFileDialog::getExistingDirectory().
+    In particular \a parent, \a caption, \a dir and \a options are used
+    in the exact same way.
+
+    The main difference with QFileDialog::getExistingDirectory() comes from
+    the ability offered to the user to select a remote directory. That's why
+    the return type and the type of \a dir is QUrl.
+
+    The \a supportedSchemes argument allows to restrict the type of URLs the
+    user will be able to select. It is a way for the application to declare
+    the protocols it will support to fetch the file content. An empty list
+    means that no restriction is applied (the default).
+    Supported for local files ("file" scheme) is implicit and always enabled.
+    it is not necessary to include in the restriction.
+
+    When possible, this static function will use the native file dialog and
+    not a QFileDialog. On platforms which don't support selecting remote
+    files, Qt will allow to select only local files.
+
+    \sa getExistingDirectory(), getOpenFileUrl(), getOpenFileUrls(), getSaveFileUrl()
+    \since 5.2
+*/
+QUrl QFileDialog::getExistingDirectoryUrl(QWidget *parent,
+                                          const QString &caption,
+                                          const QUrl &dir,
+                                          Options options,
+                                          const QStringList &supportedSchemes)
+{
+    if (qt_filedialog_existing_directory_url_hook && !(options & DontUseNativeDialog))
+        return qt_filedialog_existing_directory_url_hook(parent, caption, dir, options, supportedSchemes);
+
+    // Falls back to local file
+    return QUrl::fromLocalFile(getExistingDirectory(parent, caption, dir.toLocalFile(), options));
 }
 
 inline static QString _qt_get_directory(const QString &path)
@@ -3119,10 +3454,42 @@ void QFileDialogPrivate::_q_fileRenamed(const QString &path, const QString oldNa
     }
 }
 
-void QFileDialogPrivate::_q_nativeEnterDirectory(const QString &directory)
+void QFileDialogPrivate::_q_nativeFileSelected(const QUrl &file)
 {
-    if (!directory.isEmpty()) // Windows native dialogs occasionally emit signals with empty strings.
-        *lastVisitedDir() = directory;
+    Q_Q(QFileDialog);
+    emit q->urlSelected(file);
+    if (file.isLocalFile())
+        emit q->fileSelected(file.toLocalFile());
+}
+
+void QFileDialogPrivate::_q_nativeFilesSelected(const QList<QUrl> &files)
+{
+    Q_Q(QFileDialog);
+    emit q->urlsSelected(files);
+    QStringList localFiles;
+    foreach (const QUrl &file, files)
+        if (file.isLocalFile())
+            localFiles.append(file.toLocalFile());
+    if (!localFiles.isEmpty())
+        emit q->filesSelected(localFiles);
+}
+
+void QFileDialogPrivate::_q_nativeCurrentChanged(const QUrl &file)
+{
+    Q_Q(QFileDialog);
+    emit q->currentUrlChanged(file);
+    if (file.isLocalFile())
+        emit q->currentChanged(file.toLocalFile());
+}
+
+void QFileDialogPrivate::_q_nativeEnterDirectory(const QUrl &directory)
+{
+    Q_Q(QFileDialog);
+    emit q->directoryUrlEntered(directory);
+    if (!directory.isEmpty() && directory.isLocalFile()) { // Windows native dialogs occasionally emit signals with empty strings.
+        *lastVisitedDir() = directory.toLocalFile();
+        emit q->directoryEntered(directory.toLocalFile());
+    }
 }
 
 /*!

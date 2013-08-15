@@ -11,10 +11,10 @@
     "QtDBus" => "$basedir/src/dbus",
     "QtConcurrent" => "$basedir/src/concurrent",
     "QtPlatformSupport" => "$basedir/src/platformsupport",
-    "KHR" => "$basedir/src/3rdparty/angle/include/KHR",
-    "GLES2" => "$basedir/src/3rdparty/angle/include/GLES2",
-    "EGL" => "$basedir/src/3rdparty/angle/include/EGL",
-    "QtZlib" => "$basedir/src/3rdparty/zlib",
+    "QtANGLE/KHR" => "!$basedir/src/3rdparty/angle/include/KHR",
+    "QtANGLE/GLES2" => "!$basedir/src/3rdparty/angle/include/GLES2",
+    "QtANGLE/EGL" => "!$basedir/src/3rdparty/angle/include/EGL",
+    "QtZlib" => "!$basedir/src/3rdparty/zlib",
     "QtOpenGLExtensions" => "$basedir/src/openglextensions",
 );
 %moduleheaders = ( # restrict the module headers to those found in relative path
@@ -24,7 +24,6 @@
 %classnames = (
     "qglobal.h" => "QtGlobal",
     "qendian.h" => "QtEndian",
-    "qconfig.h" => "QtConfig",
     "qplugin.h" => "QtPlugin",
     "qalgorithms.h" => "QtAlgorithms",
     "qcontainerfwd.h" => "QtContainerFwd",

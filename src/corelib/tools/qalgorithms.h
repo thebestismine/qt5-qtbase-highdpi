@@ -516,6 +516,73 @@ Q_OUTOFLINE_TEMPLATE RandomAccessIterator qBinaryFindHelper(RandomAccessIterator
 
 } //namespace QAlgorithmsPrivate
 
+
+// Use __builtin_popcount on gcc. Clang claims to be gcc
+// but has a bug where __builtin_popcount is not marked as
+// constexpr.
+#if defined(Q_CC_GNU) && !defined(Q_CC_CLANG)
+#define QALGORITHMS_USE_BUILTIN_POPCOUNT
+#endif
+
+Q_DECL_CONSTEXPR inline uint qPopulationCount(quint32 v)
+{
+#ifdef QALGORITHMS_USE_BUILTIN_POPCOUNT
+    return __builtin_popcount(v);
+#else
+    // See http://graphics.stanford.edu/~seander/bithacks.html#CountBitsSetParallel
+    return
+        (((v      ) & 0xfff)    * Q_UINT64_C(0x1001001001001) & Q_UINT64_C(0x84210842108421)) % 0x1f +
+        (((v >> 12) & 0xfff)    * Q_UINT64_C(0x1001001001001) & Q_UINT64_C(0x84210842108421)) % 0x1f +
+        (((v >> 24) & 0xfff)    * Q_UINT64_C(0x1001001001001) & Q_UINT64_C(0x84210842108421)) % 0x1f;
+#endif
+}
+
+Q_DECL_CONSTEXPR inline uint qPopulationCount(quint8 v)
+{
+#ifdef QALGORITHMS_USE_BUILTIN_POPCOUNT
+    return __builtin_popcount(v);
+#else
+    return
+        (((v      ) & 0xfff)    * Q_UINT64_C(0x1001001001001) & Q_UINT64_C(0x84210842108421)) % 0x1f;
+#endif
+}
+
+Q_DECL_CONSTEXPR inline uint qPopulationCount(quint16 v)
+{
+#ifdef QALGORITHMS_USE_BUILTIN_POPCOUNT
+    return __builtin_popcount(v);
+#else
+    return
+        (((v      ) & 0xfff)    * Q_UINT64_C(0x1001001001001) & Q_UINT64_C(0x84210842108421)) % 0x1f +
+        (((v >> 12) & 0xfff)    * Q_UINT64_C(0x1001001001001) & Q_UINT64_C(0x84210842108421)) % 0x1f;
+#endif
+}
+
+Q_DECL_CONSTEXPR inline uint qPopulationCount(quint64 v)
+{
+#ifdef QALGORITHMS_USE_BUILTIN_POPCOUNT
+    return __builtin_popcountll(v);
+#else
+    return
+        (((v      ) & 0xfff)    * Q_UINT64_C(0x1001001001001) & Q_UINT64_C(0x84210842108421)) % 0x1f +
+        (((v >> 12) & 0xfff)    * Q_UINT64_C(0x1001001001001) & Q_UINT64_C(0x84210842108421)) % 0x1f +
+        (((v >> 24) & 0xfff)    * Q_UINT64_C(0x1001001001001) & Q_UINT64_C(0x84210842108421)) % 0x1f +
+        (((v >> 36) & 0xfff)    * Q_UINT64_C(0x1001001001001) & Q_UINT64_C(0x84210842108421)) % 0x1f +
+        (((v >> 48) & 0xfff)    * Q_UINT64_C(0x1001001001001) & Q_UINT64_C(0x84210842108421)) % 0x1f +
+        (((v >> 60) & 0xfff)    * Q_UINT64_C(0x1001001001001) & Q_UINT64_C(0x84210842108421)) % 0x1f;
+#endif
+}
+
+Q_DECL_CONSTEXPR inline uint qPopulationCount(long unsigned int v)
+{
+    return qPopulationCount(static_cast<quint64>(v));
+}
+
+#if defined(Q_CC_GNU) && !defined(Q_CC_CLANG)
+#undef QALGORITHMS_USE_BUILTIN_POPCOUNT
+#endif
+
+
 QT_END_NAMESPACE
 
 #endif // QALGORITHMS_H

@@ -77,17 +77,13 @@ public:
     int effectiveWidth() const;
     int effectiveHeight() const;
 
-    WId winId() const { return WId(m_view); };
+    bool setMouseGrabEnabled(bool grab) { return grab; }
+    bool setKeyboardGrabEnabled(bool grab) { return grab; }
 
-    QList<QWindowSystemInterface::TouchPoint> &touchPoints()  { return m_touchPoints; }
-    QHash<UITouch *, int> &activeTouches() { return m_activeTouches; }
-    int &touchId() { return m_touchId; }
+    WId winId() const { return WId(m_view); };
 
 private:
     UIView *m_view;
-    QList<QWindowSystemInterface::TouchPoint> m_touchPoints;
-    QHash<UITouch *, int> m_activeTouches;
-    int m_touchId;
 
     QRect m_requestedGeometry;
     int m_windowLevel;
@@ -96,6 +92,9 @@ private:
     void raiseOrLower(bool raise);
     void updateWindowLevel();
     bool blockedByModal();
+
+    inline Qt::WindowType windowType() { return static_cast<Qt::WindowType>(int(window()->flags() & Qt::WindowType_Mask)); }
+    inline bool windowIsPopup() { return windowType() & Qt::Popup & ~Qt::Window; }
 };
 
 QT_END_NAMESPACE

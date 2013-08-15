@@ -104,6 +104,8 @@
 #include "qtabwidget.h" // Needed in inTabWidget()
 #endif // QT_KEYPAD_NAVIGATION
 
+#include "qwindowcontainer_p.h"
+
 
 // widget/widget data creation count
 //#define QWIDGET_EXTRA_DEBUG
@@ -243,6 +245,9 @@ QWidgetPrivate::QWidgetPrivate(int version)
 #if !defined(QT_NO_IM)
       , imHints(Qt::ImhNone)
 #endif
+#ifndef QT_NO_TOOLTIP
+      , toolTipDuration(-1)
+#endif
       , inheritedFontResolveMask(0)
       , inheritedPaletteResolveMask(0)
       , leftmargin(0)
@@ -259,6 +264,7 @@ QWidgetPrivate::QWidgetPrivate(int version)
       , bg_role(QPalette::NoRole)
       , dirtyOpaqueChildren(1)
       , isOpaque(0)
+      , retainSizeWhenHiddenChanged(0)
       , inDirtyList(0)
       , isScrolled(0)
       , isMoved(0)
@@ -1546,10 +1552,11 @@ void QWidgetPrivate::createTLExtra()
         x->inTopLevelResize = false;
         x->inRepaint = false;
         x->embedded = 0;
+        x->window = 0;
+        x->screenIndex = 0;
 #ifdef Q_WS_MAC
         x->wasMaximized = false;
 #endif // Q_WS_MAC
-        createTLSysExtra();
 #ifdef QWIDGET_EXTRA_DEBUG
         static int count = 0;
         qDebug() << "tlextra" << ++count;
@@ -3034,7 +3041,8 @@ QList<QAction*> QWidget::actions() const
 
     Disabling a widget implicitly disables all its children. Enabling
     respectively enables all child widgets unless they have been
-    explicitly disabled.
+    explicitly disabled. It it not possible to explicitly enable a child
+    widget which is not a window while its parent widget remains disabled.
 
     By default, this property is true.
 
@@ -4826,7 +4834,7 @@ QGraphicsEffect *QWidget::graphicsEffect() const
     on this widget, QWidget will delete the existing effect before installing
     the new \a effect.
 
-    If \a effect is the installed on a different widget, setGraphicsEffect() will remove
+    If \a effect is the installed effect on a different widget, setGraphicsEffect() will remove
     the effect from the widget and install it on this widget.
 
     QWidget takes ownership of \a effect.
@@ -6242,6 +6250,17 @@ bool QWidget::isActiveWindow() const
         }
     }
 
+    // Check for an active window container
+    if (QWindow *ww = QGuiApplication::focusWindow()) {
+        while (ww) {
+            QWidgetWindow *qww = qobject_cast<QWidgetWindow *>(ww);
+            QWindowContainer *qwc = qww ? qobject_cast<QWindowContainer *>(qww->widget()) : 0;
+            if (qwc && qwc->topLevelWidget() == tlw)
+                return true;
+            ww = ww->parent();
+        }
+    }
+
     // Check if platform adaptation thinks the window is active. This is necessary for
     // example in case of ActiveQt servers that are embedded into another application.
     // Those are separate processes that are not part of the parent application Qt window/widget
@@ -7243,10 +7262,19 @@ void QWidget::setVisible(bool visible)
             create();
         }
 
-#if defined(Q_WS_X11)
-        if (windowType() == Qt::Window)
-            QApplicationPrivate::applyX11SpecificCommandLineArguments(this);
-#endif
+        // Handling of the -qwindowgeometry, -geometry command line arguments
+        if (windowType() == Qt::Window && windowHandle()) {
+            static bool done = false;
+            if (!done) {
+                done = true;
+                const QRect oldGeometry = frameGeometry();
+                const QRect geometry = QGuiApplicationPrivate::applyWindowGeometrySpecification(oldGeometry, windowHandle());
+                if (oldGeometry.size() != geometry.size())
+                    resize(geometry.size());
+                if (geometry.topLeft() != oldGeometry.topLeft())
+                    move(geometry.topLeft());
+            } // done
+        }
 
         bool wasResized = testAttribute(Qt::WA_Resized);
         Qt::WindowStates initialWindowState = windowState();
@@ -8186,7 +8214,7 @@ bool QWidget::event(QEvent *event)
 #ifndef QT_NO_TOOLTIP
     case QEvent::ToolTip:
         if (!d->toolTip.isEmpty())
-            QToolTip::showText(static_cast<QHelpEvent*>(event)->globalPos(), d->toolTip, this);
+            QToolTip::showText(static_cast<QHelpEvent*>(event)->globalPos(), d->toolTip, this, QRect(), d->toolTipDuration);
         else
             event->ignore();
         break;
@@ -8427,8 +8455,6 @@ void QWidget::mouseReleaseEvent(QMouseEvent *event)
 /*!
     This event handler, for event \a event, can be reimplemented in a
     subclass to receive mouse double click events for the widget.
-
-    The default implementation generates a normal mouse press event.
 
     \note The widget will also receive mouse press and mouse release
     events in addition to the double click event. It is up to the
@@ -9232,6 +9258,10 @@ void QWidget::setSizePolicy(QSizePolicy policy)
     setAttribute(Qt::WA_WState_OwnSizePolicy);
     if (policy == d->size_policy)
         return;
+
+    if (d->size_policy.retainSizeWhenHidden() != policy.retainSizeWhenHidden())
+        d->retainSizeWhenHiddenChanged = 1;
+
     d->size_policy = policy;
 
 #ifndef QT_NO_GRAPHICSVIEW
@@ -9242,6 +9272,7 @@ void QWidget::setSizePolicy(QSizePolicy policy)
 #endif
 
     updateGeometry();
+    d->retainSizeWhenHiddenChanged = 0;
 
     if (isWindow() && d->maybeTopData())
         d->topData()->sizeAdjusted = false;
@@ -9370,7 +9401,9 @@ void QWidgetPrivate::updateGeometry_helper(bool forceUpdate)
         widgetItem->invalidateSizeCache();
     QWidget *parent;
     if (forceUpdate || !extra || extra->minw != extra->maxw || extra->minh != extra->maxh) {
-        if (!q->isWindow() && !q->isHidden() && (parent = q->parentWidget())) {
+        const int isHidden = q->isHidden() && !size_policy.retainSizeWhenHidden() && !retainSizeWhenHiddenChanged;
+
+        if (!q->isWindow() && !isHidden && (parent = q->parentWidget())) {
             if (parent->d_func()->layout)
                 parent->d_func()->layout->invalidate();
             else if (parent->isVisible())
@@ -9870,11 +9903,16 @@ void QWidget::update()
 */
 void QWidget::update(const QRect &rect)
 {
-    if (!isVisible() || !updatesEnabled() || rect.isEmpty())
+    if (!isVisible() || !updatesEnabled())
+        return;
+
+    QRect r = rect & QWidget::rect();
+
+    if (r.isEmpty())
         return;
 
     if (testAttribute(Qt::WA_WState_InPaintEvent)) {
-        QApplication::postEvent(this, new QUpdateLaterEvent(rect));
+        QApplication::postEvent(this, new QUpdateLaterEvent(r));
         return;
     }
 
@@ -9887,9 +9925,9 @@ void QWidget::update(const QRect &rect)
 #endif // Q_WS_MAC
         QTLWExtra *tlwExtra = window()->d_func()->maybeTopData();
         if (tlwExtra && !tlwExtra->inTopLevelResize && tlwExtra->backingStore)
-            tlwExtra->backingStoreTracker->markDirty(rect, this);
+            tlwExtra->backingStoreTracker->markDirty(r, this);
     } else {
-        d_func()->repaint_sys(rect);
+        d_func()->repaint_sys(r);
     }
 }
 
@@ -9900,11 +9938,16 @@ void QWidget::update(const QRect &rect)
 */
 void QWidget::update(const QRegion &rgn)
 {
-    if (!isVisible() || !updatesEnabled() || rgn.isEmpty())
+    if (!isVisible() || !updatesEnabled())
+        return;
+
+    QRegion r = rgn & QWidget::rect();
+
+    if (r.isEmpty())
         return;
 
     if (testAttribute(Qt::WA_WState_InPaintEvent)) {
-        QApplication::postEvent(this, new QUpdateLaterEvent(rgn));
+        QApplication::postEvent(this, new QUpdateLaterEvent(r));
         return;
     }
 
@@ -9917,9 +9960,9 @@ void QWidget::update(const QRegion &rgn)
 #endif // Q_WS_MAC
         QTLWExtra *tlwExtra = window()->d_func()->maybeTopData();
         if (tlwExtra && !tlwExtra->inTopLevelResize && tlwExtra->backingStore)
-            tlwExtra->backingStoreTracker->markDirty(rgn, this);
+            tlwExtra->backingStoreTracker->markDirty(r, this);
     } else {
-        d_func()->repaint_sys(rgn);
+        d_func()->repaint_sys(r);
     }
 }
 
@@ -9989,6 +10032,13 @@ void QWidget::setAttribute(Qt::WidgetAttribute attribute, bool on)
             return;
     }
 #endif
+
+    // Don't set WA_NativeWindow on platforms that don't support it
+    if (attribute == Qt::WA_NativeWindow) {
+        QPlatformIntegration *platformIntegration = QGuiApplicationPrivate::platformIntegration();
+        if (!platformIntegration->hasCapability(QPlatformIntegration::NativeWidgets))
+            return;
+    }
 
     setAttribute_internal(attribute, on, data, d);
 
@@ -10094,6 +10144,8 @@ void QWidget::setAttribute(Qt::WidgetAttribute attribute, bool on)
         break; }
     case Qt::WA_NativeWindow: {
         d->createTLExtra();
+        if (on)
+            d->createTLSysExtra();
 #ifndef QT_NO_IM
         QWidget *focusWidget = d->effectiveFocusWidget();
         if (on && !internalWinId() && hasFocus()
@@ -10395,6 +10447,30 @@ QString QWidget::toolTip() const
     Q_D(const QWidget);
     return d->toolTip;
 }
+
+/*!
+  \property QWidget::toolTipDuration
+  \brief the widget's tooltip duration
+  \since 5.2
+
+  Specifies how long time the tooltip will be displayed, in milliseconds.
+  If the value is -1 (default) the duration is calculated depending on the length of the tooltip.
+
+  \sa toolTip
+*/
+
+void QWidget::setToolTipDuration(int msec)
+{
+    Q_D(QWidget);
+    d->toolTipDuration = msec;
+}
+
+int QWidget::toolTipDuration() const
+{
+    Q_D(const QWidget);
+    return d->toolTipDuration;
+}
+
 #endif // QT_NO_TOOLTIP
 
 

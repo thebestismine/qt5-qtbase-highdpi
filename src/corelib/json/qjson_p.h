@@ -60,8 +60,10 @@
 #include <qatomic.h>
 #include <qstring.h>
 #include <qendian.h>
+#include <qnumeric.h>
 
 #include <limits.h>
+#include <limits>
 
 QT_BEGIN_NAMESPACE
 
@@ -543,6 +545,9 @@ public:
 class Value
 {
 public:
+    enum {
+        MaxSize = (1<<27) - 1
+    };
     union {
         uint _dummy;
         qle_bitfield<0, 3> type;
@@ -564,7 +569,7 @@ public:
 
     bool isValid(const Base *b) const;
 
-    static int requiredStorage(const QJsonValue &v, bool *compressed);
+    static int requiredStorage(QJsonValue &v, bool *compressed);
     static uint valueToStore(const QJsonValue &v, uint offset);
     static void copyData(const QJsonValue &v, char *dest, bool compressed);
 };

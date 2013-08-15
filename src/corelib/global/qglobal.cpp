@@ -72,7 +72,7 @@
 #  include <envLib.h>
 #endif
 
-#if defined(Q_OS_MAC) && !defined(Q_OS_IOS)
+#if defined(Q_OS_MACX)
 #include <CoreServices/CoreServices.h>
 #endif
 
@@ -235,6 +235,12 @@ Q_CORE_EXPORT void *qMemSet(void *dest, int c, size_t n);
 
 /*!
     \fn QFlags &QFlags::operator&=(uint mask)
+
+    \overload
+*/
+
+/*!
+    \fn QFlags &QFlags::operator&=(Enum mask)
 
     \overload
 */
@@ -505,7 +511,7 @@ Q_CORE_EXPORT void *qMemSet(void *dest, int c, size_t n);
     the application is compiled using Forte Developer, or Sun Studio
     C++.  The header file also declares a range of macros (Q_OS_*)
     that are defined for the specified platforms. For example,
-    Q_OS_X11 which is defined for the X Window System.
+    Q_OS_UNIX which is defined for the Unix-based systems.
 
     The purpose of these macros is to enable programmers to add
     compiler or platform specific code to their application.
@@ -928,8 +934,8 @@ bool qSharedBuild() Q_DECL_NOTHROW
     \endlist
 
     Some constants are defined only on certain platforms. You can use
-    the preprocessor symbols Q_OS_WIN and Q_OS_MAC to test that
-    the application is compiled under Windows or Mac.
+    the preprocessor symbols Q_OS_WIN and Q_OS_OSX to test that
+    the application is compiled under Windows or OS X.
 
     \sa QLibraryInfo
 */
@@ -1036,7 +1042,7 @@ bool qSharedBuild() Q_DECL_NOTHROW
     \enum QSysInfo::MacVersion
 
     This enum provides symbolic names for the various versions of the
-    Macintosh operating system. On Mac, the
+    OS X operating system. On OS X, the
     QSysInfo::MacintoshVersion variable gives the version of the
     system on which the application is run.
 
@@ -1044,12 +1050,13 @@ bool qSharedBuild() Q_DECL_NOTHROW
     \value MV_10_0     Mac OS X 10.0 (unsupported)
     \value MV_10_1     Mac OS X 10.1 (unsupported)
     \value MV_10_2     Mac OS X 10.2 (unsupported)
-    \value MV_10_3     Mac OS X 10.3
-    \value MV_10_4     Mac OS X 10.4
-    \value MV_10_5     Mac OS X 10.5
+    \value MV_10_3     Mac OS X 10.3 (unsupported)
+    \value MV_10_4     Mac OS X 10.4 (unsupported)
+    \value MV_10_5     Mac OS X 10.5 (unsupported)
     \value MV_10_6     Mac OS X 10.6
-    \value MV_10_7     Mac OS X 10.7
-    \value MV_10_8     Mac OS X 10.8
+    \value MV_10_7     OS X 10.7
+    \value MV_10_8     OS X 10.8
+    \value MV_10_9     OS X 10.9
     \value MV_Unknown  An unknown and currently unsupported platform
 
     \value MV_CHEETAH  Apple codename for MV_10_0
@@ -1061,6 +1068,7 @@ bool qSharedBuild() Q_DECL_NOTHROW
     \value MV_SNOWLEOPARD  Apple codename for MV_10_6
     \value MV_LION     Apple codename for MV_10_7
     \value MV_MOUNTAINLION Apple codename for MV_10_8
+    \value MV_MAVERICKS    Apple codename for MV_10_9
 
     \sa WinVersion
 */
@@ -1069,8 +1077,31 @@ bool qSharedBuild() Q_DECL_NOTHROW
     \macro Q_OS_DARWIN
     \relates <QtGlobal>
 
-    Defined on Darwin OS (synonym for Q_OS_MAC).
+    Defined on Darwin-based operating systems such as OS X and iOS,
+    including any open source version(s) of Darwin.
 */
+
+/*!
+    \macro Q_OS_MAC
+    \relates <QtGlobal>
+
+    Defined on Darwin-based operating systems distributed by Apple, which
+    currently includes OS X and iOS, but not the open source version.
+ */
+
+/*!
+    \macro Q_OS_OSX
+    \relates <QtGlobal>
+
+    Defined on OS X.
+ */
+
+/*!
+    \macro Q_OS_IOS
+    \relates <QtGlobal>
+
+    Defined on iOS.
+ */
 
 /*!
     \macro Q_OS_WIN
@@ -1395,13 +1426,6 @@ bool qSharedBuild() Q_DECL_NOTHROW
 */
 
 /*!
-  \macro Q_OS_MAC
-  \relates <QtGlobal>
-
-  Defined on MAC OS (synonym for Darwin).
- */
-
-/*!
     \macro Q_PROCESSOR_ALPHA
     \relates <QtGlobal>
 
@@ -1646,7 +1670,7 @@ static const unsigned int qt_one = 1;
 const int QSysInfo::ByteOrder = ((*((unsigned char *) &qt_one) == 0) ? BigEndian : LittleEndian);
 #endif
 
-#if defined(Q_OS_MAC) && !defined(Q_OS_IOS)
+#if defined(Q_OS_MACX)
 
 QT_BEGIN_INCLUDE_NAMESPACE
 #include "private/qcore_mac_p.h"
@@ -1668,13 +1692,13 @@ Q_CORE_EXPORT void qt_mac_to_pascal_string(QString s, Str255 str, TextEncoding e
 Q_CORE_EXPORT QString qt_mac_from_pascal_string(const Str255 pstr) {
     return QCFString(CFStringCreateWithPascalString(0, pstr, CFStringGetSystemEncoding()));
 }
-#endif // defined(Q_OS_MAC) && !defined(Q_OS_IOS)
+#endif // defined(Q_OS_MACX)
 
 #if defined(Q_OS_MAC)
 
 QSysInfo::MacVersion QSysInfo::macVersion()
 {
-#ifndef Q_OS_IOS
+#ifdef Q_OS_MACX
     SInt32 gestalt_version;
     if (Gestalt(gestaltSystemVersion, &gestalt_version) == noErr) {
         return QSysInfo::MacVersion(((gestalt_version & 0x00F0) >> 4) + 2);
@@ -2044,11 +2068,11 @@ namespace {
     // version in portable code. However, it's impossible to do that if
     // _GNU_SOURCE is defined so we use C++ overloading to decide what to do
     // depending on the return type
-    static inline QString fromstrerror_helper(int, const QByteArray &buf)
+    static inline Q_DECL_UNUSED QString fromstrerror_helper(int, const QByteArray &buf)
     {
         return QString::fromLocal8Bit(buf);
     }
-    static inline QString fromstrerror_helper(const char *str, const QByteArray &)
+    static inline Q_DECL_UNUSED QString fromstrerror_helper(const char *str, const QByteArray &)
     {
         return QString::fromLocal8Bit(str);
     }

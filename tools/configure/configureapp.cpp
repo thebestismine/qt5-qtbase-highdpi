@@ -92,22 +92,6 @@ static inline void promptKeyPress()
         exit(0);      // Exit cleanly for Ctrl+C
 }
 
-bool writeToFile(const char* text, const QString &filename)
-{
-    QByteArray symFile(text);
-    QFile file(filename);
-    QDir dir(QFileInfo(file).absoluteDir());
-    if (!dir.exists())
-        dir.mkpath(dir.absolutePath());
-    if (!file.open(QFile::WriteOnly | QFile::Text)) {
-        cout << "Couldn't write to " << qPrintable(filename) << ": " << qPrintable(file.errorString())
-             << endl;
-        return false;
-    }
-    file.write(symFile);
-    return true;
-}
-
 Configure::Configure(int& argc, char** argv)
 {
     // Default values for indentation
@@ -151,50 +135,14 @@ Configure::Configure(int& argc, char** argv)
     const QString installPath = buildPath;
 #endif
     if (sourceDir != buildDir) { //shadow builds!
-        if (QStandardPaths::findExecutable(QStringLiteral("perl.exe")).isEmpty()) {
-            cout << "Error: Creating a shadow build of Qt requires" << endl
-                 << "perl to be in the PATH environment";
-            exit(0); // Exit cleanly for Ctrl+C
-        }
-
-        cout << "Preparing build tree..." << endl;
         QDir(buildPath).mkpath("bin");
 
-        { //make a syncqt script(s) that can be used in the shadow
-            QFile syncqt(buildPath + "/bin/syncqt");
-            // no QFile::Text, just in case the perl interpreter can't cope with them (unlikely)
-            if (syncqt.open(QFile::WriteOnly)) {
-                QTextStream stream(&syncqt);
-                stream << "#!/usr/bin/perl -w" << endl
-                       << "require \"" << sourcePath + "/bin/syncqt\";" << endl;
-            }
-            QFile syncqt_bat(buildPath + "/bin/syncqt.bat");
-            if (syncqt_bat.open(QFile::WriteOnly | QFile::Text)) {
-                QTextStream stream(&syncqt_bat);
-                stream << "@echo off" << endl
-                       << "call " << QDir::toNativeSeparators(sourcePath + "/bin/syncqt.bat")
-                       << " %*" << endl;
-                syncqt_bat.close();
-            }
-        }
-
-        //copy the mkspecs
         buildDir.mkpath("mkspecs");
-        if (!Environment::cpdir(sourcePath + "/mkspecs", buildPath + "/mkspecs")){
-            cout << "Couldn't copy mkspecs!" << sourcePath << " " << buildPath << endl;
-            dictionary["DONE"] = "error";
-            return;
-        }
-
-        buildDir.mkpath("doc");
-        if (!Environment::cpdir(sourcePath + "/doc/global", buildPath + "/doc/global")) {
-            cout << "Couldn't copy global documentation!" << sourcePath << " " << buildPath << endl;
-            dictionary["DONE"] = "error";
-            return;
-        }
     }
 
     defaultBuildParts << QStringLiteral("libs") << QStringLiteral("tools") << QStringLiteral("examples");
+    allBuildParts = defaultBuildParts;
+    allBuildParts << QStringLiteral("tests");
     dictionary[ "QT_SOURCE_TREE" ]    = sourcePath;
     dictionary[ "QT_BUILD_TREE" ]     = buildPath;
     dictionary[ "QT_INSTALL_PREFIX" ] = installPath;
@@ -243,6 +191,7 @@ Configure::Configure(int& argc, char** argv)
     dictionary[ "QT_GLIB" ]         = "no";
     dictionary[ "QT_ICONV" ]        = "auto";
     dictionary[ "QT_INOTIFY" ]      = "auto";
+    dictionary[ "QT_EVENTFD" ]      = "auto";
     dictionary[ "QT_CUPS" ]         = "auto";
     dictionary[ "CFG_GCC_SYSROOT" ] = "yes";
     dictionary[ "SLOG2" ]           = "no";
@@ -292,6 +241,8 @@ Configure::Configure(int& argc, char** argv)
     dictionary[ "BUILDTYPE" ]      = "none";
 
     dictionary[ "BUILDDEV" ]        = "no";
+
+    dictionary[ "COMPILE_EXAMPLES" ] = "yes";
 
     dictionary[ "C++11" ]           = "auto";
 
@@ -408,11 +359,15 @@ QString Configure::firstLicensePath()
 
 void Configure::parseCmdLine()
 {
+    if (configCmdLine.size() && configCmdLine.at(0) == "-top-level") {
+        dictionary[ "TOPLEVEL" ] = "yes";
+        configCmdLine.removeAt(0);
+    }
+
     int argCount = configCmdLine.size();
     int i = 0;
     const QStringList imageFormats = QStringList() << "gif" << "png" << "jpeg";
 
-#if !defined(EVAL)
     if (argCount < 1) // skip rest if no arguments
         ;
     else if (configCmdLine.at(i) == "-redo") {
@@ -433,7 +388,6 @@ void Configure::parseCmdLine()
         i = 0;
     }
     argCount = configCmdLine.size();
-#endif
 
     bool isDeviceMkspec = false;
 
@@ -458,7 +412,6 @@ void Configure::parseCmdLine()
             || configCmdLine.at(i) == "-?")
             dictionary[ "HELP" ] = "yes";
 
-#if !defined(EVAL)
         else if (configCmdLine.at(i) == "-qconfig") {
             ++i;
             if (i == argCount)
@@ -478,6 +431,13 @@ void Configure::parseCmdLine()
             dictionary[ "BUILDALL" ] = "yes";
         else if (configCmdLine.at(i) == "-force-debug-info")
             dictionary[ "FORCEDEBUGINFO" ] = "yes";
+
+        else if (configCmdLine.at(i) == "-compile-examples") {
+            dictionary[ "COMPILE_EXAMPLES" ] = "yes";
+        } else if (configCmdLine.at(i) == "-no-compile-examples") {
+            dictionary[ "COMPILE_EXAMPLES" ] = "no";
+        }
+
         else if (configCmdLine.at(i) == "-c++11")
             dictionary[ "C++11" ] = "yes";
         else if (configCmdLine.at(i) == "-no-c++11")
@@ -510,9 +470,6 @@ void Configure::parseCmdLine()
             dictionary[ "FORCE_ASSERTS" ] = "yes";
         }
 
-
-#endif
-
         else if (configCmdLine.at(i) == "-platform") {
             ++i;
             if (i == argCount)
@@ -532,8 +489,6 @@ void Configure::parseCmdLine()
             // do nothing
         }
 
-
-#if !defined(EVAL)
         else if (configCmdLine.at(i) == "-no-zlib") {
             // No longer supported since Qt 4.4.0
             // But save the information for later so that we can print a warning
@@ -790,7 +745,7 @@ void Configure::parseCmdLine()
         else if (configCmdLine.at(i).startsWith("-no-imageformat-") &&
                  imageFormats.contains(configCmdLine.at(i).section('-', 3)))
             dictionary[ configCmdLine.at(i).section('-', 3).toUpper() ] = "no";
-#endif
+
         // IDE project generation -----------------------------------
         else if (configCmdLine.at(i) == "-no-vcproj")
             dictionary[ "VCPROJFILES" ] = "no";
@@ -805,7 +760,6 @@ void Configure::parseCmdLine()
             dictionary[ "NATIVE_GESTURES" ] = "yes";
         else if (configCmdLine.at(i) == "-no-native-gestures")
             dictionary[ "NATIVE_GESTURES" ] = "no";
-#if !defined(EVAL)
         // Others ---------------------------------------------------
         else if (configCmdLine.at(i) == "-widgets")
             dictionary[ "WIDGETS" ] = "yes";
@@ -908,6 +862,10 @@ void Configure::parseCmdLine()
             dictionary[ "WERROR" ] = "yes";
         } else if (configCmdLine.at(i) == "-no-warnings-are-errors") {
             dictionary[ "WERROR" ] = "no";
+        } else if (configCmdLine.at(i) == "-no-eventfd") {
+            dictionary[ "QT_EVENTFD" ] = "no";
+        } else if (configCmdLine.at(i) == "-eventfd") {
+            dictionary[ "QT_EVENTFD" ] = "yes";
         }
 
         // Work around compiler nesting limitation
@@ -983,7 +941,7 @@ void Configure::parseCmdLine()
         } else if (configCmdLine.at(i).startsWith("OPENSSL_LIBS_RELEASE=")) {
             opensslLibsRelease = configCmdLine.at(i);
         } else if (configCmdLine.at(i).startsWith("OPENSSL_PATH=")) {
-            opensslPath = QDir::fromNativeSeparators(configCmdLine.at(i));
+            opensslPath = QDir::fromNativeSeparators(configCmdLine.at(i).section("=", 1));
         } else if (configCmdLine.at(i).startsWith("PSQL_LIBS=")) {
             psqlLibs = configCmdLine.at(i);
         } else if (configCmdLine.at(i).startsWith("SYBASE=")) {
@@ -991,9 +949,9 @@ void Configure::parseCmdLine()
         } else if (configCmdLine.at(i).startsWith("SYBASE_LIBS=")) {
             sybaseLibs = configCmdLine.at(i);
         } else if (configCmdLine.at(i).startsWith("DBUS_PATH=")) {
-            dbusPath = QDir::fromNativeSeparators(configCmdLine.at(i));
+            dbusPath = QDir::fromNativeSeparators(configCmdLine.at(i).section("=", 1));
         } else if (configCmdLine.at(i).startsWith("MYSQL_PATH=")) {
-            mysqlPath = QDir::fromNativeSeparators(configCmdLine.at(i));
+            mysqlPath = QDir::fromNativeSeparators(configCmdLine.at(i).section("=", 1));
         } else if (configCmdLine.at(i).startsWith("ZLIB_LIBS=")) {
             zlibLibs = QDir::fromNativeSeparators(configCmdLine.at(i));
         }
@@ -1020,12 +978,22 @@ void Configure::parseCmdLine()
             ++i;
             if (i == argCount)
                 break;
-            buildParts += configCmdLine.at(i);
+            QString part = configCmdLine.at(i);
+            if (!allBuildParts.contains(part)) {
+                cout << "Unknown part " << part << " passed to -make." << endl;
+                dictionary["DONE"] = "error";
+            }
+            buildParts += part;
         } else if (configCmdLine.at(i) == "-nomake") {
             ++i;
             if (i == argCount)
                 break;
-            nobuildParts.append(configCmdLine.at(i));
+            QString part = configCmdLine.at(i);
+            if (!allBuildParts.contains(part)) {
+                cout << "Unknown part " << part << " passed to -nomake." << endl;
+                dictionary["DONE"] = "error";
+            }
+            nobuildParts += part;
         }
 
         else if (configCmdLine.at(i) == "-skip") {
@@ -1166,6 +1134,13 @@ void Configure::parseCmdLine()
             dictionary[ "QT_HOST_BINS" ] = configCmdLine.at(i);
         }
 
+        else if (configCmdLine.at(i) == "-hostlibdir") {
+            ++i;
+            if (i == argCount)
+                break;
+            dictionary[ "QT_HOST_LIBS" ] = configCmdLine.at(i);
+        }
+
         else if (configCmdLine.at(i) == "-hostdatadir") {
             ++i;
             if (i == argCount)
@@ -1300,8 +1275,6 @@ void Configure::parseCmdLine()
             cout << "Unknown option " << configCmdLine.at(i) << endl;
             break;
         }
-
-#endif
     }
 
     // Ensure that QMAKESPEC exists in the mkspecs folder
@@ -1338,7 +1311,8 @@ void Configure::parseCmdLine()
             dictionary[ "QMAKESPEC" ].endsWith("-msvc2005") ||
             dictionary[ "QMAKESPEC" ].endsWith("-msvc2008") ||
             dictionary[ "QMAKESPEC" ].endsWith("-msvc2010") ||
-            dictionary[ "QMAKESPEC" ].endsWith("-msvc2012")) {
+            dictionary[ "QMAKESPEC" ].endsWith("-msvc2012") ||
+            dictionary[ "QMAKESPEC" ].endsWith("-msvc2013")) {
             if (dictionary[ "MAKE" ].isEmpty()) dictionary[ "MAKE" ] = "nmake";
             dictionary[ "QMAKEMAKEFILE" ] = "Makefile.win32";
         } else if (dictionary[ "QMAKESPEC" ] == QString("win32-g++")) {
@@ -1349,18 +1323,6 @@ void Configure::parseCmdLine()
             dictionary[ "QMAKEMAKEFILE" ] = "Makefile.win32";
         }
     }
-
-    // Tell the user how to proceed building Qt after configure finished its job
-    dictionary["QTBUILDINSTRUCTION"] = dictionary["MAKE"];
-    if (dictionary.contains("XQMAKESPEC")) {
-        if (dictionary["XQMAKESPEC"].startsWith("wince")) {
-            dictionary["QTBUILDINSTRUCTION"] =
-                QString("setcepaths.bat ") + dictionary["XQMAKESPEC"] + QString(" && ") + dictionary["MAKE"];
-        }
-    }
-
-    // Tell the user how to confclean before the next configure
-    dictionary["CONFCLEANINSTRUCTION"] = dictionary["MAKE"] + QString(" confclean");
 
     if (isDeviceMkspec) {
         const QStringList devices = mkspecs.filter("devices/", Qt::CaseInsensitive);
@@ -1425,7 +1387,6 @@ void Configure::parseCmdLine()
     if (dictionary["FORCE_ASSERTS"] == "yes")
         qtConfig += "force_asserts";
 
-#if !defined(EVAL)
     for (QStringList::Iterator dis = disabledModules.begin(); dis != disabledModules.end(); ++dis) {
         modules.removeAll((*dis));
     }
@@ -1440,10 +1401,8 @@ void Configure::parseCmdLine()
 
     if ((dictionary[ "REDO" ] != "yes") && (dictionary[ "HELP" ] != "yes"))
         saveCmdLine();
-#endif
 }
 
-#if !defined(EVAL)
 void Configure::validateArgs()
 {
     // Validate the specified config
@@ -1490,8 +1449,6 @@ void Configure::validateArgs()
     else
         qmakeConfig += (*config) + "-config";
 }
-#endif
-
 
 // Output helper functions --------------------------------[ Start ]-
 /*!
@@ -1601,8 +1558,8 @@ void Configure::desc(const char *mark_option, const char *mark, const char *opti
 void Configure::applySpecSpecifics()
 {
     if (dictionary.contains("XQMAKESPEC")) {
-        //Disable building tools, docs and translations when cross compiling.
-        nobuildParts << "docs" << "translations" << "tools";
+        //Disable building tools when cross compiling.
+        nobuildParts << "tools";
     }
 
     if (dictionary.value("XQMAKESPEC").startsWith("wince")) {
@@ -1648,6 +1605,7 @@ void Configure::applySpecSpecifics()
     } else if ((platform() == QNX) || (platform() == BLACKBERRY)) {
         dictionary["STACK_PROTECTOR_STRONG"] = "auto";
         dictionary["SLOG2"]                 = "auto";
+        dictionary["QT_XKBCOMMON"]          = "no";
     } else if (platform() == ANDROID) {
         dictionary[ "REDUCE_EXPORTS" ]      = "yes";
         dictionary[ "BUILD" ]               = "release";
@@ -1656,6 +1614,7 @@ void Configure::applySpecSpecifics()
         dictionary[ "ANGLE" ]               = "no";
         dictionary[ "REDUCE_RELOCATIONS" ]  = "yes";
         dictionary[ "QT_GETIFADDRS" ]       = "no";
+        dictionary[ "QT_XKBCOMMON" ]        = "no";
     }
 }
 
@@ -1693,9 +1652,9 @@ bool Configure::displayHelp()
         desc(       "-testsdir <dir>",                  "Tests will be installed to <dir>\n(default PREFIX/tests)\n");
 
         desc(       "-hostbindir <dir>",                "Host executables will be installed to <dir>\n(default HOSTPREFIX/bin)");
+        desc(       "-hostlibdir <dir>",                "Host libraries will be installed to <dir>\n(default HOSTPREFIX/lib)");
         desc(       "-hostdatadir <dir>",               "Data used by qmake will be installed to <dir>\n(default HOSTPREFIX)");
 
-#if !defined(EVAL)
         desc("\nConfigure options:\n\n");
 
         desc(" The defaults (*) are usually acceptable. A plus (+) denotes a default value"
@@ -1728,6 +1687,8 @@ bool Configure::displayHelp()
         desc(                   "-nomake <part>",       "Exclude part from the list of parts to be built.\n");
 
         desc(                   "-skip <module>",       "Exclude an entire module from the build.\n");
+
+        desc(                   "-no-compile-examples", "Install only the sources of examples.\n");
 
         desc("WIDGETS", "no", "-no-widgets",            "Disable Qt Widgets module.\n");
         desc("GUI", "no", "-no-gui",                    "Disable Qt GUI module.\n");
@@ -1766,7 +1727,6 @@ bool Configure::displayHelp()
         desc("OPENVG", "no","-no-openvg",               "Disables OpenVG functionality.");
         desc("OPENVG", "yes","-openvg",                 "Enables OpenVG functionality.\n");
         desc(                   "-force-asserts",       "Activate asserts in release mode.\n");
-#endif
         desc(                   "-platform <spec>",     "The operating system and compiler you are building on.\n(default %QMAKESPEC%)\n");
         desc(                   "-xplatform <spec>",    "The operating system and compiler you are cross compiling to.\n");
         desc(                   "",                     "See the README file for a list of supported operating systems and compilers.\n", false, ' ');
@@ -1787,6 +1747,9 @@ bool Configure::displayHelp()
         desc("QT_INOTIFY",  "yes",     "-inotify",      "Explicitly enable Qt inotify(7) support.");
         desc("QT_INOTIFY",  "no",      "-no-inotify",   "Explicitly disable Qt inotify(7) support.\n");
 
+        desc("QT_EVENTFD",  "yes",     "-eventfd",      "Enable eventfd(7) support in the UNIX event loop.");
+        desc("QT_EVENTFD",  "no",      "-no-eventfd",   "Disable eventfd(7) support in the UNIX event loop.\n");
+
         desc("LARGE_FILE",  "yes",     "-largefile",    "Enables Qt to access files larger than 4 GB.\n");
 
         desc("FONT_CONFIG", "yes",     "-fontconfig",   "Build with FontConfig support.");
@@ -1804,18 +1767,15 @@ bool Configure::displayHelp()
         desc("WERROR",      "yes",     "-warnings-are-errors",   "Make warnings be treated as errors.");
         desc("WERROR",      "no",      "-no-warnings-are-errors","Make warnings be treated normally.");
 
-#if !defined(EVAL)
         desc(                   "-qtnamespace <name>", "Wraps all Qt library code in 'namespace name {...}'.");
         desc(                   "-qtlibinfix <infix>",  "Renames all Qt* libs to Qt*<infix>.\n");
         desc(                   "-D <define>",          "Add an explicit define to the preprocessor.");
         desc(                   "-I <includepath>",     "Add an explicit include path.");
         desc(                   "-L <librarypath>",     "Add an explicit library path.");
         desc(                   "-l <libraryname>",     "Add an explicit library name, residing in a librarypath.\n");
-#endif
 
         desc(                   "-help, -h, -?",        "Display this information.\n");
 
-#if !defined(EVAL)
         // 3rd party stuff options go below here --------------------------------------------------------------------------------
         desc("Third Party Libraries:\n\n");
 
@@ -1850,7 +1810,6 @@ bool Configure::displayHelp()
         desc("ANGLE", "yes",       "-angle",            "Use the ANGLE implementation of OpenGL ES 2.0.");
         desc("ANGLE", "d3d11",     "-angle-d3d11",      "Use the Direct3D 11-based ANGLE implementation of OpenGL ES 2.0.");
         desc("ANGLE", "no",        "-no-angle",         "Do not use ANGLE.\nSee http://code.google.com/p/angleproject/\n");
-#endif
         // Qt\Windows only options go below here --------------------------------------------------------------------------------
         desc("\nQt for Windows only:\n\n");
 
@@ -1862,11 +1821,10 @@ bool Configure::displayHelp()
 
         desc("PLUGIN_MANIFESTS", "no", "-no-plugin-manifests", "Do not embed manifests in plugins.");
         desc("PLUGIN_MANIFESTS", "yes", "-plugin-manifests",   "Embed manifests in plugins.\n");
-#if !defined(EVAL)
         desc("BUILD_QMAKE", "no", "-no-qmake",          "Do not compile qmake.");
         desc("BUILD_QMAKE", "yes", "-qmake",            "Compile qmake.\n");
 
-        desc("PROCESS", "partial", "-process",          "Generate top-level Makefiles/Project files.");
+        desc("PROCESS", "partial", "-process",          "Generate only top-level Makefile.");
         desc("PROCESS", "full", "-fully-process",       "Generate Makefiles/Project files for the entire Qt\ntree.");
         desc("PROCESS", "no", "-dont-process",          "Do not generate Makefiles/Project files.\n");
 
@@ -1923,7 +1881,6 @@ bool Configure::displayHelp()
             desc(               "",                     qPrintable(QString("  %1").arg(allConfigs.at(i))), false, ' ');
         printf("\n");
 */
-#endif
         desc(                   "-loadconfig <config>", "Run configure with the parameters from file configure_<config>.cache.");
         desc(                   "-saveconfig <config>", "Run configure and save the parameters in file configure_<config>.cache.");
         desc(                   "-redo",                "Run configure with the same parameters as last time.\n");
@@ -2013,8 +1970,7 @@ QString Configure::defaultTo(const QString &option)
         return "auto";
 
     if (option == "SYNCQT"
-        && (!QFile::exists(sourcePath + "/bin/syncqt") ||
-            !QFile::exists(sourcePath + "/bin/syncqt.bat")))
+        && (!QFile::exists(sourcePath + "/.git")))
         return "no";
 
     return "yes";
@@ -2181,6 +2137,8 @@ bool Configure::checkAvailability(const QString &part)
         available = tryCompileProject("unix/iconv") || tryCompileProject("unix/gnu-libiconv");
     } else if (part == "INOTIFY") {
         available = tryCompileProject("unix/inotify");
+    } else if (part == "QT_EVENTFD") {
+        available = tryCompileProject("unix/eventfd");
     } else if (part == "CUPS") {
         available = (platform() != WINDOWS) && (platform() != WINDOWS_CE) && tryCompileProject("unix/cups");
     } else if (part == "STACK_PROTECTOR_STRONG") {
@@ -2323,6 +2281,9 @@ void Configure::autoDetection()
         dictionary["SLOG2"] = checkAvailability("SLOG2") ? "yes" : "no";
     }
 
+    if (dictionary["QT_EVENTFD"] == "auto")
+        dictionary["QT_EVENTFD"] = checkAvailability("QT_EVENTFD") ? "yes" : "no";
+
     // Mark all unknown "auto" to the default value..
     for (QMap<QString,QString>::iterator i = dictionary.begin(); i != dictionary.end(); ++i) {
         if (i.value() == "auto")
@@ -2410,53 +2371,7 @@ bool Configure::verifyConfiguration()
     return true;
 }
 
-/*
- Things that affect the Qt API/ABI:
-   Options:
-     minimal-config small-config medium-config large-config full-config
-
-   Options:
-     debug release
-
- Things that do not affect the Qt API/ABI:
-     system-jpeg no-jpeg jpeg
-     system-png no-png png
-     system-zlib no-zlib zlib
-     no-gif gif
-     dll staticlib
-
-     nocrosscompiler
-     GNUmake
-     largefile
-     nis
-     nas
-     tablet
-
-     X11     : x11sm xinerama xcursor xfixes xrandr xrender fontconfig xkb
-     Embedded: embedded freetype
-*/
-void Configure::generateBuildKey()
-{
-    QString spec = dictionary["QMAKESPEC"];
-
-    QString compiler = "msvc"; // ICC is compatible
-    if (spec.endsWith("-g++"))
-        compiler = "mingw";
-    else if (spec.endsWith("-borland"))
-        compiler = "borland";
-
-    // Build options which changes the Qt API/ABI
-    QStringList build_options;
-    if (!dictionary["QCONFIG"].isEmpty())
-        build_options += dictionary["QCONFIG"] + "-config ";
-    build_options.sort();
-
-    // Sorted defines that start with QT_NO_
-    QStringList build_defines = qmakeDefines.filter(QRegExp("^QT_NO_"));
-    build_defines.sort();
-}
-
-void Configure::generateSystemVars()
+void Configure::prepareConfigTests()
 {
     // Generate an empty .qmake.cache file for config.tests
     QDir buildDir(buildPath);
@@ -2639,6 +2554,8 @@ void Configure::generateOutputVars()
     if (!buildParts.contains("libs"))
         buildParts += "libs";
     buildParts.removeDuplicates();
+    if (dictionary[ "COMPILE_EXAMPLES" ] == "yes")
+        qmakeConfig += "compile_examples";
 
     if (dictionary["MSVC_MP"] == "yes")
         qmakeConfig += "msvc_mp";
@@ -2722,6 +2639,9 @@ void Configure::generateOutputVars()
     if (dictionary["QT_INOTIFY"] == "yes")
         qtConfig += "inotify";
 
+    if (dictionary["QT_EVENTFD"] == "yes")
+        qtConfig += "eventfd";
+
     if (dictionary["FONT_CONFIG"] == "yes") {
         qtConfig += "fontconfig";
         qmakeVars += "QMAKE_CFLAGS_FONTCONFIG =";
@@ -2795,13 +2715,19 @@ void Configure::generateOutputVars()
         } else if (opensslLibs.isEmpty()) {
             qmakeVars += QString("OPENSSL_LIBS    = -lssleay32 -llibeay32");
         }
-        if (!opensslPath.isEmpty())
-            qmakeVars += opensslPath;
+        if (!opensslPath.isEmpty()) {
+            qmakeVars += QString("OPENSSL_CFLAGS += -I%1/include").arg(opensslPath);
+            qmakeVars += QString("OPENSSL_LIBS += -L%1/lib").arg(opensslPath);
+        }
     }
-    if (dictionary[ "DBUS" ] != "no" && !dbusPath.isEmpty())
-        qmakeVars += dbusPath;
-    if (dictionary[ "SQL_MYSQL" ] != "no" && !mysqlPath.isEmpty())
-        qmakeVars += mysqlPath;
+    if (dictionary[ "DBUS" ] != "no" && !dbusPath.isEmpty()) {
+        qmakeVars += QString("QT_CFLAGS_DBUS = -I%1/include").arg(dbusPath);
+        qmakeVars += QString("QT_LIBS_DBUS = -L%1/lib").arg(dbusPath);
+    }
+    if (dictionary[ "SQL_MYSQL" ] != "no" && !mysqlPath.isEmpty()) {
+        qmakeVars += QString("QT_CFLAGS_MYSQL = -I%1/include").arg(mysqlPath);
+        qmakeVars += QString("QT_LFLAGS_MYSQL = -L%1/lib").arg(mysqlPath);
+    }
     if (!psqlLibs.isEmpty())
         qmakeVars += QString("QT_LFLAGS_PSQL=") + psqlLibs.section("=", 1);
     if (!zlibLibs.isEmpty())
@@ -2856,33 +2782,41 @@ void Configure::generateOutputVars()
     }
 }
 
-#if !defined(EVAL)
 void Configure::generateCachefile()
 {
     // Generate .qmake.cache
-    QFile cacheFile(buildPath + "/.qmake.cache");
-    if (cacheFile.open(QFile::WriteOnly | QFile::Text)) { // Truncates any existing file.
-        QTextStream cacheStream(&cacheFile);
+    {
+        FileWriter cacheStream(buildPath + "/.qmake.cache");
 
         cacheStream << "QT_SOURCE_TREE = " << formatPath(dictionary["QT_SOURCE_TREE"]) << endl;
         cacheStream << "QT_BUILD_TREE = " << formatPath(dictionary["QT_BUILD_TREE"]) << endl;
 
-        cacheStream.flush();
-        cacheFile.close();
+        if (!cacheStream.flush())
+            dictionary[ "DONE" ] = "error";
     }
 
     // Generate qmodule.pri
-    QFile moduleFile(dictionary[ "QT_BUILD_TREE" ] + "/mkspecs/qmodule.pri");
-    if (moduleFile.open(QFile::WriteOnly | QFile::Text)) { // Truncates any existing file.
-        QTextStream moduleStream(&moduleFile);
+    {
+        FileWriter moduleStream(dictionary[ "QT_BUILD_TREE" ] + "/mkspecs/qmodule.pri");
 
         moduleStream << "QT_BUILD_PARTS += " << buildParts.join(' ') << endl;
         if (!skipModules.isEmpty())
             moduleStream << "QT_SKIP_MODULES += " << skipModules.join(' ') << endl;
         moduleStream << endl;
 
+        moduleStream << "host_build {" << endl;
+        moduleStream << "    QT_CPU_FEATURES." << dictionary["QT_HOST_ARCH"] <<
+                                    " = " << dictionary["QT_HOST_CPU_FEATURES"] << endl;
+        moduleStream << "} else {" << endl;
+        moduleStream << "    QT_CPU_FEATURES." << dictionary["QT_ARCH"] <<
+                                    " = " << dictionary["QT_CPU_FEATURES"] << endl;
+        moduleStream << "}" << endl;
+
         if (dictionary["QT_EDITION"] != "QT_EDITION_OPENSOURCE")
             moduleStream << "DEFINES        *= QT_EDITION=QT_EDITION_DESKTOP" << endl;
+
+        if (dictionary["QT_XKBCOMMON"] == "no")
+            moduleStream << "DEFINES += QT_NO_XKBCOMMON" << endl;
 
         if (dictionary["CETEST"] == "yes") {
             moduleStream << "QT_CE_RAPI_INC  = " << formatPath(dictionary["QT_CE_RAPI_INC"]) << endl;
@@ -2933,8 +2867,8 @@ void Configure::generateCachefile()
         for (QStringList::Iterator var = qmakeVars.begin(); var != qmakeVars.end(); ++var)
             moduleStream << (*var) << endl;
 
-        moduleStream.flush();
-        moduleFile.close();
+        if (!moduleStream.flush())
+            dictionary[ "DONE" ] = "error";
     }
 }
 
@@ -3130,9 +3064,8 @@ bool Configure::compilerSupportsFlag(const QString &compilerAndArgs)
 void Configure::generateQConfigPri()
 {
     // Generate qconfig.pri
-    QFile configFile(dictionary[ "QT_BUILD_TREE" ] + "/mkspecs/qconfig.pri");
-    if (configFile.open(QFile::WriteOnly | QFile::Text)) { // Truncates any existing file.
-        QTextStream configStream(&configFile);
+    {
+        FileWriter configStream(dictionary[ "QT_BUILD_TREE" ] + "/mkspecs/qconfig.pri");
 
         configStream << "CONFIG+= ";
         configStream << dictionary[ "BUILD" ];
@@ -3159,15 +3092,17 @@ void Configure::generateQConfigPri()
         configStream << " qpa";
 
         configStream << endl;
-        configStream << "QT_ARCH = " << dictionary["QT_ARCH"] << endl;
-        configStream << "QT_HOST_ARCH = " << dictionary["QT_HOST_ARCH"] << endl;
-        configStream << "QT_CPU_FEATURES = " << dictionary["QT_CPU_FEATURES"] << endl;
-        configStream << "QT_HOST_CPU_FEATURES = " << dictionary["QT_HOST_CPU_FEATURES"] << endl;
+        configStream << "host_build {" << endl;
+        configStream << "    QT_ARCH = " << dictionary["QT_HOST_ARCH"] << endl;
+        configStream << "    QT_TARGET_ARCH = " << dictionary["QT_ARCH"] << endl;
+        configStream << "} else {" << endl;
+        configStream << "    QT_ARCH = " << dictionary["QT_ARCH"] << endl;
         if (dictionary.contains("XQMAKESPEC") && !dictionary["XQMAKESPEC"].startsWith("wince")) {
             // FIXME: add detection
-            configStream << "QMAKE_DEFAULT_LIBDIRS = /lib /usr/lib" << endl;
-            configStream << "QMAKE_DEFAULT_INCDIRS = /usr/include /usr/local/include" << endl;
+            configStream << "    QMAKE_DEFAULT_LIBDIRS = /lib /usr/lib" << endl;
+            configStream << "    QMAKE_DEFAULT_INCDIRS = /usr/include /usr/local/include" << endl;
         }
+        configStream << "}" << endl;
         if (dictionary["QT_EDITION"].contains("OPENSOURCE"))
             configStream << "QT_EDITION = " << QLatin1String("OpenSource") << endl;
         else
@@ -3202,11 +3137,10 @@ void Configure::generateQConfigPri()
         if (dictionary[ "SHARED" ] == "no")
             configStream << "QT_DEFAULT_QPA_PLUGIN = q" << qpaPlatformName() << endl;
 
-        configStream.flush();
-        configFile.close();
+        if (!configStream.flush())
+            dictionary[ "DONE" ] = "error";
     }
 }
-#endif
 
 QString Configure::addDefine(QString def)
 {
@@ -3240,16 +3174,10 @@ QString Configure::addDefine(QString def)
     return result;
 }
 
-#if !defined(EVAL)
 void Configure::generateConfigfiles()
 {
-    QDir(buildPath).mkpath("src/corelib/global");
-    QString outName(buildPath + "/src/corelib/global/qconfig.h");
-    QTemporaryFile tmpFile;
-    QTextStream tmpStream;
-
-    if (tmpFile.open()) {
-        tmpStream.setDevice(&tmpFile);
+    {
+        FileWriter tmpStream(buildPath + "/src/corelib/global/qconfig.h");
 
         if (dictionary[ "QCONFIG" ] == "full") {
             tmpStream << "/* Everything */" << endl;
@@ -3259,8 +3187,7 @@ void Configure::generateConfigfiles()
             tmpStream << "#ifndef QT_BOOTSTRAPPED" << endl;
             QFile inFile(sourcePath + "/src/corelib/global/" + configName);
             if (inFile.open(QFile::ReadOnly)) {
-                QByteArray buffer = inFile.readAll();
-                tmpFile.write(buffer.constData(), buffer.size());
+                tmpStream << QTextStream(&inFile).readAll();
                 inFile.close();
             }
             tmpStream << "#endif // QT_BOOTSTRAPPED" << endl;
@@ -3379,6 +3306,7 @@ void Configure::generateConfigfiles()
         if (dictionary["QT_ICONV"] == "no")          qconfigList += "QT_NO_ICONV";
         if (dictionary["QT_GLIB"] == "no")           qconfigList += "QT_NO_GLIB";
         if (dictionary["QT_INOTIFY"] == "no")        qconfigList += "QT_NO_INOTIFY";
+        if (dictionary["QT_EVENTFD"] ==  "no")       qconfigList += "QT_NO_EVENTFD";
 
         if (dictionary["REDUCE_EXPORTS"] == "yes")     qconfigList += "QT_VISIBILITY_AVAILABLE";
         if (dictionary["REDUCE_RELOCATIONS"] == "yes") qconfigList += "QT_REDUCE_RELOCATIONS";
@@ -3390,37 +3318,40 @@ void Configure::generateConfigfiles()
 
         tmpStream<<"#define QT_QPA_DEFAULT_PLATFORM_NAME \"" << qpaPlatformName() << "\""<<endl;
 
-        tmpStream.flush();
-        tmpFile.flush();
-
-        // Replace old qconfig.h with new one
-        ::SetFileAttributes((wchar_t*)outName.utf16(), FILE_ATTRIBUTE_NORMAL);
-        QFile::remove(outName);
-        tmpFile.copy(outName);
-        tmpFile.close();
+        if (!tmpStream.flush())
+            dictionary[ "DONE" ] = "error";
     }
 
-    QTemporaryFile tmpFile3;
-    if (tmpFile3.open()) {
-        tmpStream.setDevice(&tmpFile3);
+    {
+        FileWriter tmpStream(buildPath + "/include/QtCore/qconfig.h");
+
+        tmpStream << "#include \"../../src/corelib/global/qconfig.h\"" << endl;
+
+        if (!tmpStream.flush())
+            dictionary[ "DONE" ] = "error";
+    }
+    {
+        FileWriter tmpStream(buildPath + "/include/QtCore/QtConfig");
+
+        tmpStream << "#include \"qconfig.h\"" << endl;
+
+        if (!tmpStream.flush())
+            dictionary[ "DONE" ] = "error";
+    }
+
+    if (dictionary["EDITION"] == "Evaluation" || qmakeDefines.contains("QT_EVAL")) {
+        FileWriter tmpStream(buildPath + "/src/corelib/global/qconfig_eval.cpp");
+
         tmpStream << "/* Evaluation license key */" << endl
                   << "static const volatile char qt_eval_key_data              [512 + 12] = \"qt_qevalkey=" << licenseInfo["LICENSEKEYEXT"] << "\";" << endl;
 
-        tmpStream.flush();
-        tmpFile3.flush();
-
-        outName = buildPath + "/src/corelib/global/qconfig_eval.cpp";
-        ::SetFileAttributes((wchar_t*)outName.utf16(), FILE_ATTRIBUTE_NORMAL);
-        QFile::remove(outName);
-
-        if (dictionary["EDITION"] == "Evaluation" || qmakeDefines.contains("QT_EVAL"))
-            tmpFile3.copy(outName);
-        tmpFile3.close();
+        if (!tmpStream.flush())
+            dictionary[ "DONE" ] = "error";
     }
 
-    QFile qdeviceFile(dictionary["QT_BUILD_TREE"] + "/mkspecs/qdevice.pri");
-    if (qdeviceFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        tmpStream.setDevice(&qdeviceFile);
+    {
+        FileWriter tmpStream(dictionary["QT_BUILD_TREE"] + "/mkspecs/qdevice.pri");
+
         QString android_platform(dictionary.contains("ANDROID_PLATFORM")
                   ? dictionary["ANDROID_PLATFORM"]
                   : QString("android-9"));
@@ -3441,13 +3372,12 @@ void Configure::generateConfigfiles()
         tmpStream << "    DEFAULT_ANDROID_TARGET_ARCH = " << android_arch << endl;
         tmpStream << "    DEFAULT_ANDROID_NDK_TOOLCHAIN_VERSION = " << android_tc_vers << endl;
         tmpStream << "}" << endl;
-        tmpStream.flush();
-        qdeviceFile.close();
+
+        if (!tmpStream.flush())
+            dictionary[ "DONE" ] = "error";
     }
 }
-#endif
 
-#if !defined(EVAL)
 void Configure::displayConfig()
 {
     fstream sout;
@@ -3521,6 +3451,7 @@ void Configure::displayConfig()
     sout << "NIS support................." << dictionary[ "NIS" ] << endl;
     sout << "Iconv support..............." << dictionary[ "QT_ICONV" ] << endl;
     sout << "Inotify support............." << dictionary[ "QT_INOTIFY" ] << endl;
+    sout << "eventfd(7) support.........." << dictionary[ "QT_EVENTFD" ] << endl;
     sout << "Glib support................" << dictionary[ "QT_GLIB" ] << endl;
     sout << "CUPS support................" << dictionary[ "QT_CUPS" ] << endl;
     sout << "OpenVG support.............." << dictionary[ "OPENVG" ] << endl;
@@ -3656,9 +3587,7 @@ void Configure::displayConfig()
         cout << str << endl;
     }
 }
-#endif
 
-#if !defined(EVAL)
 void Configure::generateHeaders()
 {
     if (dictionary["SYNCQT"] == "auto")
@@ -3668,7 +3597,8 @@ void Configure::generateHeaders()
         if (!QStandardPaths::findExecutable(QStringLiteral("perl.exe")).isEmpty()) {
             cout << "Running syncqt..." << endl;
             QStringList args;
-            args += buildPath + "/bin/syncqt.bat";
+            args << "perl" << "-w";
+            args += sourcePath + "/bin/syncqt.pl";
             args << "-minimal" << "-module" << "QtCore";
             args += sourcePath;
             int retc = Environment::execute(args, QStringList(), QStringList());
@@ -3734,20 +3664,18 @@ void Configure::generateQConfigCpp()
         haveHpx = true;
     if (dictionary["QT_HOST_BINS"].isEmpty())
         dictionary["QT_HOST_BINS"] = haveHpx ? dictionary["QT_HOST_PREFIX"] + "/bin" : dictionary["QT_INSTALL_BINS"];
+    if (dictionary["QT_HOST_LIBS"].isEmpty())
+        dictionary["QT_HOST_LIBS"] = haveHpx ? dictionary["QT_HOST_PREFIX"] + "/lib" : dictionary["QT_INSTALL_LIBS"];
     if (dictionary["QT_HOST_DATA"].isEmpty())
         dictionary["QT_HOST_DATA"] = haveHpx ? dictionary["QT_HOST_PREFIX"] : dictionary["QT_INSTALL_ARCHDATA"];
-
-    // Generate the new qconfig.cpp file
-    QDir(buildPath).mkpath("src/corelib/global");
-    const QString outName(buildPath + "/src/corelib/global/qconfig.cpp");
 
     QString specPfx = dictionary["QT_HOST_DATA"] + "/mkspecs/";
     QString hostSpec = stripPrefix(dictionary["QMAKESPEC"], specPfx);
     QString targSpec = dictionary.contains("XQMAKESPEC") ? stripPrefix(dictionary["XQMAKESPEC"], specPfx) : hostSpec;
 
-    QTemporaryFile tmpFile;
-    if (tmpFile.open()) {
-        QTextStream tmpStream(&tmpFile);
+    // Generate the new qconfig.cpp file
+    {
+        FileWriter tmpStream(buildPath + "/src/corelib/global/qconfig.cpp");
         tmpStream << "/* Licensed */" << endl
                   << "static const char qt_configure_licensee_str          [512 + 12] = \"qt_lcnsuser=" << licenseInfo["LICENSEE"] << "\";" << endl
                   << "static const char qt_configure_licensed_products_str [512 + 12] = \"qt_lcnsprod=" << dictionary["EDITION"] << "\";" << endl
@@ -3774,6 +3702,7 @@ void Configure::generateQConfigCpp()
                   << "    \"qt_ssrtpath=" << formatPath(dictionary["CFG_SYSROOT"]) << "\"," << endl
                   << "    \"qt_hpfxpath=" << formatPath(dictionary["QT_HOST_PREFIX"]) << "\"," << endl
                   << "    \"qt_hbinpath=" << formatPath(dictionary["QT_HOST_BINS"]) << "\"," << endl
+                  << "    \"qt_hlibpath=" << formatPath(dictionary["QT_HOST_LIBS"]) << "\"," << endl
                   << "    \"qt_hdatpath=" << formatPath(dictionary["QT_HOST_DATA"]) << "\"," << endl
                   << "    \"qt_targspec=" << targSpec << "\"," << endl
                   << "    \"qt_hostspec=" << hostSpec << "\"," << endl
@@ -3791,14 +3720,8 @@ void Configure::generateQConfigCpp()
         if ((platform() != WINDOWS) && (platform() != WINDOWS_CE))
             tmpStream << "#define QT_CONFIGURE_SETTINGS_PATH qt_configure_settings_path_str + 12;" << endl;
 
-        tmpStream.flush();
-        tmpFile.flush();
-
-        // Replace old qconfig.cpp with new one
-        ::SetFileAttributes((wchar_t*)outName.utf16(), FILE_ATTRIBUTE_NORMAL);
-        QFile::remove(outName);
-        tmpFile.copy(outName);
-        tmpFile.close();
+        if (!tmpStream.flush())
+            dictionary[ "DONE" ] = "error";
     }
 }
 
@@ -3827,7 +3750,10 @@ void Configure::buildQmake()
                 QTextStream stream(&out);
                 stream << "#AutoGenerated by configure.exe" << endl
                     << "BUILD_PATH = " << QDir::toNativeSeparators(buildPath) << endl
-                    << "SOURCE_PATH = " << QDir::toNativeSeparators(sourcePath) << endl;
+                    << "SOURCE_PATH = " << QDir::toNativeSeparators(sourcePath) << endl
+                    << "INC_PATH = " << QDir::toNativeSeparators(
+                           (QFile::exists(sourcePath + "/.git") ? buildPath : sourcePath)
+                           + "/include") << endl;
                 stream << "QT_VERSION = " << dictionary["VERSION"] << endl;
                 if (dictionary[ "QMAKESPEC" ] == QString("win32-g++")) {
                     stream << "QMAKESPEC = $(SOURCE_PATH)\\mkspecs\\win32-g++" << endl
@@ -3936,13 +3862,15 @@ void Configure::buildQmake()
         QTextStream confStream(&confFile);
         confStream << "[EffectivePaths]" << endl
                    << "Prefix=.." << endl;
+        if (sourcePath != buildPath)
+            confStream << "[EffectiveSourcePaths]" << endl
+                       << "Prefix=" << sourcePath << endl;
 
         confStream.flush();
         confFile.close();
     }
 
 }
-#endif
 
 void Configure::appendMakeItem(int inList, const QString &item)
 {
@@ -3967,14 +3895,17 @@ void Configure::generateMakefiles()
 
         QString pwd = QDir::currentPath();
         {
-            QString dirName;
+            QString sourcePathMangled = sourcePath;
+            QString buildPathMangled = buildPath;
+            if (dictionary.contains("TOPLEVEL")) {
+                sourcePathMangled = QFileInfo(sourcePath).path();
+                buildPathMangled = QFileInfo(buildPath).path();
+            }
             bool generate = true;
-            bool doDsp = (dictionary["VCPROJFILES"] == "yes");
+            bool doDsp = (dictionary["VCPROJFILES"] == "yes"
+                          && dictionary["PROCESS"] == "full");
             while (generate) {
-                QString pwd = QDir::currentPath();
-                QString dirPath = buildPath + dirName;
                 QStringList args;
-
                 args << buildPath + "/bin/qmake";
 
                 if (doDsp) {
@@ -3989,11 +3920,9 @@ void Configure::generateMakefiles()
                 }
                 if (dictionary[ "PROCESS" ] == "full")
                     args << "-r";
-                args << (sourcePath + "/qtbase.pro");
-                args << "-o";
-                args << buildPath;
+                args << sourcePathMangled;
 
-                QDir::setCurrent(dirPath);
+                QDir::setCurrent(buildPathMangled);
                 if (int exitCode = Environment::execute(args, QStringList(), QStringList())) {
                     cout << "Qmake failed, return code " << exitCode  << endl << endl;
                     dictionary[ "DONE" ] = "error";
@@ -4044,8 +3973,6 @@ Configure::ProjectType Configure::projectType(const QString& proFileName)
     // Default to app handling
     return App;
 }
-
-#if !defined(EVAL)
 
 bool Configure::showLicense(QString orgLicenseFile)
 {
@@ -4225,7 +4152,6 @@ void Configure::saveCmdLine()
         }
     }
 }
-#endif // !EVAL
 
 bool Configure::isDone()
 {
@@ -4290,31 +4216,47 @@ int Configure::platform() const
     return WINDOWS;
 }
 
-bool
-Configure::filesDiffer(const QString &fn1, const QString &fn2)
+FileWriter::FileWriter(const QString &name)
+    : QTextStream()
+    , m_name(name)
 {
-    QFile file1(fn1), file2(fn2);
-    if (!file1.open(QFile::ReadOnly) || !file2.open(QFile::ReadOnly))
-        return true;
-    const int chunk = 2048;
-    int used1 = 0, used2 = 0;
-    char b1[chunk], b2[chunk];
-    while (!file1.atEnd() && !file2.atEnd()) {
-        if (!used1)
-            used1 = file1.read(b1, chunk);
-        if (!used2)
-            used2 = file2.read(b2, chunk);
-        if (used1 > 0 && used2 > 0) {
-            const int cmp = qMin(used1, used2);
-            if (memcmp(b1, b2, cmp))
+    m_buffer.open(QIODevice::WriteOnly);
+    setDevice(&m_buffer);
+}
+
+bool FileWriter::flush()
+{
+    QTextStream::flush();
+    QFile oldFile(m_name);
+    if (oldFile.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        if (oldFile.readAll() == m_buffer.data())
+            return true;
+        oldFile.close();
+    }
+    QString dir = QFileInfo(m_name).absolutePath();
+    if (!QDir().mkpath(dir)) {
+        cout << "Cannot create directory " << qPrintable(QDir::toNativeSeparators(dir)) << ".\n";
+        return false;
+    }
+    QFile file(m_name + ".new");
+    if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        if (file.write(m_buffer.data()) == m_buffer.data().size()) {
+            file.close();
+            if (file.error() == QFile::NoError) {
+                ::SetFileAttributes((wchar_t*)m_name.utf16(), FILE_ATTRIBUTE_NORMAL);
+                QFile::remove(m_name);
+                if (!file.rename(m_name)) {
+                    cout << "Cannot replace file " << qPrintable(QDir::toNativeSeparators(m_name)) << ".\n";
+                    return false;
+                }
                 return true;
-            if ((used1 -= cmp))
-                memcpy(b1, b1+cmp, used1);
-            if ((used2 -= cmp))
-                memcpy(b2, b2+cmp, used2);
+            }
         }
     }
-    return !file1.atEnd() || !file2.atEnd();
+    cout << "Cannot create file " << qPrintable(QDir::toNativeSeparators(file.fileName()))
+         << ": " << qPrintable(file.errorString()) << ".\n";
+    file.remove();
+    return false;
 }
 
 QT_END_NAMESPACE

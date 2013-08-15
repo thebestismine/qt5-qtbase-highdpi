@@ -126,6 +126,8 @@ bool QApplicationPrivate::modalState()
 
 QWidget *qt_tlw_for_window(QWindow *wnd)
 {
+    while (wnd && !wnd->isTopLevel()) // QTBUG-32177, wnd might be a QQuickView embedded via window container.
+        wnd = wnd->parent();
     if (wnd)
         foreach (QWidget *tlw, qApp->topLevelWidgets())
             if (tlw->windowHandle() == wnd)
@@ -196,7 +198,6 @@ void QApplicationPrivate::closePopup(QWidget *popup)
                 // mouse release event or inside
                 qt_replay_popup_mouse_event = false;
             } else { // mouse press event
-                QGuiApplicationPrivate::mousePressTime -= 10000; // avoid double click
                 qt_replay_popup_mouse_event = true;
             }
 
@@ -415,7 +416,7 @@ void QApplication::beep()
 void QApplication::alert(QWidget *widget, int duration)
 {
     if (widget) {
-       if (widget->window()->isActiveWindow()&& !widget->window()->windowState() & Qt::WindowMinimized)
+       if (widget->window()->isActiveWindow() && !(widget->window()->windowState() & Qt::WindowMinimized))
             return;
         if (QWindow *window= QApplicationPrivate::windowForWidget(widget))
             window->alert(duration);

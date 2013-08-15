@@ -95,6 +95,9 @@ QT_BEGIN_NAMESPACE
        this handler for pointers that were allocated with \c{new []}.
     \li QScopedPointerPodDeleter - deletes the pointer using \c{free()}. Use this
        handler for pointers that were allocated with \c{malloc()}.
+    \li QScopedPointerDeleteLater - deletes a pointer by calling \c{deleteLater()}
+       on it. Use this handler for pointers to QObject's that are actively
+       participating in a QEventLoop.
     \endlist
 
     You can pass your own classes as handlers, provided that they have a public
@@ -129,6 +132,33 @@ QT_BEGIN_NAMESPACE
 
     Constructs this QScopedPointer instance and sets its pointer to \a p.
 */
+
+#ifndef Q_QDOC // QTBUG-32675, qdoc can't parse rvalue refs
+/*!
+    \fn QScopedPointer::QScopedPointer(QScopedPointer<T, Cleanup> &&other)
+
+    Move-constructs a QScopedPointer instance, making it point at the same
+    object that \a other was pointing to. \a other is reset to point to \c{NULL}.
+
+    \since 5.2
+*/
+
+/*!
+    \fn QScopedPointer<T, Cleanup> &operator=(QScopedPointer<T, Cleanup> &&other)
+
+    Move-assigns \a other to this QScopedPointer instance, transferring the
+    ownership of the managed pointer to this instance.
+
+    If \a other and this instance are actually the same object, this operator
+    does nothing.
+
+    Otherwise, this instance is set to point to the object \a other
+    is pointing to, and \a other is set to point to \c{NULL}.
+    If this instance was pointing to an object, that object is destroyed,
+
+    \since 5.2
+*/
+#endif
 
 /*!
     \fn QScopedPointer::~QScopedPointer()

@@ -33,10 +33,13 @@ headerdirs  += ..
 
 sourcedirs  += ..
 
-exampledirs += ../../../examples/widgets \
-               ../ \
+exampledirs += ../ \
                snippets
 
 excludedirs += ../../../examples/widgets/doc
 
-imagedirs   += images
+imagedirs   += images \
+               ../../widgets/doc/images \
+
+navigation.landingpage = "Qt Print Support"
+navigation.cppclassespage = "Qt Print Support C++ Classes"

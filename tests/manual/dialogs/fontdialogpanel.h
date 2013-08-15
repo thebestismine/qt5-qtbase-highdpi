@@ -3,7 +3,7 @@
 ** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
 ** Contact: http://www.qt-project.org/legal
 **
-** This file is part of the examples of the Qt Toolkit.
+** This file is part of the test suite of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
@@ -45,10 +45,12 @@
 #include <QPointer>
 #include <QFontDialog>
 
+QT_BEGIN_NAMESPACE
 class QCheckBox;
 class QPushButton;
 class QFontComboBox;
 class QDoubleSpinBox;
+QT_END_NAMESPACE
 
 class FontDialogPanel : public QWidget
 {
@@ -77,6 +79,10 @@ private:
     QDoubleSpinBox *m_fontSizeBox;
     QCheckBox *m_noButtons;
     QCheckBox *m_dontUseNativeDialog;
+    QCheckBox *m_scalableFilter;
+    QCheckBox *m_nonScalableFilter;
+    QCheckBox *m_monospacedFilter;
+    QCheckBox *m_proportionalFilter;
     QPushButton *m_deleteNonModalDialogButton;
     QPushButton *m_deleteModalDialogButton;
     QString m_result;

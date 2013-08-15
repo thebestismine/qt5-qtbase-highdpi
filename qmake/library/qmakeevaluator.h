@@ -55,8 +55,12 @@
 #include <qstack.h>
 #include <qstring.h>
 #include <qstringlist.h>
+#include <qshareddata.h>
 #ifndef QT_BOOTSTRAPPED
 # include <qprocess.h>
+#endif
+#ifdef PROEVALUATOR_THREAD_SAFE
+# include <qmutex.h>
 #endif
 
 QT_BEGIN_NAMESPACE
@@ -83,6 +87,20 @@ public:
     virtual void doneWithEval(ProFile *parent) = 0;
 };
 
+typedef QPair<QString, QString> QMakeFeatureKey; // key, parent
+typedef QHash<QMakeFeatureKey, QString> QMakeFeatureHash;
+
+class QMAKE_EXPORT QMakeFeatureRoots : public QSharedData
+{
+public:
+    QMakeFeatureRoots(const QStringList &_paths) : paths(_paths) {}
+    const QStringList paths;
+    mutable QMakeFeatureHash cache;
+#ifdef PROEVALUATOR_THREAD_SAFE
+    mutable QMutex mutex;
+#endif
+};
+
 // We use a QLinkedList based stack instead of a QVector based one (QStack), so that
 // the addresses of value maps stay constant. The qmake generators rely on that.
 class QMAKE_EXPORT ProValueMapStack : public QLinkedList<ProValueMap>
@@ -102,20 +120,19 @@ public:
         LoadPreFiles = 1,
         LoadPostFiles = 2,
         LoadAll = LoadPreFiles|LoadPostFiles,
-        LoadSilent = 0x10
+        LoadSilent = 0x10,
+        LoadHidden = 0x20
     };
     Q_DECLARE_FLAGS(LoadFlags, LoadFlag)
 
     static void initStatics();
     static void initFunctionStatics();
-    QMakeEvaluator(QMakeGlobals *option, QMakeParser *parser,
+    QMakeEvaluator(QMakeGlobals *option, QMakeParser *parser, QMakeVfs *vfs,
                    QMakeHandler *handler);
     ~QMakeEvaluator();
 
-#ifdef QT_BUILD_QMAKE
     void setExtraVars(const ProValueMap &extraVars) { m_extraVars = extraVars; }
     void setExtraConfigs(const ProStringList &extraConfigs) { m_extraConfigs = extraConfigs; }
-#endif
     void setOutputDir(const QString &outputDir) { m_outputDir = outputDir; }
 
     ProStringList values(const ProKey &variableName) const;
@@ -268,10 +285,8 @@ public:
     QStack<Location> m_locationStack; // All execution location changes
     QStack<ProFile *> m_profileStack; // Includes only
 
-#ifdef QT_BUILD_QMAKE
     ProValueMap m_extraVars;
     ProStringList m_extraConfigs;
-#endif
     QString m_outputDir;
 
     int m_listCount;
@@ -287,7 +302,7 @@ public:
     QStringList m_qmakepath;
     QStringList m_qmakefeatures;
     QStringList m_mkspecPaths;
-    QStringList m_featureRoots;
+    QExplicitlySharedDataPointer<QMakeFeatureRoots> m_featureRoots;
     ProString m_dirSep;
     ProFunctionDefs m_functionDefs;
     ProStringList m_returnValue;
@@ -298,6 +313,7 @@ public:
     QMakeGlobals *m_option;
     QMakeParser *m_parser;
     QMakeHandler *m_handler;
+    QMakeVfs *m_vfs;
 };
 
 Q_DECLARE_OPERATORS_FOR_FLAGS(QMakeEvaluator::LoadFlags)

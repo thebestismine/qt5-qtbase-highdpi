@@ -3,7 +3,7 @@
 ** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
 ** Contact: http://www.qt-project.org/legal
 **
-** This file is part of the examples of the Qt Toolkit.
+** This file is part of the test suite of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
@@ -43,6 +43,7 @@
 #include "colordialogpanel.h"
 #include "fontdialogpanel.h"
 #include "wizardpanel.h"
+#include "messageboxpanel.h"
 
 #include <QMainWindow>
 #include <QApplication>
@@ -73,6 +74,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent)
     tabWidget->addTab(new ColorDialogPanel, tr("QColorDialog"));
     tabWidget->addTab(new FontDialogPanel, tr("QFontDialog"));
     tabWidget->addTab(new WizardPanel, tr("QWizard"));
+    tabWidget->addTab(new MessageBoxPanel, tr("QMessageBox"));
     setCentralWidget(tabWidget);
 }
 

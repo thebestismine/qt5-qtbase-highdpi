@@ -114,6 +114,10 @@ public:
 template<typename E1, typename E2>
 class QTypeInfo<QUrlTwoFlags<E1, E2> > : public QTypeInfoMerger<QUrlTwoFlags<E1, E2>, E1, E2> {};
 
+class QUrl;
+// qHash is a friend, but we can't use default arguments for friends (§8.3.6.4)
+Q_CORE_EXPORT uint qHash(const QUrl &url, uint seed = 0) Q_DECL_NOTHROW;
+
 class Q_CORE_EXPORT QUrl
 {
 public:
@@ -136,7 +140,9 @@ public:
         RemoveFragment = 0x80,
         // 0x100 was a private code in Qt 4, keep unused for a while
         PreferLocalFile = 0x200,
-        StripTrailingSlash = 0x400
+        StripTrailingSlash = 0x400,
+        RemoveFilename = 0x800,
+        NormalizePathSegments = 0x1000
     };
 
     enum ComponentFormattingOption {
@@ -181,6 +187,7 @@ public:
     QString url(FormattingOptions options = FormattingOptions(PrettyDecoded)) const;
     QString toString(FormattingOptions options = FormattingOptions(PrettyDecoded)) const;
     QString toDisplayString(FormattingOptions options = FormattingOptions(PrettyDecoded)) const;
+    QUrl adjusted(FormattingOptions options) const;
 
     QByteArray toEncoded(FormattingOptions options = FullyEncoded) const;
     static QUrl fromEncoded(const QByteArray &url, ParsingMode mode = TolerantMode);
@@ -217,6 +224,7 @@ public:
 
     void setPath(const QString &path, ParsingMode mode = TolerantMode);
     QString path(ComponentFormattingOptions options = PrettyDecoded) const;
+    QString fileName(ComponentFormattingOptions options = PrettyDecoded) const;
 
     bool hasQuery() const;
     void setQuery(const QString &query, ParsingMode mode = TolerantMode);
@@ -242,6 +250,8 @@ public:
     bool operator <(const QUrl &url) const;
     bool operator ==(const QUrl &url) const;
     bool operator !=(const QUrl &url) const;
+
+    bool matches(const QUrl &url, FormattingOptions options) const;
 
     static QString fromPercentEncoding(const QByteArray &);
     static QByteArray toPercentEncoding(const QString &,
@@ -324,7 +334,7 @@ public:
     static QList<QUrl> fromStringList(const QStringList &uris, ParsingMode mode = TolerantMode);
 
     static void setIdnWhitelist(const QStringList &);
-    friend Q_CORE_EXPORT uint qHash(const QUrl &url, uint seed = 0) Q_DECL_NOTHROW;
+    friend Q_CORE_EXPORT uint qHash(const QUrl &url, uint seed) Q_DECL_NOTHROW;
 
 private:
     QUrlPrivate *d;

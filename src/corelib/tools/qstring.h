@@ -298,12 +298,20 @@ public:
 
     QString    &vsprintf(const char *format, va_list ap)
 #if defined(Q_CC_GNU) && !defined(__INSURE__)
+#  if defined(Q_CC_MINGW) && !defined(Q_CC_CLANG)
+        __attribute__ ((format (gnu_printf, 2, 0)))
+#  else
         __attribute__ ((format (printf, 2, 0)))
+#  endif
 #endif
         ;
     QString    &sprintf(const char *format, ...)
 #if defined(Q_CC_GNU) && !defined(__INSURE__)
+#  if defined(Q_CC_MINGW) && !defined(Q_CC_CLANG)
+        __attribute__ ((format (gnu_printf, 2, 3)))
+#  else
         __attribute__ ((format (printf, 2, 3)))
+#  endif
 #endif
         ;
 
@@ -649,8 +657,12 @@ public:
     const_iterator constEnd() const;
 
     // STL compatibility
+    typedef int size_type;
+    typedef qptrdiff difference_type;
     typedef const QChar & const_reference;
     typedef QChar & reference;
+    typedef QChar *pointer;
+    typedef const QChar *const_pointer;
     typedef QChar value_type;
     inline void push_back(QChar c) { append(c); }
     inline void push_back(const QString &s) { append(s); }

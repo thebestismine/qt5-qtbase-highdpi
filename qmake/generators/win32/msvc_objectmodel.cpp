@@ -97,6 +97,7 @@ const char _Description[]                       = "Description";
 const char _Detect64BitPortabilityProblems[]    = "Detect64BitPortabilityProblems";
 const char _DisableLanguageExtensions[]         = "DisableLanguageExtensions";
 const char _DisableSpecificWarnings[]           = "DisableSpecificWarnings";
+const char _EmbedManifest[]                     = "EmbedManifest";
 const char _EnableCOMDATFolding[]               = "EnableCOMDATFolding";
 const char _EnableErrorChecks[]                 = "EnableErrorChecks";
 const char _EnableEnhancedInstructionSet[]      = "EnableEnhancedInstructionSet";
@@ -224,6 +225,7 @@ const char _ValidateParameters[]                = "ValidateParameters";
 const char _VCCLCompilerTool[]                  = "VCCLCompilerTool";
 const char _VCLibrarianTool[]                   = "VCLibrarianTool";
 const char _VCLinkerTool[]                      = "VCLinkerTool";
+const char _VCManifestTool[]                    = "VCManifestTool";
 const char _VCCustomBuildTool[]                 = "VCCustomBuildTool";
 const char _VCResourceCompilerTool[]            = "VCResourceCompilerTool";
 const char _VCMIDLTool[]                        = "VCMIDLTool";
@@ -233,6 +235,7 @@ const char _WarningLevel[]                      = "WarningLevel";
 const char _WholeProgramOptimization[]          = "WholeProgramOptimization";
 const char _CompileForArchitecture[]            = "CompileForArchitecture";
 const char _InterworkCalls[]                    = "InterworkCalls";
+const char _GenerateManifest[]                  = "GenerateManifest";
 
 // XmlOutput stream functions ------------------------------
 inline XmlOutput::xml_output attrT(const char *name, const triState v)
@@ -779,16 +782,14 @@ bool VCCLCompilerTool::parseOption(const char* option)
         found = false; break;
     case 'R':
         if(second == 'T' && third == 'C') {
-            if(fourth == '1')
-                BasicRuntimeChecks = runtimeBasicCheckAll;
-            else if(fourth == 'c')
-                SmallerTypeCheck = _True;
-            else if(fourth == 's')
-                BasicRuntimeChecks = runtimeCheckStackFrame;
-            else if(fourth == 'u')
-                BasicRuntimeChecks = runtimeCheckUninitVariables;
-            else
-                found = false; break;
+            int rtc = BasicRuntimeChecks;
+            for (size_t i = 4; option[i]; ++i) {
+                if (!parseRuntimeCheckOption(option[i], &rtc)) {
+                    found = false;
+                    break;
+                }
+            }
+            BasicRuntimeChecks = static_cast<basicRuntimeCheckOption>(rtc);
         }
         break;
     case 'T':
@@ -1117,6 +1118,12 @@ bool VCCLCompilerTool::parseOption(const char* option)
         case 'd':
             DisableSpecificWarnings += option+3;
             break;
+        case 'e':
+            if (config->CompilerVersion <= NET2008)
+                AdditionalOptions += option;
+            else
+                TreatSpecificWarningsAsErrors += option + 3;
+            break;
         default:
             AdditionalOptions += option;
         }
@@ -1129,6 +1136,21 @@ bool VCCLCompilerTool::parseOption(const char* option)
         warn_msg(WarnLogic, "Could not parse Compiler option: %s, added as AdditionalOption", option);
         AdditionalOptions += option;
     }
+    return true;
+}
+
+bool VCCLCompilerTool::parseRuntimeCheckOption(char c, int *rtc)
+{
+    if (c == '1')
+        *rtc = runtimeBasicCheckAll;
+    else if (c == 'c')
+        SmallerTypeCheck = _True;
+    else if (c == 's')
+        *rtc |= runtimeCheckStackFrame;
+    else if (c == 'u')
+        *rtc |= runtimeCheckUninitVariables;
+    else
+        return false;
     return true;
 }
 
@@ -1697,6 +1719,23 @@ bool VCLinkerTool::parseOption(const char* option)
         AdditionalOptions += option;
     }
     return found;
+}
+
+// VCManifestTool ---------------------------------------------------
+VCManifestTool::VCManifestTool()
+    : EmbedManifest(unset)
+{
+}
+
+VCManifestTool::~VCManifestTool()
+{
+}
+
+bool VCManifestTool::parseOption(const char *option)
+{
+    Q_UNUSED(option);
+    // ### implement if we introduce QMAKE_MT_FLAGS
+    return false;
 }
 
 // VCMIDLTool -------------------------------------------------------
@@ -2316,7 +2355,6 @@ bool VCFilter::addExtraCompiler(const VCFilterFile &info)
         CustomBuildTool.Outputs += out;
 
         deps += CustomBuildTool.AdditionalDependencies;
-        deps += cmd.left(cmd.indexOf(' '));
         // Make sure that all deps are only once
         QHash<QString, bool> uniqDeps;
         for (int c = 0; c < deps.count(); ++c) {
@@ -2612,6 +2650,15 @@ void VCProjectWriter::write(XmlOutput &xml, const VCLinkerTool &tool)
         << attrS(_TypeLibraryFile, tool.TypeLibraryFile)
         << attrL(_TypeLibraryResourceID, tool.TypeLibraryResourceID, /*ifNot*/ rcUseDefault)
         << attrS(_Version, tool.Version)
+        << attrT(_GenerateManifest, tool.GenerateManifest)
+        << closetag(_Tool);
+}
+
+void VCProjectWriter::write(XmlOutput &xml, const VCManifestTool &tool)
+{
+    xml << tag(_Tool)
+        << attrS(_Name, _VCManifestTool)
+        << attrT(_EmbedManifest, tool.EmbedManifest)
         << closetag(_Tool);
 }
 
@@ -2746,6 +2793,7 @@ void VCProjectWriter::write(XmlOutput &xml, const VCConfiguration &tool)
         write(xml, tool.librarian);
     else
         write(xml, tool.linker);
+    write(xml, tool.manifestTool);
     write(xml, tool.idl);
     write(xml, tool.postBuild);
     write(xml, tool.preBuild);

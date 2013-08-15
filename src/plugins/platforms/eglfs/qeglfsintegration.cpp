@@ -53,7 +53,7 @@
 #include <QtPlatformSupport/private/qeglplatformcontext_p.h>
 #include <QtPlatformSupport/private/qeglpbuffer_p.h>
 
-#if !defined(QT_NO_EVDEV) && !defined(Q_OS_ANDROID)
+#if !defined(QT_NO_EVDEV) && (!defined(Q_OS_ANDROID) || defined(Q_OS_ANDROID_NO_SDK))
 #include <QtPlatformSupport/private/qevdevmousemanager_p.h>
 #include <QtPlatformSupport/private/qevdevkeyboardmanager_p.h>
 #include <QtPlatformSupport/private/qevdevtouch_p.h>
@@ -74,12 +74,14 @@
 
 QT_BEGIN_NAMESPACE
 
+static void *eglContextForContext(QOpenGLContext *context);
+
 QEglFSIntegration::QEglFSIntegration()
     : mEventDispatcher(createUnixEventDispatcher()), mFontDb(new QGenericUnixFontDatabase())
 {
     QGuiApplicationPrivate::instance()->setEventDispatcher(mEventDispatcher);
 
-#if !defined(QT_NO_EVDEV) && !defined(Q_OS_ANDROID)
+#if !defined(QT_NO_EVDEV) && (!defined(Q_OS_ANDROID) || defined(Q_OS_ANDROID_NO_SDK))
     new QEvdevKeyboardManager(QLatin1String("EvdevKeyboard"), QString() /* spec */, this);
     new QEvdevMouseManager(QLatin1String("EvdevMouse"), QString() /* spec */, this);
     new QEvdevTouchScreenHandlerThread(QString() /* spec */, this);
@@ -200,6 +202,20 @@ void *QEglFSIntegration::nativeResourceForIntegration(const QByteArray &resource
     return 0;
 }
 
+void *QEglFSIntegration::nativeResourceForWindow(const QByteArray &resource, QWindow *window)
+{
+    QByteArray lowerCaseResource = resource.toLower();
+
+    if (lowerCaseResource == "egldisplay") {
+        if (window)
+            return static_cast<QEglFSScreen *>(window->handle()->screen())->display();
+        else
+            return static_cast<QEglFSScreen *>(mScreen)->display();
+    }
+
+    return 0;
+}
+
 void *QEglFSIntegration::nativeResourceForContext(const QByteArray &resource, QOpenGLContext *context)
 {
     QByteArray lowerCaseResource = resource.toLower();
@@ -213,6 +229,26 @@ void *QEglFSIntegration::nativeResourceForContext(const QByteArray &resource, QO
         return handle->eglContext();
 
     return 0;
+}
+
+QPlatformNativeInterface::NativeResourceForContextFunction QEglFSIntegration::nativeResourceFunctionForContext(const QByteArray &resource)
+{
+    QByteArray lowerCaseResource = resource.toLower();
+    if (lowerCaseResource == "get_egl_context")
+        return NativeResourceForContextFunction(eglContextForContext);
+
+    return 0;
+}
+
+static void *eglContextForContext(QOpenGLContext *context)
+{
+    Q_ASSERT(context);
+
+    QEGLPlatformContext *handle = static_cast<QEGLPlatformContext *>(context->handle());
+    if (!handle)
+        return 0;
+
+    return handle->eglContext();
 }
 
 EGLConfig QEglFSIntegration::chooseConfig(EGLDisplay display, const QSurfaceFormat &format)

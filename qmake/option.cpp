@@ -54,6 +54,7 @@ QT_BEGIN_NAMESPACE
 EvalHandler Option::evalHandler;
 QMakeGlobals *Option::globals;
 ProFileCache *Option::proFileCache;
+QMakeVfs *Option::vfs;
 QMakeParser *Option::parser;
 
 //convenience
@@ -338,6 +339,7 @@ Option::init(int argc, char **argv)
             QDir currentDir = QDir::current();
 #ifdef Q_OS_WIN
             QStringList paths = QString::fromLocal8Bit(pEnv).split(QLatin1String(";"));
+            paths.prepend(QLatin1String("."));
 #else
             QStringList paths = QString::fromLocal8Bit(pEnv).split(QLatin1String(":"));
 #endif

@@ -284,51 +284,51 @@ QLocaleId QLocaleId::withLikelySubtagsRemoved() const
     return max;
 }
 
-QString QLocaleId::bcp47Name() const
+QByteArray QLocaleId::name(char separator) const
 {
     if (language_id == QLocale::AnyLanguage)
-        return QString();
+        return QByteArray();
     if (language_id == QLocale::C)
-        return QStringLiteral("C");
+        return QByteArrayLiteral("C");
 
-    const unsigned char *lang = language_code_list + 3*uint(language_id);
+    const unsigned char *lang = language_code_list + 3 * language_id;
     const unsigned char *script =
-            (script_id != QLocale::AnyScript ? script_code_list + 4*uint(script_id) : 0);
+            (script_id != QLocale::AnyScript ? script_code_list + 4 * script_id : 0);
     const unsigned char *country =
-            (country_id != QLocale::AnyCountry  ? country_code_list + 3*uint(country_id) : 0);
+            (country_id != QLocale::AnyCountry ? country_code_list + 3 * country_id : 0);
     char len = (lang[2] != 0 ? 3 : 2) + (script ? 4+1 : 0) + (country ? (country[2] != 0 ? 3 : 2)+1 : 0);
-    QString name(len, Qt::Uninitialized);
-    QChar *uc = name.data();
-    *uc++ = ushort(lang[0]);
-    *uc++ = ushort(lang[1]);
+    QByteArray name(len, Qt::Uninitialized);
+    char *uc = name.data();
+    *uc++ = lang[0];
+    *uc++ = lang[1];
     if (lang[2] != 0)
-        *uc++ = ushort(lang[2]);
+        *uc++ = lang[2];
     if (script) {
-        *uc++ = QLatin1Char('-');
-        *uc++ = ushort(script[0]);
-        *uc++ = ushort(script[1]);
-        *uc++ = ushort(script[2]);
-        *uc++ = ushort(script[3]);
+        *uc++ = separator;
+        *uc++ = script[0];
+        *uc++ = script[1];
+        *uc++ = script[2];
+        *uc++ = script[3];
     }
     if (country) {
-        *uc++ = QLatin1Char('-');
-        *uc++ = ushort(country[0]);
-        *uc++ = ushort(country[1]);
+        *uc++ = separator;
+        *uc++ = country[0];
+        *uc++ = country[1];
         if (country[2] != 0)
-            *uc++ = ushort(country[2]);
+            *uc++ = country[2];
     }
     return name;
 }
 
-QString QLocalePrivate::bcp47Name() const
+QByteArray QLocalePrivate::bcp47Name(char separator) const
 {
     if (m_data->m_language_id == QLocale::AnyLanguage)
-        return QString();
+        return QByteArray();
     if (m_data->m_language_id == QLocale::C)
-        return QStringLiteral("C");
+        return QByteArrayLiteral("C");
 
     QLocaleId localeId = QLocaleId::fromIds(m_data->m_language_id, m_data->m_script_id, m_data->m_country_id);
-    return localeId.withLikelySubtagsRemoved().bcp47Name();
+    return localeId.withLikelySubtagsRemoved().name(separator);
 }
 
 const QLocaleData *QLocaleData::findLocaleData(QLocale::Language language, QLocale::Script script, QLocale::Country country)
@@ -529,6 +529,9 @@ int qt_repeatCount(const QString &s, int i)
 static const QLocaleData *default_data = 0;
 static uint default_number_options = 0;
 
+static const QLocaleData *const c_data = locale_data;
+static QLocalePrivate c_private = { c_data, Q_BASIC_ATOMIC_INITIALIZER(1), 0 };
+
 #ifndef QT_NO_SYSTEMLOCALE
 
 
@@ -643,6 +646,17 @@ static const QLocaleData *defaultData()
     return default_data;
 }
 
+const QLocaleData *QLocaleData::c()
+{
+    Q_ASSERT(locale_index[QLocale::C] == 0);
+    return c_data;
+}
+
+static inline QString getLocaleData(const ushort *data, int size)
+{
+    return size > 0 ? QString::fromRawData(reinterpret_cast<const QChar *>(data), size) : QString();
+}
+
 static QString getLocaleListData(const ushort *data, int size, int index)
 {
     static const ushort separator = ';';
@@ -656,14 +670,7 @@ static QString getLocaleListData(const ushort *data, int size, int index)
     const ushort *end = data;
     while (size > 0 && *end != separator)
         ++end, --size;
-    if (end-data == 0)
-        return QString();
-    return QString::fromRawData(reinterpret_cast<const QChar*>(data), end-data);
-}
-
-static inline QString getLocaleData(const ushort *data, int size)
-{
-    return size ? QString::fromRawData(reinterpret_cast<const QChar*>(data), size) : QString();
+    return getLocaleData(data, end - data);
 }
 
 
@@ -686,32 +693,34 @@ QDataStream &operator>>(QDataStream &ds, QLocale &l)
 
 static const int locale_data_size = sizeof(locale_data)/sizeof(QLocaleData) - 1;
 
-const QLocaleData *QLocalePrivate::dataPointerForIndex(quint16 index)
-{
-#ifndef QT_NO_SYSTEMLOCALE
-    Q_ASSERT(index <= locale_data_size);
-    if (index == locale_data_size)
-        return system_data;
-#else
-    Q_ASSERT(index < locale_data_size);
-#endif
+Q_GLOBAL_STATIC_WITH_ARGS(QSharedDataPointer<QLocalePrivate>, defaultLocalePrivate,
+                          (QLocalePrivate::create(defaultData(), default_number_options)))
 
-    return &locale_data[index];
+static QLocalePrivate *localePrivateByName(const QString &name)
+{
+    if (name == QLatin1String("C"))
+        return &c_private;
+    return QLocalePrivate::create(findLocaleData(name));
 }
 
-static quint16 localeDataIndex(const QLocaleData *p)
+static QLocalePrivate *findLocalePrivate(QLocale::Language language, QLocale::Script script,
+                                         QLocale::Country country)
 {
-#ifndef QT_NO_SYSTEMLOCALE
-    Q_ASSERT((p >= locale_data && p - locale_data < locale_data_size)
-             || (p != 0 && p == system_data));
-    quint16 index = p == system_data ? locale_data_size : p - locale_data;
-#else
-    Q_ASSERT(p >= locale_data && p - locale_data < locale_data_size);
-    quint16 index = p - locale_data;
-#endif
+    if (language == QLocale::C)
+        return &c_private;
 
-    return index;
+    const QLocaleData *data = QLocaleData::findLocaleData(language, script, country);
+
+    int numberOptions = 0;
+
+    // If not found, should default to system
+    if (data->m_language_id == QLocale::C && language != QLocale::C) {
+        numberOptions = default_number_options;
+        data = defaultData();
+    }
+    return QLocalePrivate::create(data, numberOptions);
 }
+
 
 /*!
  \internal
@@ -751,7 +760,7 @@ QLocale::QLocale(QLocalePrivate &dd)
 */
 
 QLocale::QLocale(const QString &name)
-    : d(new QLocalePrivate(localeDataIndex(findLocaleData(name))))
+    : d(localePrivateByName(name))
 {
 }
 
@@ -764,7 +773,7 @@ QLocale::QLocale(const QString &name)
 */
 
 QLocale::QLocale()
-    : d(new QLocalePrivate(localeDataIndex(defaultData()), default_number_options))
+    : d(*defaultLocalePrivate)
 {
 }
 
@@ -788,21 +797,10 @@ QLocale::QLocale()
 */
 
 QLocale::QLocale(Language language, Country country)
+    : d(findLocalePrivate(language, QLocale::AnyScript, country))
 {
-    const QLocaleData *data = QLocaleData::findLocaleData(language, QLocale::AnyScript, country);
-    int index;
-    int numberOptions = 0;
-
-    // If not found, should default to system
-    if (data->m_language_id == QLocale::C && language != QLocale::C) {
-        numberOptions = default_number_options;
-        index = localeDataIndex(defaultData());
-    } else {
-        index = localeDataIndex(data);
-    }
-    d = new QLocalePrivate(index, numberOptions);
 }
-\
+
 /*!
     \since 4.8
 
@@ -828,19 +826,8 @@ QLocale::QLocale(Language language, Country country)
 */
 
 QLocale::QLocale(Language language, Script script, Country country)
+    : d(findLocalePrivate(language, script, country))
 {
-    const QLocaleData *data = QLocaleData::findLocaleData(language, script, country);
-    int index;
-    int numberOptions = 0;
-
-    // If not found, should default to system
-    if (data->m_language_id == QLocale::C && language != QLocale::C) {
-        numberOptions = default_number_options;
-        index = localeDataIndex(defaultData());
-    } else {
-        index = localeDataIndex(data);
-    }
-    d = new QLocalePrivate(index, numberOptions);
 }
 
 /*!
@@ -998,6 +985,11 @@ void QLocale::setDefault(const QLocale &locale)
 {
     default_data = locale.d->m_data;
     default_number_options = locale.numberOptions();
+
+    if (defaultLocalePrivate.exists()) {
+        // update the cached private
+        *defaultLocalePrivate = locale.d;
+    }
 }
 
 /*!
@@ -1080,7 +1072,7 @@ QString QLocale::name() const
 */
 QString QLocale::bcp47Name() const
 {
-    return d->bcp47Name();
+    return QString::fromLatin1(d->bcp47Name());
 }
 
 /*!
@@ -2117,7 +2109,7 @@ QString QLocale::toString(double i, char f, int prec) const
 
 QLocale QLocale::system()
 {
-    return QLocale(*new QLocalePrivate(localeDataIndex(systemData())));
+    return QLocale(*QLocalePrivate::create(systemData()));
 }
 
 
@@ -2152,7 +2144,7 @@ QList<QLocale> QLocale::matchingLocales(QLocale::Language language,
             && (language == QLocale::AnyLanguage || data->m_language_id == uint(language))) {
         if ((script == QLocale::AnyScript || data->m_script_id == uint(script))
             && (country == QLocale::AnyCountry || data->m_country_id == uint(country))) {
-            QLocale locale(*new QLocalePrivate(localeDataIndex(data)));
+            QLocale locale(*QLocalePrivate::create(data));
             result.append(locale);
         }
         ++data;
@@ -2252,7 +2244,7 @@ QString QLocale::standaloneMonthName(int month, FormatType type) const
 #ifndef QT_NO_SYSTEMLOCALE
     if (d->m_data == systemData()) {
         QVariant res = systemLocale()->query(type == LongFormat
-                                             ? QSystemLocale::MonthNameLong : QSystemLocale::MonthNameShort,
+                                             ? QSystemLocale::StandaloneMonthNameLong : QSystemLocale::StandaloneMonthNameShort,
                                              month);
         if (!res.isNull())
             return res.toString();
@@ -2494,7 +2486,7 @@ QString QLocale::toUpper(const QString &str) const
 {
 #ifdef QT_USE_ICU
     bool ok = true;
-    QString result = QIcu::toUpper(d->m_localeID, str, &ok);
+    QString result = QIcu::toUpper(d->bcp47Name('_'), str, &ok);
     if (ok)
         return result;
     // else fall through and use Qt's toUpper
@@ -2511,7 +2503,7 @@ QString QLocale::toLower(const QString &str) const
 {
 #ifdef QT_USE_ICU
     bool ok = true;
-    QString result = QIcu::toLower(d->m_localeID, str, &ok);
+    const QString result = QIcu::toLower(d->bcp47Name('_'), str, &ok);
     if (ok)
         return result;
     // else fall through and use Qt's toUpper
@@ -3662,14 +3654,14 @@ QStringList QLocale::uiLanguages() const
     const QLocaleId min = max.withLikelySubtagsRemoved();
 
     QStringList uiLanguages;
-    uiLanguages.append(min.bcp47Name());
+    uiLanguages.append(QString::fromLatin1(min.name()));
     if (id.script_id) {
         id.script_id = 0;
         if (id != min && id.withLikelySubtagsAdded() == max)
-            uiLanguages.append(id.bcp47Name());
+            uiLanguages.append(QString::fromLatin1(id.name()));
     }
     if (max != min && max != id)
-        uiLanguages.append(max.bcp47Name());
+        uiLanguages.append(QString::fromLatin1(max.name()));
     return uiLanguages;
 }
 

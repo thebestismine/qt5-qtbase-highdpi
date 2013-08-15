@@ -145,6 +145,8 @@ private slots:
     void connectFunctorArgDifference();
     void connectFunctorOverloads();
     void disconnectDoesNotLeakFunctor();
+    void connectBase();
+    void qmlConnect();
 };
 
 struct QObjectCreatedOnShutdown
@@ -5809,6 +5811,80 @@ void tst_QObject::disconnectDoesNotLeakFunctor()
 #endif // Q_COMPILER_LAMBDA
     }
     QCOMPARE(countedStructObjectsCount, 0);
+}
+
+class SubSender : public SenderObject {
+    Q_OBJECT
+};
+
+void tst_QObject::connectBase()
+{
+    SubSender sub;
+    ReceiverObject r1;
+    r1.reset();
+
+    QVERIFY( connect( &sub, &SubSender::signal1 , &r1, &ReceiverObject::slot1 ) );
+    QVERIFY( connect( &sub, static_cast<void (SenderObject::*)()>(&SubSender::signal2) , &r1, &ReceiverObject::slot2 ) );
+    QVERIFY( connect( &sub, static_cast<void (SubSender::*)()>(&SubSender::signal3) , &r1, &ReceiverObject::slot3 ) );
+
+    sub.emitSignal1();
+    sub.emitSignal2();
+    sub.emitSignal3();
+
+    QCOMPARE( r1.count_slot1, 1 );
+    QCOMPARE( r1.count_slot2, 1 );
+    QCOMPARE( r1.count_slot3, 1 );
+}
+
+struct QmlReceiver : public QtPrivate::QSlotObjectBase
+{
+    int callCount;
+    void *magic;
+
+    QmlReceiver()
+        : QtPrivate::QSlotObjectBase(&impl)
+        , callCount(0)
+        , magic(0)
+    {}
+
+    static void impl(int which, QSlotObjectBase *this_, QObject *, void **metaArgs, bool *ret)
+    {
+        switch (which) {
+        case Destroy: delete static_cast<QmlReceiver*>(this_); return;
+        case Call: static_cast<QmlReceiver*>(this_)->callCount++; return;
+        case Compare: *ret = static_cast<QmlReceiver*>(this_)->magic == metaArgs[0]; return;
+        case NumOperations: break;
+        }
+    }
+};
+
+void tst_QObject::qmlConnect()
+{
+#ifdef QT_BUILD_INTERNAL
+    SenderObject sender;
+    QmlReceiver *receiver = new QmlReceiver;
+    receiver->magic = receiver;
+    receiver->ref();
+
+    QVERIFY(QObjectPrivate::connect(&sender, sender.metaObject()->indexOfSignal("signal1()"),
+                                    receiver, Qt::AutoConnection));
+
+    QCOMPARE(receiver->callCount, 0);
+    sender.emitSignal1();
+    QCOMPARE(receiver->callCount, 1);
+
+    void *a[] = {
+        receiver
+    };
+    QVERIFY(QObjectPrivate::disconnect(&sender, sender.metaObject()->indexOfSignal("signal1()"), reinterpret_cast<void**>(&a)));
+
+    sender.emitSignal1();
+    QCOMPARE(receiver->callCount, 1);
+
+    receiver->destroyIfLastRef();
+#else
+    QSKIP("Needs QT_BUILD_INTERNAL");
+#endif
 }
 
 QTEST_MAIN(tst_QObject)

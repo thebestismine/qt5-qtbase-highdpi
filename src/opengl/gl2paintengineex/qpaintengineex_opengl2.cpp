@@ -545,8 +545,10 @@ void QGL2PaintEngineEx::beginNativePainting()
         d->funcs.glDisableVertexAttribArray(i);
 
 #ifndef QT_OPENGL_ES_2
+    const QGLContext *ctx = d->ctx;
     const QGLFormat &fmt = d->device->format();
     if (fmt.majorVersion() < 3 || (fmt.majorVersion() == 3 && fmt.minorVersion() < 1)
+        || (fmt.majorVersion() == 3 && fmt.minorVersion() == 1 && ctx->contextHandle()->hasExtension(QByteArrayLiteral("GL_ARB_compatibility")))
         || fmt.profile() == QGLFormat::CompatibilityProfile)
     {
         // be nice to people who mix OpenGL 1.x code with QPainter commands
@@ -625,8 +627,28 @@ bool QGL2PaintEngineEx::isNativePaintingActive() const {
 
 bool QGL2PaintEngineEx::shouldDrawCachedGlyphs(QFontEngine *fontEngine, const QTransform &t) const
 {
-    // Don't try to cache vastly transformed fonts
-    return t.type() < QTransform::TxProject && QPaintEngineEx::shouldDrawCachedGlyphs(fontEngine, t);
+    // The paint engine does not support projected cached glyph drawing
+    if (t.type() == QTransform::TxProject)
+        return false;
+
+    // The font engine might not support filling the glyph cache
+    // with the given transform applied, in which case we need to
+    // fall back to the QPainterPath code-path.
+    if (!fontEngine->supportsTransformation(t)) {
+        // Except that drawing paths is slow, so for scales between
+        // 0.5 and 2.0 we leave the glyph cache untransformed and deal
+        // with the transform ourselves when painting, resulting in
+        // drawing 1x cached glyphs with a smooth-scale.
+        float det = t.determinant();
+        if (det >= 0.25f && det <= 4.f) {
+            // Assuming the baseclass still agrees
+            return QPaintEngineEx::shouldDrawCachedGlyphs(fontEngine, t);
+        }
+
+        return false; // Fall back to path-drawing
+    }
+
+    return QPaintEngineEx::shouldDrawCachedGlyphs(fontEngine, t);
 }
 
 void QGL2PaintEngineExPrivate::transferMode(EngineMode newMode)
@@ -1217,7 +1239,7 @@ void QGL2PaintEngineEx::stroke(const QVectorPath &path, const QPen &pen)
     if (qpen_style(pen) == Qt::NoPen || qbrush_style(penBrush) == Qt::NoBrush)
         return;
 
-    QOpenGL2PaintEngineState *s = state();
+    QGL2PaintEngineState *s = state();
     if (qt_pen_is_cosmetic(pen, s->renderHints) && !qt_scaleForTransform(s->transform(), 0)) {
         // QTriangulatingStroker class is not meant to support cosmetically sheared strokes.
         QPaintEngineEx::stroke(path, pen);
@@ -1231,7 +1253,7 @@ void QGL2PaintEngineEx::stroke(const QVectorPath &path, const QPen &pen)
 
 void QGL2PaintEngineExPrivate::stroke(const QVectorPath &path, const QPen &pen)
 {
-    const QOpenGL2PaintEngineState *s = q->state();
+    const QGL2PaintEngineState *s = q->state();
     if (snapToPixelGrid) {
         snapToPixelGrid = false;
         matrixDirty = true;
@@ -1504,7 +1526,7 @@ void QGL2PaintEngineEx::drawTextItem(const QPointF &p, const QTextItem &textItem
     Q_D(QGL2PaintEngineEx);
 
     ensureActive();
-    QOpenGL2PaintEngineState *s = state();
+    QGL2PaintEngineState *s = state();
 
     const QTextItemInt &ti = static_cast<const QTextItemInt &>(textItem);
 
@@ -1579,24 +1601,28 @@ void QGL2PaintEngineExPrivate::drawCachedGlyphs(QFontEngineGlyphCache::Type glyp
 {
     Q_Q(QGL2PaintEngineEx);
 
-    QOpenGL2PaintEngineState *s = q->state();
+    QGL2PaintEngineState *s = q->state();
 
     void *cacheKey = const_cast<QGLContext *>(QGLContextPrivate::contextGroup(ctx)->context());
     bool recreateVertexArrays = false;
 
-    // We allow scaling, so that the glyph-cache will contain glyphs with the
-    // appropriate resolution in the case of displays with a device-pixel-ratio != 1.
-    QTransform transform = s->matrix.type() < QTransform::TxRotate ?
-        QTransform::fromScale(qAbs(s->matrix.m11()), qAbs(s->matrix.m22())) :
-        QTransform::fromScale(
-            QVector2D(s->matrix.m11(), s->matrix.m12()).length(),
-            QVector2D(s->matrix.m21(), s->matrix.m22()).length());
-
+    QTransform glyphCacheTransform;
     QFontEngine *fe = staticTextItem->fontEngine();
+    if (fe->supportsTransformation(s->matrix)) {
+        // The font-engine supports rendering glyphs with the current transform, so we
+        // build a glyph-cache with the scale pre-applied, so that the cache contains
+        // glyphs with the appropriate resolution in the case of retina displays.
+        glyphCacheTransform = s->matrix.type() < QTransform::TxRotate ?
+            QTransform::fromScale(qAbs(s->matrix.m11()), qAbs(s->matrix.m22())) :
+            QTransform::fromScale(
+                QVector2D(s->matrix.m11(), s->matrix.m12()).length(),
+                QVector2D(s->matrix.m21(), s->matrix.m22()).length());
+    }
+
     QGLTextureGlyphCache *cache =
-            (QGLTextureGlyphCache *) fe->glyphCache(cacheKey, glyphType, transform);
+            (QGLTextureGlyphCache *) fe->glyphCache(cacheKey, glyphType, glyphCacheTransform);
     if (!cache || cache->cacheType() != glyphType || cache->contextGroup() == 0) {
-        cache = new QGLTextureGlyphCache(glyphType, transform);
+        cache = new QGLTextureGlyphCache(glyphType, glyphCacheTransform);
         fe->setGlyphCache(cacheKey, cache);
         recreateVertexArrays = true;
     }
@@ -2360,8 +2386,8 @@ void QGL2PaintEngineEx::setState(QPainterState *new_state)
 
     Q_D(QGL2PaintEngineEx);
 
-    QOpenGL2PaintEngineState *s = static_cast<QOpenGL2PaintEngineState *>(new_state);
-    QOpenGL2PaintEngineState *old_state = state();
+    QGL2PaintEngineState *s = static_cast<QGL2PaintEngineState *>(new_state);
+    QGL2PaintEngineState *old_state = state();
 
     QPaintEngineEx::setState(s);
 
@@ -2402,11 +2428,11 @@ QPainterState *QGL2PaintEngineEx::createState(QPainterState *orig) const
     if (orig)
         const_cast<QGL2PaintEngineEx *>(this)->ensureActive();
 
-    QOpenGL2PaintEngineState *s;
+    QGL2PaintEngineState *s;
     if (!orig)
-        s = new QOpenGL2PaintEngineState();
+        s = new QGL2PaintEngineState();
     else
-        s = new QOpenGL2PaintEngineState(*static_cast<QOpenGL2PaintEngineState *>(orig));
+        s = new QGL2PaintEngineState(*static_cast<QGL2PaintEngineState *>(orig));
 
     s->matrixChanged = false;
     s->compositionModeChanged = false;
@@ -2417,7 +2443,7 @@ QPainterState *QGL2PaintEngineEx::createState(QPainterState *orig) const
     return s;
 }
 
-QOpenGL2PaintEngineState::QOpenGL2PaintEngineState(QOpenGL2PaintEngineState &other)
+QGL2PaintEngineState::QGL2PaintEngineState(QGL2PaintEngineState &other)
     : QPainterState(other)
 {
     isNew = true;
@@ -2428,7 +2454,7 @@ QOpenGL2PaintEngineState::QOpenGL2PaintEngineState(QOpenGL2PaintEngineState &oth
     rectangleClip = other.rectangleClip;
 }
 
-QOpenGL2PaintEngineState::QOpenGL2PaintEngineState()
+QGL2PaintEngineState::QGL2PaintEngineState()
 {
     isNew = true;
     needsClipBufferClear = true;
@@ -2436,7 +2462,7 @@ QOpenGL2PaintEngineState::QOpenGL2PaintEngineState()
     canRestoreClip = true;
 }
 
-QOpenGL2PaintEngineState::~QOpenGL2PaintEngineState()
+QGL2PaintEngineState::~QGL2PaintEngineState()
 {
 }
 

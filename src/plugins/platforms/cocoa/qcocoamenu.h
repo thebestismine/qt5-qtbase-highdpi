@@ -47,11 +47,9 @@
 #include <qpa/qplatformmenu.h>
 #include "qcocoamenuitem.h"
 
-@class NSMenuItem;
-@class NSMenu;
-@class NSObject;
-
 QT_BEGIN_NAMESPACE
+
+class QCocoaMenuBar;
 
 class QCocoaMenu : public QPlatformMenu
 {
@@ -81,8 +79,6 @@ public:
     void setMinimumWidth(int width);
     void setFont(const QFont &font);
 
-    void setParentItem(QCocoaMenuItem* item);
-
     inline NSMenu *nsMenu() const
         { return m_nativeMenu; }
     inline NSMenuItem *nsMenuItem() const
@@ -91,7 +87,10 @@ public:
     virtual QPlatformMenuItem *menuItemAt(int position) const;
     virtual QPlatformMenuItem *menuItemForTag(quintptr tag) const;
 
+    QList<QCocoaMenuItem *> items() const;
     QList<QCocoaMenuItem *> merged() const;
+    void setMenuBar(QCocoaMenuBar *menuBar);
+    QCocoaMenuBar *menuBar() const;
 private:
     QCocoaMenuItem *itemOrNull(int index) const;
     void insertNative(QCocoaMenuItem *item, QCocoaMenuItem *beforeItem);
@@ -102,6 +101,7 @@ private:
     NSObject *m_delegate;
     bool m_enabled;
     quintptr m_tag;
+    QCocoaMenuBar *m_menuBar;
 };
 
 QT_END_NAMESPACE

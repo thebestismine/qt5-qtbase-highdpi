@@ -870,7 +870,12 @@ void Moc::generate(FILE *out)
         findRequiredContainers(&classList[i], &requiredQtContainers);
     }
 
-    foreach (const QByteArray &qtContainer, requiredQtContainers) {
+    // after finding the containers, we sort them into a list to avoid
+    // non-deterministic behavior which may cause rebuilds unnecessarily.
+    QList<QByteArray> requiredContainerList = requiredQtContainers.toList();
+    std::sort(requiredContainerList.begin(), requiredContainerList.end());
+
+    foreach (const QByteArray &qtContainer, requiredContainerList) {
         fprintf(out, "#include <QtCore/%s>\n", qtContainer.constData());
     }
 
@@ -1447,6 +1452,11 @@ bool Moc::until(Token target) {
         if (braceCount < 0 || brackCount < 0 || parenCount < 0
             || (target == RANGLE && angleCount < 0)) {
             --index;
+            break;
+        }
+
+        if (braceCount <= 0 && t == SEMIC) {
+            // Abort on semicolon. Allow recovering bad template parsing (QTBUG-31218)
             break;
         }
     }

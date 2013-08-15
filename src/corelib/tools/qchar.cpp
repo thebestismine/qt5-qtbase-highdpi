@@ -1739,10 +1739,10 @@ static void composeHelper(QString *str, QChar::UnicodeVersion version, int from)
     if (from < 0 || s.length() - from < 2)
         return;
 
-    int starter = 0; // starter position
     uint stcode = 0; // starter code point
-    int next = -1;
-    int lastCombining = 0;
+    int starter = -1; // starter position
+    int next = -1; // to prevent i == next
+    int lastCombining = 255; // to prevent combining > lastCombining
 
     int pos = from;
     while (pos < s.length()) {
@@ -1766,8 +1766,7 @@ static void composeHelper(QString *str, QChar::UnicodeVersion version, int from)
         }
 
         int combining = p->combiningClass;
-        if (i == next || combining > lastCombining) {
-            Q_ASSERT(starter >= from);
+        if ((i == next || combining > lastCombining) && starter >= from) {
             // allowed to form ligature with S
             uint ligature = ligatureHelper(stcode, uc);
             if (ligature) {
@@ -1883,6 +1882,67 @@ static void canonicalOrderHelper(QString *str, QChar::UnicodeVersion version, in
             goto advance;
         }
     }
+}
+
+// returns true if the text is in a desired Normalization Form already; false otherwise.
+// sets lastStable to the position of the last stable code point
+static bool normalizationQuickCheckHelper(QString *str, QString::NormalizationForm mode, int from, int *lastStable)
+{
+    Q_STATIC_ASSERT(QString::NormalizationForm_D == 0);
+    Q_STATIC_ASSERT(QString::NormalizationForm_C == 1);
+    Q_STATIC_ASSERT(QString::NormalizationForm_KD == 2);
+    Q_STATIC_ASSERT(QString::NormalizationForm_KC == 3);
+
+    enum { NFQC_YES = 0, NFQC_NO = 1, NFQC_MAYBE = 3 };
+
+    const ushort *string = reinterpret_cast<const ushort *>(str->constData());
+    int length = str->length();
+
+    // this avoids one out of bounds check in the loop
+    while (length > from && QChar::isHighSurrogate(string[length - 1]))
+        --length;
+
+    uchar lastCombining = 0;
+    for (int i = from; i < length; ++i) {
+        int pos = i;
+        uint uc = string[i];
+        if (uc < 0x80) {
+            // ASCII characters are stable code points
+            lastCombining = 0;
+            *lastStable = pos;
+            continue;
+        }
+
+        if (QChar::isHighSurrogate(uc)) {
+            ushort low = string[i + 1];
+            if (!QChar::isLowSurrogate(low)) {
+                // treat surrogate like stable code point
+                lastCombining = 0;
+                *lastStable = pos;
+                continue;
+            }
+            ++i;
+            uc = QChar::surrogateToUcs4(uc, low);
+        }
+
+        const QUnicodeTables::Properties *p = qGetProp(uc);
+
+        if (p->combiningClass < lastCombining && p->combiningClass > 0)
+            return false;
+
+        const uchar check = (p->nfQuickCheck >> (mode << 1)) & 0x03;
+        if (check != NFQC_YES)
+            return false; // ### can we quick check NFQC_MAYBE ?
+
+        lastCombining = p->combiningClass;
+        if (lastCombining == 0)
+            *lastStable = pos;
+    }
+
+    if (length != str->length()) // low surrogate parts at the end of text
+        *lastStable = str->length() - 1;
+
+    return true;
 }
 
 QT_END_NAMESPACE

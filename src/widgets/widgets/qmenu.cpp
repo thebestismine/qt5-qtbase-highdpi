@@ -154,7 +154,7 @@ void QMenuPrivate::init()
     }
 
     platformMenu = QGuiApplicationPrivate::platformTheme()->createPlatformMenu();
-    if (platformMenu) {
+    if (!platformMenu.isNull()) {
         QObject::connect(platformMenu, SIGNAL(aboutToShow()), q, SIGNAL(aboutToShow()));
         QObject::connect(platformMenu, SIGNAL(aboutToHide()), q, SIGNAL(aboutToHide()));
     }
@@ -420,25 +420,17 @@ void QMenuPrivate::hideUpToMenuBar()
             if (QMenu *m = qobject_cast<QMenu*>(caused)) {
                 caused = m->d_func()->causedPopup.widget;
                 if (!m->d_func()->tornoff)
-                    hideMenu(m, fadeMenus);
+                    hideMenu(m);
                 if (!fadeMenus) // Mac doesn't clear the action until after hidden.
                     m->d_func()->setCurrentAction(0);
             } else {                caused = 0;
             }
         }
-#if defined(Q_WS_MAC)
-        if (fadeMenus) {
-            QEventLoop eventLoop;
-            QTimer::singleShot(int(MenuFadeTimeInSec * 1000), &eventLoop, SLOT(quit()));
-            QMacWindowFader::currentFader()->performFade();
-            eventLoop.exec();
-        }
-#endif
     }
     setCurrentAction(0);
 }
 
-void QMenuPrivate::hideMenu(QMenu *menu, bool justRegister)
+void QMenuPrivate::hideMenu(QMenu *menu)
 {
     if (!menu)
         return;
@@ -462,27 +454,10 @@ void QMenuPrivate::hideMenu(QMenu *menu, bool justRegister)
         eventLoop.exec();
     }
 
-    // Fade out.
-    if (menu->style()->styleHint(QStyle::SH_Menu_FadeOutOnHide)) {
-        // ### Qt 4.4:
-        // Should be something like: q->transitionWindow(Qt::FadeOutTransition, MenuFadeTimeInSec);
-        // Hopefully we'll integrate qt/research/windowtransitions into main before 4.4.
-        // Talk to Richard, Trenton or Bjoern.
-#if defined(Q_WS_MAC)
-        if (justRegister) {
-            QMacWindowFader::currentFader()->setFadeDuration(MenuFadeTimeInSec);
-            QMacWindowFader::currentFader()->registerWindowToFade(menu);
-        } else {
-            macWindowFade(qt_mac_window_for(menu), MenuFadeTimeInSec);
-        }
-
-#endif // Q_WS_MAC
-    }
     aboutToHide = false;
     menu->blockSignals(false);
 #endif // QT_NO_EFFECTS
-    if (!justRegister)
-        menu->close();
+    menu->close();
 }
 
 void QMenuPrivate::popupAction(QAction *action, int delay, bool activateFirst)
@@ -2411,7 +2386,7 @@ void QMenu::changeEvent(QEvent *e)
         if (d->tornPopup) // torn-off menu
             d->tornPopup->setEnabled(isEnabled());
         d->menuAction->setEnabled(isEnabled());
-        if (d->platformMenu)
+        if (!d->platformMenu.isNull())
             d->platformMenu->setEnabled(isEnabled());
     }
     QWidget::changeEvent(e);
@@ -2879,9 +2854,9 @@ void QMenu::mouseMoveEvent(QMouseEvent *e)
     d->hasHadMouse = d->hasHadMouse || rect().contains(e->pos());
 
     QAction *action = d->actionAt(e->pos());
-    if (!action) {
+    if (!action || action->isSeparator()) {
         if (d->hasHadMouse
-            && (!d->currentAction
+            && (!d->currentAction || (action && action->isSeparator())
                 || !(d->currentAction->menu() && d->currentAction->menu()->isVisible())))
             d->setCurrentAction(0);
         return;
@@ -2992,12 +2967,13 @@ void QMenu::actionEvent(QActionEvent *e)
         d->widgetItems.remove(e->action());
     }
 
-    if (d->platformMenu) {
+    if (!d->platformMenu.isNull()) {
         if (e->type() == QEvent::ActionAdded) {
             QPlatformMenuItem *menuItem =
                 QGuiApplicationPrivate::platformTheme()->createPlatformMenuItem();
             menuItem->setTag(reinterpret_cast<quintptr>(e->action()));
             QObject::connect(menuItem, SIGNAL(activated()), e->action(), SLOT(trigger()));
+            QObject::connect(menuItem, SIGNAL(hovered()), e->action(), SIGNAL(hovered()));
             copyActionToPlatformItem(e->action(), menuItem);
             QPlatformMenuItem* beforeItem = d->platformMenu->menuItemForTag(reinterpret_cast<quintptr>(e->before()));
             d->platformMenu->insertMenuItem(menuItem, beforeItem);
@@ -3201,7 +3177,7 @@ void QMenu::setSeparatorsCollapsible(bool collapse)
         d->updateActionRects();
         update();
     }
-    if (d->platformMenu)
+    if (!d->platformMenu.isNull())
         d->platformMenu->syncSeparatorsCollapsible(collapse);
 }
 

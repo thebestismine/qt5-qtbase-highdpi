@@ -1,7 +1,7 @@
 /****************************************************************************
 **
 ** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/
+** Contact: http://www.qt-project.org/legal
 **
 ** This file is part of the tools applications of the Qt Toolkit.
 **
@@ -532,10 +532,12 @@ void DitaXmlGenerator::initializeGenerator(const Config &config)
     projectUrl = config.getString(CONFIG_URL);
     tagFile_ = config.getString(CONFIG_TAGFILE);
 
+#ifndef QT_NO_TEXTCODEC
     outputEncoding = config.getString(CONFIG_OUTPUTENCODING);
     if (outputEncoding.isEmpty())
         outputEncoding = QLatin1String("ISO-8859-1");
     outputCodec = QTextCodec::codecForName(outputEncoding.toLocal8Bit());
+#endif
 
     naturalLanguage = config.getString(CONFIG_NATURALLANGUAGE);
     if (naturalLanguage.isEmpty())
@@ -2763,11 +2765,22 @@ void DitaXmlGenerator::generateAnnotatedList(const Node* relative,
                 writeEndTag(); // </p>
                 writeEndTag(); // <entry>
             }
+            else if (!node->reconstitutedBrief().isEmpty()) {
+                writeStartTag(DT_entry);
+                writeStartTag(DT_p);
+                writeCharacters(node->reconstitutedBrief());
+                writeEndTag(); // </p>
+                writeEndTag(); // <entry>
+            }
         }
         else {
             writeStartTag(DT_entry);
             writeStartTag(DT_p);
-            writeCharacters(protectEnc(node->doc().briefText().toString())); // zzz
+            if (!node->reconstitutedBrief().isEmpty()) {
+                writeCharacters(node->reconstitutedBrief());
+            }
+            else
+                writeCharacters(protectEnc(node->doc().briefText().toString()));
             writeEndTag(); // </p>
             writeEndTag(); // <entry>
         }
@@ -3127,7 +3140,7 @@ void DitaXmlGenerator::generateOverviewList(const Node* relative)
                     // If we encounter a group definition page, we add all
                     // the pages in that group to the list for that group.
                     foreach (Node* member, docNode->members()) {
-                        if (member->type() != Node::Document)
+                        if (member->isInternal() || member->type() != Node::Document)
                             continue;
                         DocNode* page = static_cast<DocNode*>(member);
                         if (page) {
@@ -3144,7 +3157,7 @@ void DitaXmlGenerator::generateOverviewList(const Node* relative)
                     // If we encounter a page that belongs to a group then
                     // we add that page to the list for that group.
                     const DocNode* gn = qdb_->getGroup(group);
-                    if (gn)
+                    if (gn && !docNode->isInternal())
                         docNodeMap[gn].insert(sortKey, docNode);
                 }
             }
@@ -3575,7 +3588,11 @@ QString DitaXmlGenerator::registerRef(const QString& ref)
  */
 QString DitaXmlGenerator::protectEnc(const QString& string)
 {
+#ifndef QT_NO_TEXTCODEC
     return protect(string, outputEncoding);
+#else
+    return protect(string);
+#endif
 }
 
 QString DitaXmlGenerator::protect(const QString& string, const QString& ) //outputEncoding)
@@ -3660,8 +3677,8 @@ QString DitaXmlGenerator::guidForNode(const Node* node)
         return fn->guid();
     }
     case Node::Document:
-        if (node->subType() != Node::QmlPropertyGroup)
-            break;
+        break;
+    case Node::QmlPropertyGroup:
     case Node::QmlProperty:
     case Node::Property:
         return node->guid();
@@ -3726,7 +3743,7 @@ QString DitaXmlGenerator::linkForNode(const Node* node, const Node* relative)
     }
     QString link = fn;
 
-    if (!node->isInnerNode() || node->subType() == Node::QmlPropertyGroup) {
+    if (!node->isInnerNode() || node->type() == Node::QmlPropertyGroup) {
         QString guid = guidForNode(node);
         if (relative && fn == fileName(relative) && guid == guidForNode(relative)) {
             return QString();
@@ -3741,7 +3758,7 @@ QString DitaXmlGenerator::linkForNode(const Node* node, const Node* relative)
       back down into the other subdirectory.
      */
     if (node && relative && (node != relative)) {
-        if (node->outputSubdirectory() != relative->outputSubdirectory())
+        if (useOutputSubdirs() && node->outputSubdirectory() != relative->outputSubdirectory())
             link.prepend(QString("../" + node->outputSubdirectory() + QLatin1Char('/')));
     }
     return link;
@@ -4062,8 +4079,8 @@ void DitaXmlGenerator::generateDetailedQmlMember(Node* node,
     QString marked;
     QmlPropertyNode* qpn = 0;
 
-    if (node->subType() == Node::QmlPropertyGroup) {
-        const QmlPropGroupNode* qpgn = static_cast<const QmlPropGroupNode*>(node);
+    if (node->type() == Node::QmlPropertyGroup) {
+        const QmlPropertyGroupNode* qpgn = static_cast<const QmlPropertyGroupNode*>(node);
         NodeList::ConstIterator p = qpgn->childNodes().constBegin();
         if (qpgn->childNodes().size() == 1) {
             qpn = static_cast<QmlPropertyNode*>(*p);
@@ -4097,50 +4114,10 @@ void DitaXmlGenerator::generateDetailedQmlMember(Node* node,
     }
     else if (node->type() == Node::QmlProperty) {
         qpn = static_cast<QmlPropertyNode*>(node);
-        if (qpn->qmlPropNodes().isEmpty()) {
-            startQmlProperty(qpn,relative,marker);
-            writeApiDesc(node, marker, node->title());
-            writeEndTag(); // </qmlPropertyDetail>
-            writeEndTag(); // </qmlProperty>
-        }
-        else if (qpn->qmlPropNodes().size() == 1) {
-            Node* n = qpn->qmlPropNodes().at(0);
-            if (n->type() == Node::QmlProperty) {
-                qpn = static_cast<QmlPropertyNode*>(n);
-                startQmlProperty(qpn,relative,marker);
-                writeApiDesc(node, marker, node->title());
-                writeEndTag(); // </qmlPropertyDetail>
-                writeEndTag(); // </qmlProperty>
-            }
-        }
-        else {
-            /*
-              The QML property node has multiple override nodes.
-              Process the whole list as we would for a QML property
-              group.
-             */
-            writeStartTag(DT_qmlPropertyGroup);
-            QString id = "id-qml-propertygroup-" + node->name();
-            id.replace('.','-');
-            xmlWriter().writeAttribute("id",id);
-            writeStartTag(DT_apiName);
-            //writeCharacters("...");
-            writeEndTag(); // </apiName>
-            writeStartTag(DT_qmlPropertyGroupDetail);
-            writeApiDesc(node, marker, node->title());
-            writeEndTag(); // </qmlPropertyGroupDetail>
-            NodeList::ConstIterator p = qpn->qmlPropNodes().constBegin();
-            while (p != qpn->qmlPropNodes().constEnd()) {
-                if ((*p)->type() == Node::QmlProperty) {
-                    QmlPropertyNode* q = static_cast<QmlPropertyNode*>(*p);
-                    startQmlProperty(q,relative,marker);
-                    writeEndTag(); // </qmlPropertyDetail>
-                    writeEndTag(); // </qmlProperty>
-                }
-                ++p;
-            }
-            writeEndTag(); // </qmlPropertyGroup
-        }
+        startQmlProperty(qpn,relative,marker);
+        writeApiDesc(node, marker, node->title());
+        writeEndTag(); // </qmlPropertyDetail>
+        writeEndTag(); // </qmlProperty>
     }
     else if (node->type() == Node::QmlSignal)
         writeQmlRef(DT_qmlSignal,node,relative,marker);
@@ -5309,13 +5286,13 @@ DitaXmlGenerator::generateInnerNode(InnerNode* node)
             return;
         if (docNode->subType() == Node::Image)
             return;
-        if (docNode->subType() == Node::QmlPropertyGroup)
-            return;
         if (docNode->subType() == Node::Page) {
             if (node->count() > 0)
                 qDebug("PAGE %s HAS CHILDREN", qPrintable(docNode->title()));
         }
     }
+    else if (node->type() == Node::QmlPropertyGroup)
+        return;
 
     /*
       Obtain a code marker for the source file.
@@ -5470,8 +5447,6 @@ Node* DitaXmlGenerator::collectNodesByTypeAndSubtype(const InnerNode* parent)
                 if (!isDuplicate(nodeSubtypeMaps[Node::QmlClass],child->title(),child))
                     nodeSubtypeMaps[Node::QmlClass]->insert(child->title(),child);
                 break;
-            case Node::QmlPropertyGroup:
-                break;
             case Node::QmlBasicType:
                 if (!isDuplicate(nodeSubtypeMaps[Node::QmlBasicType],child->title(),child))
                     nodeSubtypeMaps[Node::QmlBasicType]->insert(child->title(),child);
@@ -5499,6 +5474,8 @@ Node* DitaXmlGenerator::collectNodesByTypeAndSubtype(const InnerNode* parent)
         case Node::Variable:
             break;
         case Node::QmlProperty:
+            break;
+        case Node::QmlPropertyGroup:
             break;
         case Node::QmlSignal:
             break;
@@ -5829,8 +5806,11 @@ bool DitaXmlGenerator::writeMetadataElements(const InnerNode* inner,
 QString DitaXmlGenerator::getMetadataElement(const InnerNode* inner, DitaXmlGenerator::DitaTag t)
 {
     QString s = Generator::getMetadataElement(inner, ditaTags[t]);
-    if (s.isEmpty())
-        s = metadataDefault(t);
+    if (s.isEmpty()) {
+        QStringList sl = metadataDefault(t);
+        if (!sl.isEmpty())
+            s = sl[0];
+    }
     return s;
 }
 
@@ -5850,7 +5830,7 @@ QStringList DitaXmlGenerator::getMetadataElements(const InnerNode* inner,
 {
     QStringList s = Generator::getMetadataElements(inner,ditaTags[t]);
     if (s.isEmpty())
-        s.append(metadataDefault(t));
+        s = metadataDefault(t);
     return s;
 }
 
@@ -5858,9 +5838,9 @@ QStringList DitaXmlGenerator::getMetadataElements(const InnerNode* inner,
   Returns the value of key \a t or an empty string
   if \a t is not found in the map.
  */
-QString DitaXmlGenerator::metadataDefault(DitaTag t) const
+QStringList DitaXmlGenerator::metadataDefault(DitaTag t) const
 {
-    return metadataDefaults.value(ditaTags[t]).second;
+    return metadataDefaults.value(ditaTags[t]).values_;
 }
 
 /*!

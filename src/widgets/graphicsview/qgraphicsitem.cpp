@@ -1658,8 +1658,8 @@ const QGraphicsObject *QGraphicsItem::toGraphicsObject() const
   the parent. You should not \l{QGraphicsScene::addItem()}{add} the
   item to the scene yourself.
 
-  Calling this function on an item that is an ancestor of \a newParent
-  have undefined behaviour.
+  The behavior when calling this function on an item that is an ancestor of
+  \a newParent is undefined.
 
   \sa parentItem(), childItems()
 */
@@ -2741,7 +2741,7 @@ QGraphicsEffect *QGraphicsItem::graphicsEffect() const
     the new \a effect. You can delete an existing effect by calling
     setGraphicsEffect(0).
 
-    If \a effect is the installed on a different item, setGraphicsEffect() will remove
+    If \a effect is the installed effect on a different item, setGraphicsEffect() will remove
     the effect from the item and install it on this item.
 
     QGraphicsItem takes ownership of \a effect.
@@ -7186,7 +7186,7 @@ void QGraphicsItem::mouseMoveEvent(QGraphicsSceneMouseEvent *event)
 */
 void QGraphicsItem::mouseReleaseEvent(QGraphicsSceneMouseEvent *event)
 {
-    if (flags() & ItemIsSelectable) {
+    if (event->button() == Qt::LeftButton && (flags() & ItemIsSelectable)) {
         bool multiSelect = (event->modifiers() & Qt::ControlModifier) != 0;
         if (event->scenePos() == event->buttonDownScenePos(Qt::LeftButton)) {
             // The item didn't move

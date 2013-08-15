@@ -21,7 +21,7 @@ qhp.QtSql.customFilters.Qt.filterAttributes = qtsql $QT_VERSION
 
 qhp.QtSql.subprojects         = classes
 qhp.QtSql.subprojects.classes.title = C++ Classes
-qhp.QtSql.subprojects.classes.indexTitle = Qt SQL Module C++ Classes
+qhp.QtSql.subprojects.classes.indexTitle = Qt SQL C++ Classes
 qhp.QtSql.subprojects.classes.selectors = class fake:headerfile
 qhp.QtSql.subprojects.classes.sortPages = true
 tagfile                 = ../../../doc/qtsql/qtsql.tags
@@ -39,3 +39,6 @@ exampledirs += ../../../examples/sql \
 
 imagedirs   += images \
                ../../../examples/sql/doc/images
+
+navigation.landingpage = "Qt SQL"
+navigation.cppclassespage = "Qt SQL C++ Classes"

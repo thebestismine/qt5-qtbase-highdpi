@@ -95,9 +95,13 @@ public:
     QGenericUnixThemePrivate()
         : QPlatformThemePrivate()
         , systemFont(QLatin1String(defaultSystemFontNameC), defaultSystemFontSize)
-    { }
+        , fixedFont(QStringLiteral("monospace"), systemFont.pointSize())
+    {
+        fixedFont.setStyleHint(QFont::TypeWriter);
+    }
 
     const QFont systemFont;
+    QFont fixedFont;
 };
 
 QGenericUnixTheme::QGenericUnixTheme()
@@ -108,9 +112,14 @@ QGenericUnixTheme::QGenericUnixTheme()
 const QFont *QGenericUnixTheme::font(Font type) const
 {
     Q_D(const QGenericUnixTheme);
-    if (type == QPlatformTheme::SystemFont)
+    switch (type) {
+    case QPlatformTheme::SystemFont:
         return &d->systemFont;
-    return 0;
+    case QPlatformTheme::FixedFont:
+        return &d->fixedFont;
+    default:
+        return 0;
+    }
 }
 
 // Helper to return the icon theme paths from XDG.
@@ -164,6 +173,7 @@ public:
         , kdeVersion(kdeVersion)
         , toolButtonStyle(Qt::ToolButtonTextBesideIcon)
         , toolBarIconSize(0)
+        , singleClick(true)
     { }
 
     QString globalSettingsFile() const
@@ -186,6 +196,7 @@ public:
     QStringList styleNames;
     int toolButtonStyle;
     int toolBarIconSize;
+    bool singleClick;
 };
 
 void QKdeThemePrivate::refresh()
@@ -217,6 +228,8 @@ void QKdeThemePrivate::refresh()
             styleNames.push_front(style);
     }
 
+    singleClick = kdeSettings.value(QStringLiteral("KDE/SingleClick"), true).toBool();
+
     const QVariant themeValue = kdeSettings.value(QStringLiteral("Icons/Theme"));
     if (themeValue.isValid())
         iconThemeName = themeValue.toString();
@@ -236,11 +249,18 @@ void QKdeThemePrivate::refresh()
             toolButtonStyle = Qt::ToolButtonTextUnderIcon;
     }
 
-    // Read system font, ignore 'fixed' 'smallestReadableFont'
-    if (QFont *systemFont = readKdeFontSetting(kdeSettings, QStringLiteral("font"))) {
+    // Read system font, ignore 'smallestReadableFont'
+    if (QFont *systemFont = readKdeFontSetting(kdeSettings, QStringLiteral("font")))
         resources.fonts[QPlatformTheme::SystemFont] = systemFont;
-    } else {
+    else
         resources.fonts[QPlatformTheme::SystemFont] = new QFont(QLatin1String(defaultSystemFontNameC), defaultSystemFontSize);
+
+    if (QFont *fixedFont = readKdeFontSetting(kdeSettings, QStringLiteral("fixed"))) {
+        resources.fonts[QPlatformTheme::FixedFont] = fixedFont;
+    } else {
+        fixedFont = new QFont(QLatin1String(defaultSystemFontNameC), defaultSystemFontSize);
+        fixedFont->setStyleHint(QFont::TypeWriter);
+        resources.fonts[QPlatformTheme::FixedFont] = fixedFont;
     }
 }
 
@@ -261,6 +281,14 @@ static inline bool kdeColor(QPalette *pal, QPalette::ColorRole role,
 
 void QKdeThemePrivate::readKdeSystemPalette(const QSettings &kdeSettings, QPalette *pal)
 {
+    if (!kdeSettings.contains(QStringLiteral("Colors:Button/BackgroundNormal"))) {
+        // kcolorscheme.cpp: SetDefaultColors
+        const QColor defaultWindowBackground(214, 210, 208);
+        const QColor defaultButtonBackground(223, 220, 217);
+        *pal = QPalette(defaultButtonBackground, defaultWindowBackground);
+        return;
+    }
+
     kdeColor(pal, QPalette::Button, kdeSettings, QStringLiteral("Colors:Button/BackgroundNormal"));
     kdeColor(pal, QPalette::Window, kdeSettings, QStringLiteral("Colors:Window/BackgroundNormal"));
     kdeColor(pal, QPalette::Text, kdeSettings, QStringLiteral("Colors:View/ForegroundNormal"));
@@ -272,6 +300,34 @@ void QKdeThemePrivate::readKdeSystemPalette(const QSettings &kdeSettings, QPalet
     kdeColor(pal, QPalette::ButtonText, kdeSettings, QStringLiteral("Colors:Button/ForegroundNormal"));
     kdeColor(pal, QPalette::Link, kdeSettings, QStringLiteral("Colors:View/ForegroundLink"));
     kdeColor(pal, QPalette::LinkVisited, kdeSettings, QStringLiteral("Colors:View/ForegroundVisited"));
+    kdeColor(pal, QPalette::ToolTipBase, kdeSettings, QStringLiteral("Colors:Tooltip/BackgroundNormal"));
+    kdeColor(pal, QPalette::ToolTipText, kdeSettings, QStringLiteral("Colors:Tooltip/ForegroundNormal"));
+
+    // The above code sets _all_ color roles to "normal" colors. In KDE, the disabled
+    // color roles are calculated by applying various effects described in kdeglobals.
+    // We use a bit simpler approach here, similar logic than in qt_palette_from_color().
+    const QColor button = pal->color(QPalette::Button);
+    int h, s, v;
+    button.getHsv(&h, &s, &v);
+
+    const QBrush whiteBrush = QBrush(Qt::white);
+    const QBrush buttonBrush = QBrush(button);
+    const QBrush buttonBrushDark = QBrush(button.darker(v > 128 ? 200 : 50));
+    const QBrush buttonBrushDark150 = QBrush(button.darker(v > 128 ? 150 : 75));
+    const QBrush buttonBrushLight150 = QBrush(button.lighter(v > 128 ? 150 : 75));
+
+    pal->setBrush(QPalette::Disabled, QPalette::WindowText, buttonBrushDark);
+    pal->setBrush(QPalette::Disabled, QPalette::ButtonText, buttonBrushDark);
+    pal->setBrush(QPalette::Disabled, QPalette::Button, buttonBrush);
+    pal->setBrush(QPalette::Disabled, QPalette::Light, buttonBrushLight150);
+    pal->setBrush(QPalette::Disabled, QPalette::Dark, buttonBrushDark);
+    pal->setBrush(QPalette::Disabled, QPalette::Mid, buttonBrushDark150);
+    pal->setBrush(QPalette::Disabled, QPalette::Text, buttonBrushDark);
+    pal->setBrush(QPalette::Disabled, QPalette::BrightText, whiteBrush);
+    pal->setBrush(QPalette::Disabled, QPalette::Base, buttonBrush);
+    pal->setBrush(QPalette::Disabled, QPalette::Window, buttonBrush);
+    pal->setBrush(QPalette::Disabled, QPalette::Highlight, buttonBrushDark150);
+    pal->setBrush(QPalette::Disabled, QPalette::HighlightedText, buttonBrushLight150);
 }
 
 /*!
@@ -360,6 +416,8 @@ QVariant QKdeTheme::themeHint(QPlatformTheme::ThemeHint hint) const
         return QVariant(d->styleNames);
     case QPlatformTheme::KeyboardScheme:
         return QVariant(int(KdeKeyboardScheme));
+    case QPlatformTheme::ItemViewActivateItemOnSingleClick:
+        return QVariant(d->singleClick);
     default:
         break;
     }
@@ -419,9 +477,13 @@ class QGnomeThemePrivate : public QPlatformThemePrivate
 public:
     QGnomeThemePrivate()
         : systemFont(QLatin1Literal(defaultSystemFontNameC), defaultSystemFontSize)
-    {}
+        , fixedFont(QStringLiteral("monospace"), systemFont.pointSize())
+    {
+        fixedFont.setStyleHint(QFont::TypeWriter);
+    }
 
     const QFont systemFont;
+    QFont fixedFont;
 };
 
 QGnomeTheme::QGnomeTheme()
@@ -459,10 +521,14 @@ QVariant QGnomeTheme::themeHint(QPlatformTheme::ThemeHint hint) const
 const QFont *QGnomeTheme::font(Font type) const
 {
     Q_D(const QGnomeTheme);
-    if (type == QPlatformTheme::SystemFont)
-        return &d->systemFont;
-
-    return 0;
+    switch (type) {
+    case QPlatformTheme::SystemFont:
+        return  &d->systemFont;
+    case QPlatformTheme::FixedFont:
+        return &d->fixedFont;
+    default:
+        return 0;
+    }
 }
 
 /*!
@@ -492,7 +558,11 @@ QStringList QGenericUnixTheme::themeNames()
 #ifndef QT_NO_SETTINGS
             result.push_back(QLatin1String(QKdeTheme::name));
 #endif
-        } else { // Gnome, Unity, other Gtk-based desktops like XFCE.
+        } else if (desktopEnvironment == QByteArrayLiteral("GNOME") ||
+                desktopEnvironment == QByteArrayLiteral("UNITY") ||
+                desktopEnvironment == QByteArrayLiteral("MATE") ||
+                desktopEnvironment == QByteArrayLiteral("XFCE") ||
+                desktopEnvironment == QByteArrayLiteral("LXDE")) { // Gtk-based desktops
             // prefer the GTK2 theme implementation with native dialogs etc.
             result.push_back(QStringLiteral("gtk2"));
             // fallback to the generic Gnome theme if loading the GTK2 theme fails

@@ -1,7 +1,7 @@
 /****************************************************************************
 **
 ** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/
+** Contact: http://www.qt-project.org/legal
 **
 ** This file is part of the tools applications of the Qt Toolkit.
 **
@@ -127,7 +127,7 @@ private:
     };
 
     const QPair<QString,QString> anchorForNode(const Node *node);
-    void generateBreadCrumbs(const QString& title,
+    void generateNavigationBar(const QString& title,
                              const Node *node,
                              CodeMarker *marker);
     void generateHeader(const QString& title,
@@ -139,6 +139,10 @@ private:
                        const Node *relative,
                        CodeMarker *marker);
     void generateFooter(const Node *node = 0);
+    void generateRequisites(InnerNode *inner,
+                            CodeMarker *marker);
+    void generateQmlRequisites(QmlClassNode *qcn,
+                            CodeMarker *marker);
     void generateBrief(const Node *node,
                        CodeMarker *marker,
                        const Node *relative = 0);
@@ -182,6 +186,7 @@ private:
     void generateQmlInstantiates(QmlClassNode* qcn, CodeMarker* marker);
     void generateInstantiatedBy(ClassNode* cn, CodeMarker* marker);
 
+    void generateRequisitesTable(const QStringList& requisitesOrder, QMap<QString, Text>& requisites);
     void generateSection(const NodeList& nl,
                          const Node *relative,
                          CodeMarker *marker,
@@ -239,7 +244,7 @@ private:
     QString footer;
     QString address;
     bool pleaseGenerateMacRef;
-    bool noBreadCrumbs;
+    bool noNavigationBar;
     QString project;
     QString projectDescription;
     QString projectUrl;
@@ -252,6 +257,12 @@ private:
     QStack<QXmlStreamWriter*> xmlWriterStack;
     static int id;
     QList<ManifestMetaFilter> manifestMetaContent;
+    QString homepage;
+    QString landingpage;
+    QString cppclassespage;
+    QString qmltypespage;
+    QString buildversion;
+
 public:
     static bool debugging_on;
     static QString divNavTop;
@@ -262,9 +273,10 @@ public:
 #define HTMLGENERATOR_GENERATEMACREFS   "generatemacrefs" // ### document me
 #define HTMLGENERATOR_POSTHEADER        "postheader"
 #define HTMLGENERATOR_POSTPOSTHEADER    "postpostheader"
-#define HTMLGENERATOR_NOBREADCRUMBS     "nobreadcrumbs"
+#define HTMLGENERATOR_NONAVIGATIONBAR   "nonavigationbar"
+#define HTMLGENERATOR_NOSUBDIRS         "nosubdirs"
+
 
 QT_END_NAMESPACE
 
 #endif
-

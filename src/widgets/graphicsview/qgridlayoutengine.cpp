@@ -291,7 +291,7 @@ void QGridLayoutRowData::calculateGeometries(int start, int end, qreal targetSiz
 
                     int stretch = stretches[start + i];
                     if (sumStretches == 0) {
-                        if (hasIgnoreFlag) {
+                        if (hasIgnoreFlag || sizes[i] == 0.0) {
                             factors[i] = (stretch < 0) ? 1.0 : 0.0;
                         } else {
                             factors[i] = (stretch < 0) ? sizes[i] : 0.0;
@@ -432,6 +432,8 @@ QGridLayoutBox QGridLayoutRowData::totalBox(int start, int end) const
         result.q_maximumSize = 0.0;
         qreal nextSpacing = 0.0;
         for (int i = start; i < end; ++i) {
+            if (ignore.testBit(i))
+                continue;
             result.add(boxes.at(i), stretches.at(i), nextSpacing);
             nextSpacing = spacings.at(i);
         }
@@ -1475,7 +1477,7 @@ void QGridLayoutEngine::fillRowData(QGridLayoutRowData *rowData, const QLayoutSt
 
                     int effectiveRowSpan = 1;
                     for (int i = 1; i < itemRowSpan; ++i) {
-                        if (!rowData->ignore.testBit(i))
+                        if (!rowData->ignore.testBit(i + itemRow))
                             ++effectiveRowSpan;
                     }
 
@@ -1713,7 +1715,8 @@ void QGridLayoutEngine::ensureGeometries(const QLayoutStyleInfo &styleInfo,
     q_descents.resize(rowCount());
 
     if (constraintOrientation() != Qt::Horizontal) {
-        //We might have items whose width depends on their height
+        // We might have items whose height depends on their width,
+        // or none of the items has a dynamic constraint.
         ensureColumnAndRowData(&q_columnData, &q_totalBoxes[Hor], styleInfo, NULL, NULL, Qt::Horizontal);
         //Calculate column widths and positions, and put results in q_xx.data() and q_widths.data() so that we can use this information as
         //constraints to find the row heights
@@ -1724,7 +1727,7 @@ void QGridLayoutEngine::ensureGeometries(const QLayoutStyleInfo &styleInfo,
         q_rowData.calculateGeometries(0, rowCount(), size.height(), q_yy.data(), q_heights.data(),
                 q_descents.data(), q_totalBoxes[Ver], q_infos[Ver]);
     } else {
-        //We have items whose height depends on their width
+        // We have items whose width depends on their height
         ensureColumnAndRowData(&q_rowData, &q_totalBoxes[Ver], styleInfo, NULL, NULL, Qt::Vertical);
         //Calculate row heights and positions, and put results in q_yy.data() and q_heights.data() so that we can use this information as
         //constraints to find the column widths

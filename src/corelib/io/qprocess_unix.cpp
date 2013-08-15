@@ -472,7 +472,7 @@ bool QProcessPrivate::createChannel(Channel &channel)
 }
 
 QT_BEGIN_INCLUDE_NAMESPACE
-#if defined(Q_OS_MAC) && !defined(Q_OS_IOS)
+#if defined(Q_OS_MACX)
 # include <crt_externs.h>
 # define environ (*_NSGetEnviron())
 #else
@@ -617,8 +617,10 @@ void QProcessPrivate::startProcess()
     // Duplicate the environment.
     int envc = 0;
     char **envp = 0;
-    if (environment.d.constData())
+    if (environment.d.constData()) {
+        QProcessEnvironmentPrivate::MutexLocker locker(environment.d);
         envp = _q_dupEnvironment(environment.d.constData()->hash, &envc);
+    }
 
     // Encode the working directory if it's non-empty, otherwise just pass 0.
     const char *workingDirPtr = 0;
@@ -1029,6 +1031,41 @@ static int qt_timeout_value(int msecs, int elapsed)
     return timeout < 0 ? 0 : timeout;
 }
 
+#ifdef Q_OS_BLACKBERRY
+// The BlackBerry event dispatcher uses bps_get_event. Unfortunately, already registered
+// socket notifiers are disabled by a call to select. This is to rearm the standard streams.
+static int bb_select(QProcessPrivate *process, int nfds, fd_set *fdread, fd_set *fdwrite, int timeout)
+{
+    bool stdoutEnabled = false;
+    bool stderrEnabled = false;
+    bool stdinEnabled = false;
+
+    if (process->stdoutChannel.notifier && process->stdoutChannel.notifier->isEnabled()) {
+        stdoutEnabled = true;
+        process->stdoutChannel.notifier->setEnabled(false);
+    }
+    if (process->stderrChannel.notifier && process->stderrChannel.notifier->isEnabled()) {
+        stderrEnabled = true;
+        process->stderrChannel.notifier->setEnabled(false);
+    }
+    if (process->stdinChannel.notifier && process->stdinChannel.notifier->isEnabled()) {
+        stdinEnabled = true;
+        process->stdinChannel.notifier->setEnabled(false);
+    }
+
+    const int ret = select_msecs(nfds, fdread, fdwrite, timeout);
+
+    if (stdoutEnabled)
+        process->stdoutChannel.notifier->setEnabled(true);
+    if (stderrEnabled)
+        process->stderrChannel.notifier->setEnabled(true);
+    if (stdinEnabled)
+        process->stdinChannel.notifier->setEnabled(true);
+
+    return ret;
+}
+#endif // Q_OS_BLACKBERRY
+
 bool QProcessPrivate::waitForStarted(int msecs)
 {
     Q_Q(QProcess);
@@ -1089,7 +1126,11 @@ bool QProcessPrivate::waitForReadyRead(int msecs)
             add_fd(nfds, stdinChannel.pipe[1], &fdwrite);
 
         int timeout = qt_timeout_value(msecs, stopWatch.elapsed());
+#ifdef Q_OS_BLACKBERRY
+        int ret = bb_select(this, nfds + 1, &fdread, &fdwrite, timeout);
+#else
         int ret = select_msecs(nfds + 1, &fdread, &fdwrite, timeout);
+#endif
         if (ret < 0) {
             break;
         }
@@ -1161,8 +1202,12 @@ bool QProcessPrivate::waitForBytesWritten(int msecs)
         if (!writeBuffer.isEmpty() && stdinChannel.pipe[1] != -1)
             add_fd(nfds, stdinChannel.pipe[1], &fdwrite);
 
-	int timeout = qt_timeout_value(msecs, stopWatch.elapsed());
-	int ret = select_msecs(nfds + 1, &fdread, &fdwrite, timeout);
+        int timeout = qt_timeout_value(msecs, stopWatch.elapsed());
+#ifdef Q_OS_BLACKBERRY
+        int ret = bb_select(this, nfds + 1, &fdread, &fdwrite, timeout);
+#else
+        int ret = select_msecs(nfds + 1, &fdread, &fdwrite, timeout);
+#endif
         if (ret < 0) {
             break;
         }
@@ -1228,8 +1273,12 @@ bool QProcessPrivate::waitForFinished(int msecs)
         if (!writeBuffer.isEmpty() && stdinChannel.pipe[1] != -1)
             add_fd(nfds, stdinChannel.pipe[1], &fdwrite);
 
-	int timeout = qt_timeout_value(msecs, stopWatch.elapsed());
-	int ret = select_msecs(nfds + 1, &fdread, &fdwrite, timeout);
+        int timeout = qt_timeout_value(msecs, stopWatch.elapsed());
+#ifdef Q_OS_BLACKBERRY
+        int ret = bb_select(this, nfds + 1, &fdread, &fdwrite, timeout);
+#else
+        int ret = select_msecs(nfds + 1, &fdread, &fdwrite, timeout);
+#endif
         if (ret < 0) {
             break;
         }

@@ -52,20 +52,17 @@
 QIOSContext::QIOSContext(QOpenGLContext *context)
     : QPlatformOpenGLContext()
     , m_eaglContext([[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES2])
+    , m_format(context->format())
 {
-    // Start out with the requested format
-    QSurfaceFormat format = context->format();
+    m_format.setRenderableType(QSurfaceFormat::OpenGLES);
+    m_format.setMajorVersion(2);
+    m_format.setMinorVersion(0);
 
-    format.setRenderableType(QSurfaceFormat::OpenGLES);
-    format.setMajorVersion(2);
-    format.setMinorVersion(0);
-
-    // Even though iOS internally double-buffers its rendering, we
-    // report single-buffered here since the buffer remains unchanged
-    // when swapping unlesss you manually clear it yourself.
-    format.setSwapBehavior(QSurfaceFormat::SingleBuffer);
-
-    m_format = format;
+    // iOS internally double-buffers its rendering using copy instead of flipping,
+    // so technically we could report that we are single-buffered so that clients
+    // could take advantage of the unchanged buffer, but this means clients (and Qt)
+    // will also assume that swapBufferes() is not needed, which is _not_ the case.
+    m_format.setSwapBehavior(QSurfaceFormat::DoubleBuffer);
 }
 
 QIOSContext::~QIOSContext()
@@ -159,6 +156,9 @@ GLuint QIOSContext::defaultFramebufferObject(QPlatformSurface *surface) const
     if (framebufferObject.renderbufferWidth != platformWindow->effectiveWidth() ||
         framebufferObject.renderbufferHeight != platformWindow->effectiveHeight()) {
 
+        [EAGLContext setCurrentContext:m_eaglContext];
+        glBindFramebuffer(GL_FRAMEBUFFER, framebufferObject.handle);
+
         glBindRenderbuffer(GL_RENDERBUFFER, framebufferObject.colorRenderbuffer);
         UIView *view = reinterpret_cast<UIView *>(platformWindow->winId());
         CAEAGLLayer *layer = static_cast<CAEAGLLayer *>(view.layer);
@@ -190,14 +190,17 @@ void QIOSContext::windowDestroyed(QObject *object)
 {
     QWindow *window = static_cast<QWindow *>(object);
     if (m_framebufferObjects.contains(window)) {
+        EAGLContext *originalContext = [EAGLContext currentContext];
+        [EAGLContext setCurrentContext:m_eaglContext];
         deleteBuffers(m_framebufferObjects[window]);
         m_framebufferObjects.remove(window);
+        [EAGLContext setCurrentContext:originalContext];
     }
 }
 
 QFunctionPointer QIOSContext::getProcAddress(const QByteArray& functionName)
 {
-    return reinterpret_cast<QFunctionPointer>(dlsym(RTLD_NEXT, functionName.constData()));
+    return QFunctionPointer(dlsym(RTLD_DEFAULT, functionName.constData()));
 }
 
 #include "moc_qioscontext.cpp"

@@ -163,6 +163,10 @@ namespace QtAndroidInput
 
     static void longPress(JNIEnv */*env*/, jobject /*thiz*/, jint /*winId*/, jint x, jint y)
     {
+        //### TODO: add proper API for Qt 5.2
+        static bool rightMouseFromLongPress = qgetenv("QT_NECESSITAS_COMPATIBILITY_LONG_PRESS").toInt();
+        if (!rightMouseFromLongPress)
+            return;
         m_ignoreMouseEvents = true;
         QPoint globalPos(x,y);
         QWindow *tlw = topLevelWindowAt(globalPos);
@@ -329,7 +333,7 @@ namespace QtAndroidInput
                 return Qt::Key_BracketLeft;
 
             case 0x0000005a: // KEYCODE_MEDIA_FAST_FORWARD
-                return Qt::Key_Forward;
+                return Qt::Key_AudioForward;
 
             case 0x00000057:
                 return Qt::Key_MediaNext;
@@ -340,7 +344,7 @@ namespace QtAndroidInput
             case 0x00000058:
                 return Qt::Key_MediaPrevious;
 
-            case 0x00000059:
+            case 0x00000059: // KEYCODE_MEDIA_REWIND
                 return Qt::Key_AudioRewind;
 
             case 0x00000056:
@@ -352,8 +356,8 @@ namespace QtAndroidInput
             case 0x00000045:
                 return Qt::Key_Minus;
 
-            case 0x0000005b:
-                return Qt::Key_VolumeMute;
+            case 0x0000005b: // KEYCODE_MUTE
+                return Qt::Key_MicMute;
 
             case 0x0000004e:
                 return Qt::Key_NumLock;
@@ -401,8 +405,29 @@ namespace QtAndroidInput
             case 0x00000019:
                 return Qt::Key_VolumeDown;
 
+            case 0x000000a4: // KEYCODE_VOLUME_MUTE
+                return Qt::Key_VolumeMute;
+
             case 0x00000018:
                 return Qt::Key_VolumeUp;
+
+            case 0x000000b7: // KEYCODE_PROG_RED
+                return Qt::Key_Red;
+
+            case 0x000000b8: // KEYCODE_PROG_GREEN
+                return Qt::Key_Green;
+
+            case 0x000000b9: // KEYCODE_PROG_YELLOW
+                return Qt::Key_Yellow;
+
+            case 0x000000ba: // KEYCODE_PROG_BLUE
+                return Qt::Key_Blue;
+
+            case 0x000000a6: // KEYCODE_CHANNEL_UP
+                return Qt::Key_ChannelUp;
+
+            case 0x000000a7: // KEYCODE_CHANNEL_DOWN
+                return Qt::Key_ChannelDown;
 
             case 0x00000000: // KEYCODE_UNKNOWN
             case 0x00000011: // KEYCODE_STAR ?!?!?

@@ -91,7 +91,8 @@ public:
         MultipleWindows,
         ApplicationState,
         ForeignWindows,
-        NonFullScreenWindows
+        NonFullScreenWindows,
+        NativeWidgets
     };
 
     virtual ~QPlatformIntegration() { }
@@ -141,7 +142,8 @@ public:
         StartDragVelocity,
         UseRtlExtensions,
         SynthesizeMouseFromTouchEvents,
-        PasswordMaskCharacter
+        PasswordMaskCharacter,
+        SetFocusOnTouchRelease
     };
 
     virtual QVariant styleHint(StyleHint hint) const;

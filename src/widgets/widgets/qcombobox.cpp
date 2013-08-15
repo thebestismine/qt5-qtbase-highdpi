@@ -1136,10 +1136,9 @@ Qt::MatchFlags QComboBoxPrivate::matchFlags() const
 void QComboBoxPrivate::_q_editingFinished()
 {
     Q_Q(QComboBox);
-    if (lineEdit && !lineEdit->text().isEmpty()) {
-        //here we just check if the current item was entered
+    if (lineEdit && !lineEdit->text().isEmpty() && itemText(currentIndex) != lineEdit->text()) {
         const int index = q_func()->findText(lineEdit->text(), matchFlags());
-        if (index != -1 && itemText(currentIndex) != lineEdit->text()) {
+        if (index != -1) {
             q->setCurrentIndex(index);
             emitActivated(currentIndex);
         }
@@ -2063,6 +2062,20 @@ QString QComboBox::currentText() const
         return d->itemText(d->currentIndex);
     else
         return QString();
+}
+
+/*!
+    \property QComboBox::currentData
+    \brief the data for the current item
+    \since 5.2
+
+    By default, for an empty combo box or a combo box in which no current
+    item is set, this property contains an invalid QVariant.
+*/
+QVariant QComboBox::currentData(int role) const
+{
+    Q_D(const QComboBox);
+    return d->currentIndex.data(role);
 }
 
 /*!

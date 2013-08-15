@@ -1,13 +1,12 @@
-#This is a project file for building qmake, of course it presents a problem -
-# it is very hard to make qmake build this, when qmake is the thing it builds,
-#once you are boot strapped though, the qmake.pro will offer better coverage of a
-#platform than either of the generic makefiles
+# This project is not actually used to build qmake, but to support development
+# with Qt Creator. The real build system is made up by the Makefile templates
+# and the configures.
 
 option(host_build)
 CONFIG += console bootstrap
 CONFIG -= qt shared app_bundle uic
 DEFINES += QT_BUILD_QMAKE QT_BOOTSTRAPPED \
-    PROEVALUATOR_FULL PROEVALUATOR_DEBUG
+    PROEVALUATOR_FULL
 DESTDIR = ../bin/
 
 OBJECTS_DIR = .

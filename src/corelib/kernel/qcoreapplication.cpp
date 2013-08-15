@@ -381,7 +381,7 @@ QCoreApplicationPrivate::QCoreApplicationPrivate(int &aargc, char **aargv, uint 
     , origArgc(aargc)
     , origArgv(new char *[aargc])
 #endif
-    , application_type(0)
+    , application_type(QCoreApplicationPrivate::Tty)
 #ifndef QT_NO_QOBJECT
     , in_exec(false)
     , aboutToQuitEmitted(false)
@@ -394,7 +394,7 @@ QCoreApplicationPrivate::QCoreApplicationPrivate(int &aargc, char **aargv, uint 
     static const char *const empty = "";
     if (argc == 0 || argv == 0) {
         argc = 0;
-        argv = (char **)&empty; // ouch! careful with QCoreApplication::argv()!
+        argv = (char **)&empty;
     }
 #ifdef Q_OS_WIN
     qCopy(argv, argv + argc, origArgv);
@@ -589,10 +589,6 @@ void QCoreApplicationPrivate::initLocale()
     Note that some arguments supplied by the user may have been
     processed and removed by QCoreApplication.
 
-    In cases where command line arguments need to be obtained using the
-    argv() function, you must convert them from the local string encoding
-    using QString::fromLocal8Bit().
-
     \section1 Locale Settings
 
     On Unix/Linux Qt is configured to use the system locale settings by
@@ -724,7 +720,7 @@ void QCoreApplication::init()
 #endif
 
 #ifdef QT_EVAL
-    extern void qt_core_eval_init(uint);
+    extern void qt_core_eval_init(QCoreApplicationPrivate::Type);
     qt_core_eval_init(d->application_type);
 #endif
 
@@ -938,7 +934,7 @@ bool QCoreApplicationPrivate::sendThroughApplicationEventFilters(QObject *receiv
     if (receiver->d_func()->threadData == this->threadData && extraData) {
         // application event filters are only called for objects in the GUI thread
         for (int i = 0; i < extraData->eventFilters.size(); ++i) {
-            register QObject *obj = extraData->eventFilters.at(i);
+            QObject *obj = extraData->eventFilters.at(i);
             if (!obj)
                 continue;
             if (obj->d_func()->threadData != threadData) {
@@ -957,7 +953,7 @@ bool QCoreApplicationPrivate::sendThroughObjectEventFilters(QObject *receiver, Q
     Q_Q(QCoreApplication);
     if (receiver != q && receiver->d_func()->extraData) {
         for (int i = 0; i < receiver->d_func()->extraData->eventFilters.size(); ++i) {
-            register QObject *obj = receiver->d_func()->extraData->eventFilters.at(i);
+            QObject *obj = receiver->d_func()->extraData->eventFilters.at(i);
             if (!obj)
                 continue;
             if (obj->d_func()->threadData != receiver->d_func()->threadData) {
@@ -1451,7 +1447,7 @@ void QCoreApplicationPrivate::sendPostedEvents(QObject *receiver, int event_type
         // first, we diddle the event so that we can deliver
         // it, and that no one will try to touch it later.
         pe.event->posted = false;
-        QScopedPointer<QEvent> e(pe.event);
+        QEvent *e = pe.event;
         QObject * r = pe.receiver;
 
         --r->d_func()->postedEvents;
@@ -1469,8 +1465,10 @@ void QCoreApplicationPrivate::sendPostedEvents(QObject *receiver, int event_type
         };
         MutexUnlocker unlocker(locker);
 
+        QScopedPointer<QEvent> event_deleter(e); // will delete the event (with the mutex unlocked)
+
         // after all that work, it's time to deliver the event.
-        QCoreApplication::sendEvent(r, e.data());
+        QCoreApplication::sendEvent(r, e);
 
         // careful when adding anything below this point - the
         // sendEvent() call might invalidate any invariants this
@@ -1952,7 +1950,6 @@ QString QCoreApplication::applicationFilePath()
     char buff[maximum_path+1];
     if (_cmdname(buff)) {
         d->cachedApplicationFilePath = QDir::cleanPath(QString::fromLocal8Bit(buff));
-        return d->cachedApplicationFilePath;
     } else {
         qWarning("QCoreApplication::applicationFilePath: _cmdname() failed");
         // _cmdname() won't fail, but just in case, fallback to the old method
@@ -1961,11 +1958,11 @@ QString QCoreApplication::applicationFilePath()
         if (!executables.empty()) {
             //We assume that there is only one executable in the folder
             d->cachedApplicationFilePath = dir.absoluteFilePath(executables.first());
-            return d->cachedApplicationFilePath;
         } else {
-            return QString();
+            d->cachedApplicationFilePath = QString();
         }
     }
+    return d->cachedApplicationFilePath;
 #elif defined(Q_OS_MAC)
     QString qAppFileName_str = qAppFileName();
     if(!qAppFileName_str.isEmpty()) {
@@ -1984,34 +1981,38 @@ QString QCoreApplication::applicationFilePath()
         return d->cachedApplicationFilePath;
     }
 #  endif
+    if (!arguments().isEmpty()) {
+        QString argv0 = QFile::decodeName(arguments().at(0).toLocal8Bit());
+        QString absPath;
 
-    QString argv0 = QFile::decodeName(arguments().at(0).toLocal8Bit());
-    QString absPath;
+        if (!argv0.isEmpty() && argv0.at(0) == QLatin1Char('/')) {
+            /*
+              If argv0 starts with a slash, it is already an absolute
+              file path.
+            */
+            absPath = argv0;
+        } else if (argv0.contains(QLatin1Char('/'))) {
+            /*
+              If argv0 contains one or more slashes, it is a file path
+              relative to the current directory.
+            */
+            absPath = QDir::current().absoluteFilePath(argv0);
+        } else {
+            /*
+              Otherwise, the file path has to be determined using the
+              PATH environment variable.
+            */
+            absPath = QStandardPaths::findExecutable(argv0);
+        }
 
-    if (!argv0.isEmpty() && argv0.at(0) == QLatin1Char('/')) {
-        /*
-          If argv0 starts with a slash, it is already an absolute
-          file path.
-        */
-        absPath = argv0;
-    } else if (argv0.contains(QLatin1Char('/'))) {
-        /*
-          If argv0 contains one or more slashes, it is a file path
-          relative to the current directory.
-        */
-        absPath = QDir::current().absoluteFilePath(argv0);
+        absPath = QDir::cleanPath(absPath);
+
+        QFileInfo fi(absPath);
+        d->cachedApplicationFilePath = fi.exists() ? fi.canonicalFilePath() : QString();
     } else {
-        /*
-          Otherwise, the file path has to be determined using the
-          PATH environment variable.
-        */
-        absPath = QStandardPaths::findExecutable(argv0);
+        d->cachedApplicationFilePath = QString();
     }
 
-    absPath = QDir::cleanPath(absPath);
-
-    QFileInfo fi(absPath);
-    d->cachedApplicationFilePath = fi.exists() ? fi.canonicalFilePath() : QString();
     return d->cachedApplicationFilePath;
 #endif
 }

@@ -125,16 +125,15 @@ QT_BEGIN_NAMESPACE
     The environment of the calling process can be obtained using
     QProcessEnvironment::systemEnvironment().
 
-    On Unix systems, the variable names are case-sensitive. For that reason,
-    this class will not touch the names of the variables. Note as well that
+    On Unix systems, the variable names are case-sensitive. Note that the
     Unix environment allows both variable names and contents to contain arbitrary
-    binary data (except for the NUL character), but this is not supported by
-    QProcessEnvironment. This class only supports names and values that are
-    encodable by the current locale settings (see QTextCodec::codecForLocale).
+    binary data (except for the NUL character). QProcessEnvironment will preserve
+    such variables, but does not support manipulating variables whose names or
+    values are not encodable by the current locale settings (see
+    QTextCodec::codecForLocale).
 
-    On Windows, the variable names are case-insensitive. Therefore,
-    QProcessEnvironment will always uppercase the names and do case-insensitive
-    comparisons.
+    On Windows, the variable names are case-insensitive, but case-preserving.
+    QProcessEnvironment behaves accordingly.
 
     On Windows CE, the concept of environment does not exist. This class will
     keep the values set for compatibility with other platforms, but the values
@@ -266,7 +265,13 @@ QProcessEnvironment &QProcessEnvironment::operator=(const QProcessEnvironment &o
 */
 bool QProcessEnvironment::operator==(const QProcessEnvironment &other) const
 {
-    return d == other.d || (d && other.d && d->hash == other.d->hash);
+    if (d == other.d)
+        return true;
+    if (d && other.d) {
+        QProcessEnvironmentPrivate::OrderedMutexLocker locker(d, other.d);
+        return d->hash == other.d->hash;
+    }
+    return false;
 }
 
 /*!
@@ -277,6 +282,7 @@ bool QProcessEnvironment::operator==(const QProcessEnvironment &other) const
 */
 bool QProcessEnvironment::isEmpty() const
 {
+    // Needs no locking, as no hash nodes are accessed
     return d ? d->hash.isEmpty() : true;
 }
 
@@ -298,25 +304,21 @@ void QProcessEnvironment::clear()
     Returns true if the environment variable of name \a name is found in
     this QProcessEnvironment object.
 
-    On Windows, variable names are case-insensitive, so the key is converted
-    to uppercase before searching. On other systems, names are case-sensitive
-    so no trasformation is applied.
 
     \sa insert(), value()
 */
 bool QProcessEnvironment::contains(const QString &name) const
 {
-    return d ? d->hash.contains(d->prepareName(name)) : false;
+    if (!d)
+        return false;
+    QProcessEnvironmentPrivate::MutexLocker locker(d);
+    return d->hash.contains(d->prepareName(name));
 }
 
 /*!
     Inserts the environment variable of name \a name and contents \a value
     into this QProcessEnvironment object. If that variable already existed,
     it is replaced by the new value.
-
-    On Windows, variable names are case-insensitive, so this function always
-    uppercases the variable name before inserting. On other systems, names
-    are case-sensitive, so no transformation is applied.
 
     On most systems, inserting a variable with no contents will have the
     same effect for applications as if the variable had not been set at all.
@@ -327,7 +329,8 @@ bool QProcessEnvironment::contains(const QString &name) const
 */
 void QProcessEnvironment::insert(const QString &name, const QString &value)
 {
-    // d detaches from null
+    // our re-impl of detach() detaches from null
+    d.detach(); // detach before prepareName()
     d->hash.insert(d->prepareName(name), d->prepareValue(value));
 }
 
@@ -336,26 +339,21 @@ void QProcessEnvironment::insert(const QString &name, const QString &value)
     QProcessEnvironment object. If that variable did not exist before,
     nothing happens.
 
-    On Windows, variable names are case-insensitive, so the key is converted
-    to uppercase before searching. On other systems, names are case-sensitive
-    so no trasformation is applied.
 
     \sa contains(), insert(), value()
 */
 void QProcessEnvironment::remove(const QString &name)
 {
-    if (d)
+    if (d) {
+        d.detach(); // detach before prepareName()
         d->hash.remove(d->prepareName(name));
+    }
 }
 
 /*!
     Searches this QProcessEnvironment object for a variable identified by
     \a name and returns its value. If the variable is not found in this object,
     then \a defaultValue is returned instead.
-
-    On Windows, variable names are case-insensitive, so the key is converted
-    to uppercase before searching. On other systems, names are case-sensitive
-    so no trasformation is applied.
 
     \sa contains(), insert(), remove()
 */
@@ -364,6 +362,7 @@ QString QProcessEnvironment::value(const QString &name, const QString &defaultVa
     if (!d)
         return defaultValue;
 
+    QProcessEnvironmentPrivate::MutexLocker locker(d);
     QProcessEnvironmentPrivate::Hash::ConstIterator it = d->hash.constFind(d->prepareName(name));
     if (it == d->hash.constEnd())
         return defaultValue;
@@ -376,17 +375,20 @@ QString QProcessEnvironment::value(const QString &name, const QString &defaultVa
     each environment variable that is set. The environment variable's name
     and its value are separated by an equal character ('=').
 
-    The QStringList contents returned by this function are suitable for use
-    with the QProcess::setEnvironment function. However, it is recommended
-    to use QProcess::setProcessEnvironment instead since that will avoid
-    unnecessary copying of the data.
+    The QStringList contents returned by this function are suitable for
+    presentation.
+    Use with the QProcess::setEnvironment function is not recommended due to
+    potential encoding problems under Unix, and worse performance.
 
     \sa systemEnvironment(), QProcess::systemEnvironment(), QProcess::environment(),
         QProcess::setEnvironment()
 */
 QStringList QProcessEnvironment::toStringList() const
 {
-    return d ? d->toList() : QStringList();
+    if (!d)
+        return QStringList();
+    QProcessEnvironmentPrivate::MutexLocker locker(d);
+    return d->toList();
 }
 
 /*!
@@ -397,7 +399,10 @@ QStringList QProcessEnvironment::toStringList() const
 */
 QStringList QProcessEnvironment::keys() const
 {
-    return d ? d->keys() : QStringList();
+    if (!d)
+        return QStringList();
+    QProcessEnvironmentPrivate::MutexLocker locker(d);
+    return d->keys();
 }
 
 /*!
@@ -412,7 +417,8 @@ void QProcessEnvironment::insert(const QProcessEnvironment &e)
     if (!e.d)
         return;
 
-    // d detaches from null
+    // our re-impl of detach() detaches from null
+    QProcessEnvironmentPrivate::MutexLocker locker(e.d);
     d->insert(*e.d);
 }
 
@@ -721,9 +727,11 @@ void QProcessPrivate::Channel::clear()
     \fn void QProcess::finished(int exitCode, QProcess::ExitStatus exitStatus)
 
     This signal is emitted when the process finishes. \a exitCode is the exit
-    code of the process, and \a exitStatus is the exit status.  After the
-    process has finished, the buffers in QProcess are still intact. You can
-    still read any data that the process may have written before it finished.
+    code of the process (only valid for normal exits), and \a exitStatus is
+    the exit status.
+    After the process has finished, the buffers in QProcess are still intact.
+    You can still read any data that the process may have written before it
+    finished.
 
     \sa exitStatus()
 */
@@ -1021,6 +1029,7 @@ bool QProcessPrivate::_q_processDied()
         return false;
 #endif
 #ifdef Q_OS_WIN
+    drainOutputPipes();
     if (processFinishedNotifier)
         processFinishedNotifier->setEnabled(false);
 #endif
@@ -1952,7 +1961,7 @@ void QProcess::start(const QString &program, const QStringList &arguments, OpenM
     d->program = program;
     d->arguments = arguments;
 
-    open(mode);
+    d->start(mode);
 }
 
 /*!
@@ -1968,7 +1977,17 @@ void QProcess::start(const QString &program, const QStringList &arguments, OpenM
  */
 void QProcess::start(OpenMode mode)
 {
-    open(mode);
+    Q_D(QProcess);
+    if (d->processState != NotRunning) {
+        qWarning("QProcess::start: Process is already running");
+        return;
+    }
+    if (d->program.isEmpty()) {
+        qWarning("QProcess::start: program not set");
+        return;
+    }
+
+    d->start(mode);
 }
 
 /*!
@@ -2001,34 +2020,39 @@ bool QProcess::open(OpenMode mode)
         return false;
     }
 
+    d->start(mode);
+    return true;
+}
+
+void QProcessPrivate::start(QIODevice::OpenMode mode)
+{
+    Q_Q(QProcess);
 #if defined QPROCESS_DEBUG
     qDebug() << "QProcess::start(" << program << ',' << arguments << ',' << mode << ')';
 #endif
 
-    d->outputReadBuffer.clear();
-    d->errorReadBuffer.clear();
+    outputReadBuffer.clear();
+    errorReadBuffer.clear();
 
-    if (d->stdinChannel.type != QProcessPrivate::Channel::Normal)
-        mode &= ~WriteOnly;     // not open for writing
-    if (d->stdoutChannel.type != QProcessPrivate::Channel::Normal &&
-        (d->stderrChannel.type != QProcessPrivate::Channel::Normal ||
-         d->processChannelMode == MergedChannels))
-        mode &= ~ReadOnly;      // not open for reading
+    if (stdinChannel.type != QProcessPrivate::Channel::Normal)
+        mode &= ~QIODevice::WriteOnly;     // not open for writing
+    if (stdoutChannel.type != QProcessPrivate::Channel::Normal &&
+        (stderrChannel.type != QProcessPrivate::Channel::Normal ||
+         processChannelMode == QProcess::MergedChannels))
+        mode &= ~QIODevice::ReadOnly;      // not open for reading
     if (mode == 0)
-        mode = Unbuffered;
-    QIODevice::open(mode);
+        mode = QIODevice::Unbuffered;
+    q->QIODevice::open(mode);
 
-    d->stdinChannel.closed = false;
-    d->stdoutChannel.closed = false;
-    d->stderrChannel.closed = false;
+    stdinChannel.closed = false;
+    stdoutChannel.closed = false;
+    stderrChannel.closed = false;
 
-    d->exitCode = 0;
-    d->exitStatus = NormalExit;
-    d->processError = QProcess::UnknownError;
-    d->errorString.clear();
-    d->startProcess();
-
-    return true;
+    exitCode = 0;
+    exitStatus = QProcess::NormalExit;
+    processError = QProcess::UnknownError;
+    errorString.clear();
+    startProcess();
 }
 
 
@@ -2212,6 +2236,8 @@ void QProcess::kill()
 
 /*!
     Returns the exit code of the last process that finished.
+
+    This value is not valid unless exitStatus() returns NormalExit.
 */
 int QProcess::exitCode() const
 {
@@ -2354,7 +2380,7 @@ bool QProcess::startDetached(const QString &program)
 }
 
 QT_BEGIN_INCLUDE_NAMESPACE
-#if defined(Q_OS_MAC) && !defined(Q_OS_IOS)
+#if defined(Q_OS_MACX)
 # include <crt_externs.h>
 # define environ (*_NSGetEnviron())
 #elif defined(Q_OS_WINCE) || defined(Q_OS_IOS)

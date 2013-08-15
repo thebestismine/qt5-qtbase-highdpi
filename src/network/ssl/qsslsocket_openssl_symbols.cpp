@@ -67,7 +67,7 @@
 #if defined(Q_OS_UNIX)
 #include <QtCore/qdir.h>
 #endif
-#if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID_NO_SDK)
+#if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)
 #include <link.h>
 #endif
 
@@ -183,7 +183,7 @@ DEFINEFUNC(void, sk_free, _STACK *a, a, return, DUMMYARG)
 DEFINEFUNC2(void *, sk_value, STACK *a, a, int b, b, return 0, return)
 #else
 DEFINEFUNC(STACK *, sk_new_null, DUMMYARG, DUMMYARG, return 0, return)
-DEFINEFUNC2(void, sk_push, STACK *a, a, void *b, b, return, DUMMYARG)
+DEFINEFUNC2(void, sk_push, STACK *a, a, char *b, b, return, DUMMYARG)
 DEFINEFUNC(void, sk_free, STACK *a, a, return, DUMMYARG)
 DEFINEFUNC2(char *, sk_value, STACK *a, a, int b, b, return 0, return)
 #endif
@@ -297,7 +297,11 @@ DEFINEFUNC(int, X509_EXTENSION_get_critical, X509_EXTENSION *a, a, return 0, ret
 DEFINEFUNC(ASN1_OCTET_STRING *, X509_EXTENSION_get_data, X509_EXTENSION *a, a, return 0, return)
 DEFINEFUNC(void, BASIC_CONSTRAINTS_free, BASIC_CONSTRAINTS *a, a, return, DUMMYARG)
 DEFINEFUNC(void, AUTHORITY_KEYID_free, AUTHORITY_KEYID *a, a, return, DUMMYARG)
+#if OPENSSL_VERSION_NUMBER >= 0x10000000L
 DEFINEFUNC2(int, ASN1_STRING_print, BIO *a, a, const ASN1_STRING *b, b, return 0, return)
+#else
+DEFINEFUNC2(int, ASN1_STRING_print, BIO *a, a, ASN1_STRING *b, b, return 0, return)
+#endif
 DEFINEFUNC(X509_NAME *, X509_get_issuer_name, X509 *a, a, return 0, return)
 DEFINEFUNC(X509_NAME *, X509_get_subject_name, X509 *a, a, return 0, return)
 DEFINEFUNC(int, X509_verify_cert, X509_STORE_CTX *a, a, return -1, return)
@@ -328,6 +332,8 @@ DEFINEFUNC(void, OPENSSL_add_all_algorithms_conf, void, DUMMYARG, return, DUMMYA
 DEFINEFUNC3(int, SSL_CTX_load_verify_locations, SSL_CTX *ctx, ctx, const char *CAfile, CAfile, const char *CApath, CApath, return 0, return)
 DEFINEFUNC(long, SSLeay, void, DUMMYARG, return 0, return)
 DEFINEFUNC(const char *, SSLeay_version, int a, a, return 0, return)
+DEFINEFUNC2(int, i2d_SSL_SESSION, SSL_SESSION *in, in, unsigned char **pp, pp, return 0, return)
+DEFINEFUNC3(SSL_SESSION *, d2i_SSL_SESSION, SSL_SESSION **a, a, const unsigned char **pp, pp, long length, length, return 0, return)
 
 #define RESOLVEFUNC(func) \
     if (!(_q_##func = _q_PTR_##func(libs.first->resolve(#func)))     \
@@ -383,7 +389,7 @@ static bool libGreaterThan(const QString &lhs, const QString &rhs)
     return true;
 }
 
-#if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID_NO_SDK)
+#if defined(Q_OS_LINUX) && !defined(Q_OS_ANDROID)
 static int dlIterateCallback(struct dl_phdr_info *info, size_t size, void *data)
 {
     if (size < sizeof (info->dlpi_addr) + sizeof (info->dlpi_name))
@@ -414,7 +420,7 @@ static QStringList libraryPathList()
     paths << QLatin1String("/lib64") << QLatin1String("/usr/lib64") << QLatin1String("/usr/local/lib64");
     paths << QLatin1String("/lib32") << QLatin1String("/usr/lib32") << QLatin1String("/usr/local/lib32");
 
-#if defined(Q_OS_ANDROID_NO_SDK)
+#if defined(Q_OS_ANDROID)
     paths << QLatin1String("/system/lib");
 #elif defined(Q_OS_LINUX)
     // discover paths of already loaded libraries
@@ -544,7 +550,7 @@ static QPair<QLibrary*, QLibrary*> loadOpenSsl()
 #ifdef Q_OS_OPENBSD
     libcrypto->setLoadHints(QLibrary::ExportExternalSymbolsHint);
 #endif
-#ifdef SHLIB_VERSION_NUMBER
+#if defined(SHLIB_VERSION_NUMBER) && !defined(Q_OS_QNX) // on QNX, the libs are always libssl.so and libcrypto.so
     // first attempt: the canonical name is libssl.so.<SHLIB_VERSION_NUMBER>
     libssl->setFileNameAndVersion(QLatin1String("ssl"), QLatin1String(SHLIB_VERSION_NUMBER));
     libcrypto->setFileNameAndVersion(QLatin1String("crypto"), QLatin1String(SHLIB_VERSION_NUMBER));
@@ -797,6 +803,8 @@ bool q_resolveOpenSslSymbols()
     RESOLVEFUNC(SSL_CTX_load_verify_locations)
     RESOLVEFUNC(SSLeay)
     RESOLVEFUNC(SSLeay_version)
+    RESOLVEFUNC(i2d_SSL_SESSION)
+    RESOLVEFUNC(d2i_SSL_SESSION)
 
     symbolsResolved = true;
     delete libs.first;

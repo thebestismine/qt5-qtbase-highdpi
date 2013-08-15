@@ -1316,6 +1316,12 @@ void QFontEngineFT::doKerning(QGlyphLayout *g, QFontEngine::ShaperFlags flags) c
             unlockFace();
         }
     }
+
+    if (shouldUseDesignMetrics(flags) && !(fontDef.styleStrategy & QFont::ForceIntegerMetrics))
+        flags |= DesignMetrics;
+    else
+        flags &= ~DesignMetrics;
+
     QFontEngine::doKerning(g, flags);
 }
 
@@ -1429,6 +1435,14 @@ void QFontEngineFT::getUnscaledGlyph(glyph_t glyph, QPainterPath *path, glyph_me
 
     FT_Set_Transform(face, &freetype->matrix, 0);
     unlockFace();
+}
+
+bool QFontEngineFT::supportsTransformation(const QTransform &transform) const
+{
+    // The freetype engine falls back to QFontEngine for tranformed glyphs,
+    // which uses fast-tranform and produces very ugly results, so we claim
+    // to support just translations.
+    return transform.type() <= QTransform::TxTranslate;
 }
 
 static inline unsigned int getChar(const QChar *str, int &i, const int len)
@@ -1571,12 +1585,18 @@ bool QFontEngineFT::stringToCMap(const QChar *str, int len, QGlyphLayout *glyphs
     return true;
 }
 
+bool QFontEngineFT::shouldUseDesignMetrics(QFontEngine::ShaperFlags flags) const
+{
+    if (!FT_IS_SCALABLE(freetype->face))
+        return false;
+
+    return default_hint_style == HintNone || default_hint_style == HintLight || (flags & DesignMetrics);
+}
+
 void QFontEngineFT::recalcAdvances(QGlyphLayout *glyphs, QFontEngine::ShaperFlags flags) const
 {
     FT_Face face = 0;
-    bool design = (default_hint_style == HintNone ||
-                   default_hint_style == HintLight ||
-                   (flags & DesignMetrics)) && FT_IS_SCALABLE(freetype->face);
+    bool design = shouldUseDesignMetrics(flags);
     for (int i = 0; i < glyphs->numGlyphs; i++) {
         Glyph *g = cacheEnabled ? defaultGlyphSet.getGlyph(glyphs->glyphs[i]) : 0;
         // Since we are passing Format_None to loadGlyph, use same default format logic as loadGlyph

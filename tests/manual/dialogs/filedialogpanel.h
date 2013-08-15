@@ -3,7 +3,7 @@
 ** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
 ** Contact: http://www.qt-project.org/legal
 **
-** This file is part of the examples of the Qt Toolkit.
+** This file is part of the test suite of the Qt Toolkit.
 **
 ** $QT_BEGIN_LICENSE:LGPL$
 ** Commercial License Usage
@@ -46,11 +46,13 @@
 #include <QFileDialog>
 #include <QPointer>
 
+QT_BEGIN_NAMESPACE
 class QPushButton;
 class QCheckBox;
 class QComboBox;
 class QLineEdit;
 class QPlainTextEdit;
+QT_END_NAMESPACE
 class LabelLineEdit;
 
 class FileDialogPanel : public QWidget
@@ -66,9 +68,13 @@ public slots:
     void deleteNonModalDialog();
     void deleteModalDialog();
     void getOpenFileNames();
+    void getOpenFileUrls();
     void getOpenFileName();
+    void getOpenFileUrl();
     void getSaveFileName();
+    void getSaveFileUrl();
     void getExistingDirectory();
+    void getExistingDirectoryUrl();
     void accepted();
     void showAcceptedResult();
     void restoreDefaults();
@@ -80,6 +86,7 @@ private slots:
 private:
     QString filterString() const;
     QFileDialog::Options options() const;
+    QStringList allowedSchemes() const;
     void applySettings(QFileDialog *d) const;
 
     QCheckBox *m_readOnly;
@@ -87,9 +94,11 @@ private:
     QCheckBox *m_nameFilterDetailsVisible;
     QCheckBox *m_resolveSymLinks;
     QCheckBox *m_native;
+    QCheckBox *m_customDirIcons;
     QComboBox *m_acceptMode;
     QComboBox *m_fileMode;
     QComboBox *m_viewMode;
+    QLineEdit *m_allowedSchemes;
     QLineEdit *m_defaultSuffix;
     QLineEdit *m_directory;
     QLineEdit *m_selectedFileName;

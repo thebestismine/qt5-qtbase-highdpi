@@ -51,7 +51,9 @@
 QT_BEGIN_NAMESPACE
 
 class QQnxBpsEventFilter;
+#if defined(QQNX_SCREENEVENTTHREAD)
 class QQnxScreenEventThread;
+#endif
 class QQnxFileDialogHelper;
 class QQnxNativeInterface;
 class QQnxWindow;
@@ -80,7 +82,12 @@ typedef QHash<screen_window_t, QWindow *> QQnxWindowMapper;
 class QQnxIntegration : public QPlatformIntegration
 {
 public:
-    QQnxIntegration();
+    enum Option { // Options to be passed on command line.
+        NoOptions = 0x0,
+        FullScreenApplication = 0x1
+    };
+    Q_DECLARE_FLAGS(Options, Option)
+    explicit QQnxIntegration(const QStringList &paramList);
     ~QQnxIntegration();
 
     bool hasCapability(QPlatformIntegration::Capability cap) const;
@@ -129,6 +136,8 @@ public:
     void createDisplay(screen_display_t display, bool isPrimary);
     void removeDisplay(QQnxScreen *screen);
     QQnxScreen *primaryDisplay() const;
+    Options options() const;
+
 private:
     void createDisplays();
     void destroyDisplays();
@@ -137,7 +146,9 @@ private:
     static void removeWindow(screen_window_t qnxWindow);
 
     screen_context_t m_screenContext;
+#if defined(QQNX_SCREENEVENTTHREAD)
     QQnxScreenEventThread *m_screenEventThread;
+#endif
     QQnxNavigatorEventHandler *m_navigatorEventHandler;
     QQnxAbstractVirtualKeyboard *m_virtualKeyboard;
 #if defined(QQNX_PPS)
@@ -163,6 +174,8 @@ private:
 #endif
     static QQnxWindowMapper ms_windowMapper;
     static QMutex ms_windowMapperMutex;
+
+    const Options m_options;
 
     friend class QQnxWindow;
 };

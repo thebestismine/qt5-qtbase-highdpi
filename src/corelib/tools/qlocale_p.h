@@ -62,7 +62,7 @@
 QT_BEGIN_NAMESPACE
 
 #ifndef QT_NO_SYSTEMLOCALE
-class QSystemLocale
+class Q_CORE_EXPORT QSystemLocale
 {
 public:
     QSystemLocale();
@@ -115,7 +115,9 @@ public:
         ListToSeparatedString, // QString
         LocaleChanged, // system locale changed
         NativeLanguageName, // QString
-        NativeCountryName // QString
+        NativeCountryName, // QString
+        StandaloneMonthNameLong, // QString, in: int
+        StandaloneMonthNameShort // QString, in: int
     };
     virtual QVariant query(QueryType type, QVariant in) const;
     virtual QLocale fallbackUiLocale() const;
@@ -151,7 +153,7 @@ struct QLocaleId
     QLocaleId withLikelySubtagsAdded() const;
     QLocaleId withLikelySubtagsRemoved() const;
 
-    QString bcp47Name() const;
+    QByteArray name(char separator = '-') const;
 
     ushort language_id, script_id, country_id;
 };
@@ -162,6 +164,7 @@ public:
     static const QLocaleData *findLocaleData(QLocale::Language language,
                                              QLocale::Script script,
                                              QLocale::Country country);
+    static const QLocaleData *c();
 
     quint16 m_language_id, m_script_id, m_country_id;
 
@@ -205,19 +208,16 @@ public:
     quint16 m_weekend_end : 3;
 };
 
-class Q_CORE_EXPORT QLocalePrivate : public QSharedData
+class Q_CORE_EXPORT QLocalePrivate
 {
 public:
-    explicit QLocalePrivate(int index, int numberOptions = 0)
-        : m_index(index), m_numberOptions(numberOptions)
+    static QLocalePrivate *create(const QLocaleData *data, int numberOptions = 0)
     {
-        m_data = dataPointerForIndex(index);
-        m_localeID = bcp47Name().toLatin1();
-        m_localeID.replace('-','_');
-    }
-
-    ~QLocalePrivate()
-    {
+        QLocalePrivate *retval = new QLocalePrivate;
+        retval->m_data = data;
+        retval->ref.store(0);
+        retval->m_numberOptions = numberOptions;
+        return retval;
     }
 
     QChar decimal() const { return QChar(m_data->m_decimal); }
@@ -232,7 +232,7 @@ public:
     quint16 languageId() const { return m_data->m_language_id; }
     quint16 countryId() const { return m_data->m_country_id; }
 
-    QString bcp47Name() const;
+    QByteArray bcp47Name(char separator = '-') const;
 
     // ### QByteArray::fromRawData would be more optimal
     inline QString languageCode() const { return QLocalePrivate::languageToCode(QLocale::Language(m_data->m_language_id)); }
@@ -247,7 +247,6 @@ public:
     static QLocale::Country codeToCountry(const QString &code);
     static void getLangAndCountry(const QString &name, QLocale::Language &lang,
                                   QLocale::Script &script, QLocale::Country &cntry);
-    static const QLocaleData *dataPointerForIndex(quint16 index);
 
     QLocale::MeasurementSystem measurementSystem() const;
 
@@ -334,12 +333,18 @@ public:
     QString dateTimeToString(const QString &format, const QDate *date, const QTime *time,
                              const QLocale *q) const;
 
-    friend class QLocale;
-    quint16 m_index;
-    quint16 m_numberOptions;
     const QLocaleData *m_data;
-    QByteArray m_localeID;
+    QBasicAtomicInt ref;
+    quint16 m_numberOptions;
 };
+
+template <>
+inline QLocalePrivate *QSharedDataPointer<QLocalePrivate>::clone()
+{
+    // cannot use QLocalePrivate's copy constructor
+    // since it is deleted in C++11
+    return QLocalePrivate::create(d->m_data, d->m_numberOptions);
+}
 
 inline char QLocalePrivate::digitToCLocale(QChar in) const
 {

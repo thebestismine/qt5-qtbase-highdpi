@@ -83,6 +83,17 @@ struct QScopedPointerPodDeleter
     static inline void cleanup(void *pointer) { if (pointer) free(pointer); }
 };
 
+#ifndef QT_NO_QOBJECT
+template <typename T>
+struct QScopedPointerObjectDeleteLater
+{
+    static inline void cleanup(T *pointer) { if (pointer) pointer->deleteLater(); }
+};
+
+class QObject;
+typedef QScopedPointerObjectDeleteLater<QObject> QScopedPointerDeleteLater;
+#endif
+
 template <typename T, typename Cleanup = QScopedPointerDeleter<T> >
 class QScopedPointer
 {
@@ -97,6 +108,19 @@ public:
         T *oldD = this->d;
         Cleanup::cleanup(oldD);
     }
+
+#ifdef Q_COMPILER_RVALUE_REFS
+    inline QScopedPointer(QScopedPointer<T, Cleanup> &&other)
+        : d(other.take())
+    {
+    }
+
+    inline QScopedPointer<T, Cleanup> &operator=(QScopedPointer<T, Cleanup> &&other)
+    {
+        reset(other.take());
+        return *this;
+    }
+#endif
 
     inline T &operator*() const
     {

@@ -74,6 +74,7 @@ static const struct {
     { "QT_HOST_PREFIX", QLibraryInfo::HostPrefixPath, true },
     { "QT_HOST_DATA", QLibraryInfo::HostDataPath, true },
     { "QT_HOST_BINS", QLibraryInfo::HostBinariesPath, true },
+    { "QT_HOST_LIBS", QLibraryInfo::HostLibrariesPath, true },
     { "QMAKE_SPEC", QLibraryInfo::HostSpecPath, true },
     { "QMAKE_XSPEC", QLibraryInfo::TargetSpecPath, true },
 };
@@ -82,6 +83,7 @@ QMakeProperty::QMakeProperty() : settings(0)
 {
     for (int i = 0; i < sizeof(propList)/sizeof(propList[0]); i++) {
         QString name = QString::fromLatin1(propList[i].name);
+        m_values[ProKey(name + "/src")] = QLibraryInfo::rawLocation(propList[i].loc, QLibraryInfo::EffectiveSourcePaths);
         m_values[ProKey(name + "/get")] = QLibraryInfo::rawLocation(propList[i].loc, QLibraryInfo::EffectivePaths);
         QString val = QLibraryInfo::rawLocation(propList[i].loc, QLibraryInfo::FinalPaths);
         if (!propList[i].raw) {
@@ -163,11 +165,14 @@ QMakeProperty::exec()
                 ProString val = value(ProKey(prop));
                 ProString pval = value(ProKey(prop + "/raw"));
                 ProString gval = value(ProKey(prop + "/get"));
+                ProString sval = value(ProKey(prop + "/src"));
                 fprintf(stdout, "%s:%s\n", prop.toLatin1().constData(), val.toLatin1().constData());
                 if (!pval.isEmpty() && pval != val)
                     fprintf(stdout, "%s/raw:%s\n", prop.toLatin1().constData(), pval.toLatin1().constData());
                 if (!gval.isEmpty() && gval != (pval.isEmpty() ? val : pval))
                     fprintf(stdout, "%s/get:%s\n", prop.toLatin1().constData(), gval.toLatin1().constData());
+                if (!sval.isEmpty() && sval != gval)
+                    fprintf(stdout, "%s/src:%s\n", prop.toLatin1().constData(), sval.toLatin1().constData());
             }
             return true;
         }

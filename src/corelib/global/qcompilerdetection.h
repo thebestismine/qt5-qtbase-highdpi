@@ -467,7 +467,7 @@
 #  if __INTEL_COMPILER < 1200
 #    define Q_NO_TEMPLATE_FRIENDS
 #  endif
-#  if defined(_CHAR16T) || __cplusplus >= 201103L
+#  if __cplusplus >= 201103L
 #    define Q_COMPILER_VARIADIC_MACROS
 #    if __INTEL_COMPILER >= 1200
 #      define Q_COMPILER_AUTO_TYPE
@@ -618,7 +618,6 @@
 #    endif
 #    if (__GNUC__ * 100 + __GNUC_MINOR__) >= 404
        /* C++11 features supported in GCC 4.4: */
-#      define Q_COMPILER_ATOMICS
 #      define Q_COMPILER_AUTO_FUNCTION
 #      define Q_COMPILER_AUTO_TYPE
 #      define Q_COMPILER_CLASS_ENUM
@@ -642,6 +641,11 @@
 #      define Q_COMPILER_RANGE_FOR
 #    endif
 #    if (__GNUC__ * 100 + __GNUC_MINOR__) >= 407
+       /* GCC 4.4 implemented <atomic> and std::atomic using its old intrinsics.
+        * However, the implementation is incomplete for most platforms until GCC 4.7:
+        * instead, std::atomic would use an external lock. Since we need an std::atomic
+        * that is behavior-compatible with QBasicAtomic, we only enable it here */
+#      define Q_COMPILER_ATOMICS
        /* GCC 4.6.x has problems dealing with noexcept expressions,
         * so turn the feature on for 4.7 and above, only */
 #      define Q_COMPILER_NOEXCEPT
@@ -658,7 +662,7 @@
 #      define Q_COMPILER_ALIGNOF
 #      define Q_COMPILER_INHERITING_CONSTRUCTORS
 #      define Q_COMPILER_THREAD_LOCAL
-#      if (__GNUC__ * 100 + __GNUC_MINOR__) > 408 || __GNUC_PATCHLEVEL__ > 1
+#      if (__GNUC__ * 100 + __GNUC_MINOR__) > 408 || __GNUC_PATCHLEVEL__ >= 1
 #         define Q_COMPILER_REF_QUALIFIERS
 #      endif
 #    endif
@@ -876,5 +880,27 @@
         Q_ASSUME_IMPL(valueOfExpression);\
         Q_UNUSED(valueOfExpression); /* the value may not be used if Q_ASSERT_X and Q_ASSUME_IMPL are noop */\
     } while (0)
+
+
+/*
+    Sanitize compiler feature availability
+*/
+#if !defined(Q_PROCESSOR_X86)
+#  undef QT_COMPILER_SUPPORTS_SSE2
+#  undef QT_COMPILER_SUPPORTS_SSE3
+#  undef QT_COMPILER_SUPPORTS_SSSE3
+#  undef QT_COMPILER_SUPPORTS_SSE4_1
+#  undef QT_COMPILER_SUPPORTS_SSE4_2
+#  undef QT_COMPILER_SUPPORTS_AVX
+#  undef QT_COMPILER_SUPPORTS_AVX2
+#endif
+#if !defined(Q_PROCESSOR_ARM)
+#  undef QT_COMPILER_SUPPORTS_IWMMXT
+#  undef QT_COMPILER_SUPPORTS_NEON
+#endif
+#if !defined(Q_PROCESSOR_MIPS)
+#  undef QT_COMPILER_SUPPORTS_MIPS_DSP
+#  undef QT_COMPILER_SUPPORTS_MIPS_DSPR2
+#endif
 
 #endif // QCOMPILERDETECTION_H

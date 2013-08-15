@@ -445,6 +445,8 @@ void QTextEditPrivate::_q_ensureVisible(const QRectF &_rect)
     example, the documentTitle() function will return the text from
     within HTML \c{<title>} tags.
 
+    \note Zooming into HTML documents only works if the font-size is not set to a fixed size.
+
     \section1 Using QTextEdit as an Editor
 
     All the information about using QTextEdit as a display widget also
@@ -768,6 +770,35 @@ QTextDocument *QTextEdit::document() const
 {
     Q_D(const QTextEdit);
     return d->control->document();
+}
+
+/*!
+    \since 5.2
+
+    \property QTextEdit::placeholderText
+    \brief the editor placeholder text
+
+    Setting this property makes the editor display a grayed-out
+    placeholder text as long as the document() is empty.
+
+    By default, this property contains an empty string.
+
+    \sa document()
+*/
+QString QTextEdit::placeholderText() const
+{
+    Q_D(const QTextEdit);
+    return d->placeholderText;
+}
+
+void QTextEdit::setPlaceholderText(const QString &placeholderText)
+{
+    Q_D(QTextEdit);
+    if (d->placeholderText != placeholderText) {
+        d->placeholderText = placeholderText;
+        if (d->control->document()->isEmpty())
+            d->viewport->update();
+    }
 }
 
 /*!
@@ -1497,6 +1528,13 @@ void QTextEdit::paintEvent(QPaintEvent *e)
     Q_D(QTextEdit);
     QPainter p(d->viewport);
     d->paint(&p, e);
+    if (!d->placeholderText.isEmpty() && d->control->document()->isEmpty()) {
+        QColor col = palette().text().color();
+        col.setAlpha(128);
+        p.setPen(col);
+        const int margin = int(document()->documentMargin());
+        p.drawText(d->viewport->rect().adjusted(margin, margin, -margin, -margin), Qt::AlignTop | Qt::TextWordWrap, d->placeholderText);
+    }
 }
 
 void QTextEditPrivate::_q_currentCharFormatChanged(const QTextCharFormat &fmt)

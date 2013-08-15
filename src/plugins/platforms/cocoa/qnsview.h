@@ -69,6 +69,8 @@ QT_END_NAMESPACE
     bool m_sendUpAsRightButton;
     Qt::KeyboardModifiers currentWheelModifiers;
     bool m_subscribesForGlobalFrameNotifications;
+    QCocoaGLContext *m_glContext;
+    bool m_shouldSetGLContextinDrawRect;
 }
 
 - (id)init;
@@ -79,7 +81,9 @@ QT_END_NAMESPACE
 - (void)invalidateWindowShadowIfNeeded;
 - (void)drawRect:(NSRect)dirtyRect;
 - (void)updateGeometry;
+- (void)notifyWindowStateChanged:(Qt::WindowState)newState;
 - (void)windowNotification : (NSNotification *) windowNotification;
+- (void)notifyWindowWillZoom:(BOOL)willZoom;
 - (void)viewDidHide;
 - (void)viewDidUnhide;
 
@@ -107,10 +111,11 @@ QT_END_NAMESPACE
 - (void)handleFrameStrutMouseEvent:(NSEvent *)theEvent;
 
 - (int) convertKeyCode : (QChar)keyCode;
-- (Qt::KeyboardModifiers) convertKeyModifiers : (ulong)modifierFlags;
++ (Qt::KeyboardModifiers) convertKeyModifiers : (ulong)modifierFlags;
 - (void)handleKeyEvent:(NSEvent *)theEvent eventType:(int)eventType;
 - (void)keyDown:(NSEvent *)theEvent;
 - (void)keyUp:(NSEvent *)theEvent;
+- (BOOL)performKeyEquivalent:(NSEvent *)theEvent;
 
 - (void)registerDragTypes;
 - (NSDragOperation)handleDrag:(id <NSDraggingInfo>)sender;

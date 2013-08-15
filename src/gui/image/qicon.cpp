@@ -181,7 +181,7 @@ void QPixmapIconEngine::paint(QPainter *painter, const QRect &rect, QIcon::Mode 
 {
     QSize pixmapSize = rect.size() * qt_effective_device_pixel_ratio(0);
     QPixmap px = pixmap(pixmapSize, mode, state);
-    painter->drawPixmap(rect, pixmap(pixmapSize, mode, state));
+    painter->drawPixmap(rect, px);
 }
 
 static inline int area(const QSize &s) { return s.width() * s.height(); }
@@ -484,6 +484,11 @@ void QPixmapIconEngine::virtual_hook(int id, void *data)
 #ifndef QT_NO_LIBRARY
 Q_GLOBAL_STATIC_WITH_ARGS(QFactoryLoader, loader,
     (QIconEngineFactoryInterface_iid, QLatin1String("/iconengines"), Qt::CaseInsensitive))
+
+QFactoryLoader *qt_iconEngineFactoryLoader()
+{
+    return loader();
+}
 #endif
 
 
@@ -1073,7 +1078,6 @@ void QIcon::setThemeName(const QString &name)
 */
 QString QIcon::themeName()
 {
-    QIconLoader::instance()->ensureInitialized();
     return QIconLoader::instance()->themeName();
 }
 

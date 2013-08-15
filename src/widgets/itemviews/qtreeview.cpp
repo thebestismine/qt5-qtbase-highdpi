@@ -335,6 +335,7 @@ void QTreeView::setHeader(QHeaderView *header)
             this, SLOT(updateGeometries()));
 
     setSortingEnabled(d->sortingEnabled);
+    d->updateGeometry();
 }
 
 /*!
@@ -878,7 +879,7 @@ bool QTreeView::isSortingEnabled() const
     \property QTreeView::animated
     \brief whether animations are enabled
 
-    If this property is true the treeview will animate expandsion
+    If this property is true the treeview will animate expansion
     and collapsing of branches. If this property is false, the treeview
     will expand or collapse branches immediately without showing
     the animation.
@@ -952,6 +953,36 @@ bool QTreeView::wordWrap() const
     return d->wrapItemText;
 }
 
+/*!
+    \since 5.2
+
+    This specifies that the tree structure should be placed at logical index \a index.
+    If \index is set to -1 then the tree will always follow visual index 0.
+
+    \sa treePosition(), QHeaderView::swapSections(), QHeaderView::moveSection()
+*/
+
+void QTreeView::setTreePosition(int index)
+{
+    Q_D(QTreeView);
+    d->treePosition = index;
+    update();
+}
+
+/*!
+    \since 5.2
+
+    Return the logical index the tree is set on. If the return value is -1 then the
+    tree is placed on the visual index 0.
+
+    \sa setTreePosition()
+*/
+
+int QTreeView::treePosition() const
+{
+    Q_D(const QTreeView);
+    return d->treePosition;
+}
 
 /*!
   \reimp
@@ -1067,7 +1098,7 @@ QRect QTreeView::visualRect(const QModelIndex &index) const
     int x = (spanning ? 0 : columnViewportPosition(index.column()));
     int w = (spanning ? d->header->length() : columnWidth(index.column()));
     // handle indentation
-    if (index.column() == 0) {
+    if (d->isTreePosition(index.column())) {
         int i = d->indentationForItem(vi);
         w -= i;
         if (!isRightToLeft())
@@ -1282,6 +1313,14 @@ void QTreeView::paintEvent(QPaintEvent *event)
         d->paintDropIndicator(&painter);
 #endif
     }
+}
+
+int QTreeViewPrivate::logicalIndexForTree() const
+{
+    int index = treePosition;
+    if (index < 0)
+        index = header->logicalIndex(0);
+    return index;
 }
 
 void QTreeViewPrivate::paintAlternatingRowColors(QPainter *painter, QStyleOptionViewItem *option, int y, int bottom) const
@@ -1516,7 +1555,7 @@ void QTreeViewPrivate::calcLogicalIndices(QVector<int> *logicalIndices, QVector<
         if (columnCount == 1 || (nextLogicalSection == 0 && prevLogicalSection == -1)
             || (headerSection == 0 && nextLogicalSection == -1) || spanning)
             pos = QStyleOptionViewItem::OnlyOne;
-        else if (headerSection == 0 || (nextLogicalSection != 0 && prevLogicalSection == -1))
+        else if (isTreePosition(headerSection) || (nextLogicalSection != 0 && prevLogicalSection == -1))
             pos = QStyleOptionViewItem::Beginning;
         else if (nextLogicalSection == 0 || nextLogicalSection == -1)
             pos = QStyleOptionViewItem::End;
@@ -1526,6 +1565,23 @@ void QTreeViewPrivate::calcLogicalIndices(QVector<int> *logicalIndices, QVector<
     }
 }
 
+/*!
+  \internal
+  Get sizeHint width for single index (providing existing hint and style option) and index in viewIndex i.
+*/
+int QTreeViewPrivate::widthHintForIndex(const QModelIndex &index, int hint, const QStyleOptionViewItem &option, int i) const
+{
+    QWidget *editor = editorForIndex(index).widget.data();
+    if (editor && persistent.contains(editor)) {
+        hint = qMax(hint, editor->sizeHint().width());
+        int min = editor->minimumSize().width();
+        int max = editor->maximumSize().width();
+        hint = qBound(min, hint, max);
+    }
+    int xhint = delegateForIndex(index)->sizeHint(option, index).width();
+    hint = qMax(hint, xhint + (isTreePosition(index.column()) ? indentationForItem(i) : 0));
+    return hint;
+}
 
 /*!
     Draws the row in the tree view that contains the model item \a index,
@@ -1668,7 +1724,7 @@ void QTreeView::drawRow(QPainter *painter, const QStyleOptionViewItem &option,
            alternate row color was provided by the view. For backward compatibility,
            this is now delegated to the style using PE_PanelViewItemRow which
            does the appropriate fill */
-        if (headerSection == 0) {
+        if (d->isTreePosition(headerSection)) {
             const int i = d->indentationForItem(d->current);
             QRect branches(reverse ? position + width - i : position, y, i, height);
             const bool setClipRect = branches.width() > width;
@@ -2400,16 +2456,11 @@ void QTreeView::scrollContentsBy(int dx, int dy)
 
     dx = isRightToLeft() ? -dx : dx;
     if (dx) {
+        int oldOffset = d->header->offset();
+        d->header->d_func()->setScrollOffset(horizontalScrollBar(), horizontalScrollMode());
         if (horizontalScrollMode() == QAbstractItemView::ScrollPerItem) {
-            int oldOffset = d->header->offset();
-            if (horizontalScrollBar()->value() == horizontalScrollBar()->maximum())
-                d->header->setOffsetToLastSection();
-            else
-                d->header->setOffsetToSectionPosition(horizontalScrollBar()->value());
             int newOffset = d->header->offset();
             dx = isRightToLeft() ? newOffset - oldOffset : oldOffset - newOffset;
-        } else {
-            d->header->setOffset(horizontalScrollBar()->value());
         }
     }
 
@@ -2552,7 +2603,7 @@ void QTreeView::columnCountChanged(int oldCount, int newCount)
 /*!
   Resizes the \a column given to the size of its contents.
 
-  \sa columnWidth(), setColumnWidth()
+  \sa columnWidth(), setColumnWidth(), sizeHintForColumn(), QHeaderView::resizeContentsPrecision()
 */
 void QTreeView::resizeColumnToContents(int column)
 {
@@ -2616,6 +2667,35 @@ void QTreeView::selectAll()
                   QItemSelectionModel::ClearAndSelect
                   |QItemSelectionModel::Rows);
     }
+}
+
+/*!
+  \reimp
+*/
+QSize QTreeView::viewportSizeHint() const
+{
+    Q_D(const QTreeView);
+    d->executePostedLayout(); // Make sure that viewItems are up to date.
+
+    if (d->viewItems.size() == 0)
+        return QAbstractItemView::viewportSizeHint();
+
+    // Get rect for last item
+    const QRect deepestRect = visualRect(d->viewItems.last().index);
+
+    if (!deepestRect.isValid())
+        return QAbstractItemView::viewportSizeHint();
+
+    QSize result = QSize(d->header->length(), deepestRect.bottom() + 1);
+
+    // add size for header
+    result += QSize(0, d->header->isVisible() ? d->header->height() : 0);
+
+    // add size for scrollbars
+    result += QSize(verticalScrollBar()->isVisible() ? verticalScrollBar()->width() : 0,
+                    horizontalScrollBar()->isVisible() ? horizontalScrollBar()->height() : 0);
+
+    return result;
 }
 
 /*!
@@ -2740,7 +2820,6 @@ void QTreeView::updateGeometries()
         QRect vg = d->viewport->geometry();
         QRect geometryRect(vg.left(), vg.top() - hint.height(), vg.width(), hint.height());
         d->header->setGeometry(geometryRect);
-        //d->header->setOffset(horizontalScrollBar()->value()); // ### bug ???
         QMetaObject::invokeMethod(d->header, "updateGeometries");
         d->updateScrollBars();
         d->geometryRecursionBlock = false;
@@ -2760,7 +2839,7 @@ void QTreeView::updateGeometries()
   if a larger column width is required by either the view's header or
   the item delegate, that width will be used instead.
 
-  \sa QWidget::sizeHint, header()
+  \sa QWidget::sizeHint, header(), QHeaderView::resizeContentsPrecision()
 */
 int QTreeView::sizeHintForColumn(int column) const
 {
@@ -2773,28 +2852,58 @@ int QTreeView::sizeHintForColumn(int column) const
     QStyleOptionViewItem option = d->viewOptions();
     const QVector<QTreeViewItem> viewItems = d->viewItems;
 
-    int start = 0;
-    int end = viewItems.count();
-    if(end > 1000) { //if we have too many item this function would be too slow.
-        //we get a good approximation by only iterate over 1000 items.
-        start = qMax(0, d->firstVisibleItem() - 100);
-        end = qMin(end, start + 900);
-    }
+    const int maximumProcessRows = d->header->resizeContentsPrecision(); // To avoid this to take forever.
 
-    for (int i = start; i < end; ++i) {
+    int offset = 0;
+    int start = d->firstVisibleItem(&offset);
+    int end = d->lastVisibleItem(start, offset);
+
+    int rowsProcessed = 0;
+
+    for (int i = start; i <= end; ++i) {
         if (viewItems.at(i).spanning)
             continue; // we have no good size hint
         QModelIndex index = viewItems.at(i).index;
         index = index.sibling(index.row(), column);
-        QWidget *editor = d->editorForIndex(index).widget.data();
-        if (editor && d->persistent.contains(editor)) {
-            w = qMax(w, editor->sizeHint().width());
-            int min = editor->minimumSize().width();
-            int max = editor->maximumSize().width();
-            w = qBound(min, w, max);
+        w = d->widthHintForIndex(index, w, option, i);
+        ++rowsProcessed;
+        if (rowsProcessed == maximumProcessRows)
+            break;
+    }
+
+    --end;
+    int actualBottom = viewItems.size() - 1;
+
+    if (maximumProcessRows == 0)
+        rowsProcessed = 0; // skip the while loop
+
+    while (rowsProcessed != maximumProcessRows && (start > 0 || end < actualBottom)) {
+        int idx  = -1;
+
+        if ((rowsProcessed % 2 && start > 0) || end == actualBottom) {
+            while (start > 0) {
+                --start;
+                if (viewItems.at(start).spanning)
+                    continue;
+                idx = start;
+                break;
+            }
+        } else {
+            while (end < actualBottom) {
+                ++end;
+                if (viewItems.at(end).spanning)
+                    continue;
+                idx = end;
+                break;
+            }
         }
-        int hint = d->delegateForIndex(index)->sizeHint(option, index).width();
-        w = qMax(w, hint + (column == 0 ? d->indentationForItem(i) : 0));
+        if (idx < 0)
+            continue;
+
+        QModelIndex index = viewItems.at(idx).index;
+        index = index.sibling(index.row(), column);
+        w = d->widthHintForIndex(index, w, option, idx);
+        ++rowsProcessed;
     }
     return w;
 }
@@ -2915,6 +3024,7 @@ void QTreeViewPrivate::initialize()
     header->setDefaultAlignment(Qt::AlignLeft|Qt::AlignVCenter);
     q->setHeader(header);
 #ifndef QT_NO_ANIMATION
+    animationsEnabled = q->style()->styleHint(QStyle::SH_Widget_Animate, 0, q);
     QObject::connect(&animatedOperation, SIGNAL(finished()), q, SLOT(_q_endAnimatedOperation()));
 #endif //QT_NO_ANIMATION
 }
@@ -3314,7 +3424,7 @@ int QTreeViewPrivate::coordinateForItem(int item) const
     if (verticalScrollMode == QAbstractItemView::ScrollPerPixel) {
         if (uniformRowHeights)
             return (item * defaultItemHeight) - vbar->value();
-        // ### optimize (spans or caching)
+        // ### optimize (maybe do like QHeaderView by letting items have startposition)
         int y = 0;
         for (int i = 0; i < viewItems.count(); ++i) {
             if (i == item)
@@ -3481,7 +3591,7 @@ int QTreeViewPrivate::firstVisibleItem(int *offset) const
             *offset = -(value % defaultItemHeight);
         return value / defaultItemHeight;
     }
-    int y = 0; // ### optimize (use spans ?)
+    int y = 0; // ### (maybe do like QHeaderView by letting items have startposition)
     for (int i = 0; i < viewItems.count(); ++i) {
         y += itemHeight(i); // the height value is cached
         if (y > value) {
@@ -3491,6 +3601,21 @@ int QTreeViewPrivate::firstVisibleItem(int *offset) const
         }
     }
     return -1;
+}
+
+int QTreeViewPrivate::lastVisibleItem(int firstVisual, int offset) const
+{
+    if (firstVisual < 0 || offset < 0)
+        firstVisual = firstVisibleItem(&offset);
+    int y = - offset;
+    int value = viewport->height();
+
+    for (int i = firstVisual; i < viewItems.count(); ++i) {
+        y += itemHeight(i); // the height value is cached
+        if (y > value)
+            return i;
+    }
+    return viewItems.size() - 1;
 }
 
 int QTreeViewPrivate::columnAt(int x) const
@@ -3535,7 +3660,7 @@ void QTreeViewPrivate::updateScrollBars()
         int contentsHeight = 0;
         if (uniformRowHeights) {
             contentsHeight = defaultItemHeight * viewItems.count();
-        } else { // ### optimize (spans or caching)
+        } else { // ### (maybe do like QHeaderView by letting items have startposition)
             for (int i = 0; i < viewItems.count(); ++i)
                 contentsHeight += itemHeight(i);
         }
@@ -3576,7 +3701,7 @@ int QTreeViewPrivate::itemDecorationAt(const QPoint &pos) const
     executePostedLayout();
     int x = pos.x();
     int column = header->logicalIndexAt(x);
-    if (column != 0)
+    if (!isTreePosition(column))
         return -1; // no logical index at x
 
     int viewItemIndex = itemAtCoordinate(pos.y());
@@ -3598,8 +3723,8 @@ QRect QTreeViewPrivate::itemDecorationRect(const QModelIndex &index) const
         return QRect();
 
     int itemIndentation = indentationForItem(viewItemIndex);
-    int position = header->sectionViewportPosition(0);
-    int size = header->sectionSize(0);
+    int position = header->sectionViewportPosition(logicalIndexForTree());
+    int size = header->sectionSize(logicalIndexForTree());
 
     QRect rect;
     if (q->isRightToLeft())

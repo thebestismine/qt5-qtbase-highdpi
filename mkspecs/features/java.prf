@@ -7,6 +7,11 @@ android {
         isEmpty(API_VERSION): API_VERSION = android-10
     }
 
+    isEmpty(BUILD_TOOLS_REVISION) {
+        BUILD_TOOLS_REVISION = $$(ANDROID_BUILD_TOOLS_REVISION)
+        isEmpty(BUILD_TOOLS_REVISION): BUILD_TOOLS_REVISION = 17.0.0
+    }
+
     !exists($$SDK_ROOT/platforms/$$API_VERSION/android.jar) {
         error("The Path $$SDK_ROOT/platforms/$$API_VERSION/android.jar does not exist. Make sure the ANDROID_SDK_ROOT and ANDROID_API_VERSION environment variables are correctly set.")
     }
@@ -17,7 +22,10 @@ android {
     CONFIG += android_app
 }
 
-isEmpty(CLASS_DIR): CLASS_DIR = .classes
+isEmpty(CLASS_DIR) {
+    bundled_jar_file: CLASS_DIR = .classes.bundled
+    else: CLASS_DIR = .classes
+}
 
 CONFIG -= qt
 
@@ -47,17 +55,24 @@ QMAKE_LIBS_OPENGL_ES2 =
 QMAKE_LIBDIR =
 QMAKE_EXTENSION_SHLIB = jar
 
-# Override linker with dex (for Android) or jar (for other java builds)
-android {
-    QMAKE_LINK_O_FLAG = --output=
+# Override linker with dex (for distributable Android archives) or jar (for other java builds)
+android:!bundled_jar_file {
     contains(QMAKE_HOST.os, Windows) {
-        QMAKE_LINK = $$PWD/data/android/dx $$SDK_ROOT --dex
+        # The location where dx.bat expects itself to be found is used as the landmark instead
+        # of the base sdk folder.
+        # Doing it this way makes this logic more similar to the other platforms and
+        # also means that our dx.bat is more like Google's dx.bat
+        DEX_BAT = $$SDK_ROOT/platform-tools/dx.bat
+        !exists($$DEX_BAT): DEX_BAT = $$SDK_ROOT/build-tools/$$BUILD_TOOLS_REVISION/dx.bat
+        DEX_CMD = $$PWD/data/android/dx $$DEX_BAT
     } else {
-        QMAKE_LINK = $$SDK_ROOT/platform-tools/dx --dex
+        DEX_CMD = $$SDK_ROOT/platform-tools/dx
+        !exists($$DEX_CMD): DEX_CMD = $$SDK_ROOT/build-tools/$$BUILD_TOOLS_REVISION/dx
+        !exists($$DEX_CMD): error("The path $$DEX_CMD does not exist. Please set the environment variable ANDROID_BUILD_TOOLS_REVISION to the revision of the build tools installed in your Android SDK.")
     }
+    QMAKE_LINK_SHLIB_CMD = $$DEX_CMD --dex --output $(TARGET) $$CLASS_DIR
 } else {
-    QMAKE_LINK_O_FLAG = "cf "
-    QMAKE_LINK = jar
+    QMAKE_LINK_SHLIB_CMD = jar cf $(TARGET) -C $$CLASS_DIR .
 }
 
 # Force link step to always happen, since we are always updating the

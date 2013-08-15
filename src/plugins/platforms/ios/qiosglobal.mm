@@ -104,7 +104,8 @@ Qt::ScreenOrientation toQtScreenOrientation(UIDeviceOrientation uiDeviceOrientat
         break;
     case UIDeviceOrientationFaceUp:
     case UIDeviceOrientationFaceDown:
-        qtOrientation = static_cast<Qt::ScreenOrientation>(-1); // not supported ATM.
+        // FIXME: Use cached device orientation, or fall back to interface orientation
+        qtOrientation = Qt::PortraitOrientation;
         break;
     default:
         qtOrientation = Qt::PortraitOrientation;
@@ -141,7 +142,7 @@ QRect fromPortraitToPrimary(const QRect &rect, QPlatformScreen *screen)
     // aligned with UIScreen into whatever is the current orientation of QScreen.
     QRect geometry = screen->geometry();
     return geometry.width() < geometry.height() ? rect
-        : QRect(rect.y(), geometry.width() - rect.width() - rect.x(), rect.height(), rect.width());
+        : QRect(rect.y(), geometry.height() - rect.width() - rect.x(), rect.height(), rect.width());
 }
 
 QT_END_NAMESPACE

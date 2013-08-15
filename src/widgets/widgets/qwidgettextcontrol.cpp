@@ -579,7 +579,7 @@ void QWidgetTextControlPrivate::selectionChanged(bool forceEmitSelectionChanged 
     if (forceEmitSelectionChanged) {
         emit q->selectionChanged();
 #ifndef QT_NO_ACCESSIBILITY
-        if (q->parent()) {
+        if (q->parent() && q->parent()->isWidgetType()) {
             QAccessibleTextSelectionEvent ev(q->parent(), cursor.anchor(), cursor.position());
             QAccessible::updateAccessibility(&ev);
         }
@@ -602,7 +602,7 @@ void QWidgetTextControlPrivate::selectionChanged(bool forceEmitSelectionChanged 
                     || cursor.anchor() != lastSelectionAnchor)))) {
         emit q->selectionChanged();
 #ifndef QT_NO_ACCESSIBILITY
-        if (q->parent()) {
+        if (q->parent() && q->parent()->isWidgetType()) {
             QAccessibleTextSelectionEvent ev(q->parent(), cursor.anchor(), cursor.position());
             QAccessible::updateAccessibility(&ev);
         }
@@ -2126,6 +2126,13 @@ void QWidgetTextControlPrivate::editFocusEvent(QEvent *e)
 #endif
 
 #ifndef QT_NO_CONTEXTMENU
+static inline void setActionIcon(QAction *action, const QString &name)
+{
+    const QIcon icon = QIcon::fromTheme(name);
+    if (!icon.isNull())
+        action->setIcon(icon);
+}
+
 QMenu *QWidgetTextControl::createStandardContextMenu(const QPointF &pos, QWidget *parent)
 {
     Q_D(QWidgetTextControl);
@@ -2145,17 +2152,21 @@ QMenu *QWidgetTextControl::createStandardContextMenu(const QPointF &pos, QWidget
     if (d->interactionFlags & Qt::TextEditable) {
         a = menu->addAction(tr("&Undo") + ACCEL_KEY(QKeySequence::Undo), this, SLOT(undo()));
         a->setEnabled(d->doc->isUndoAvailable());
+        setActionIcon(a, QStringLiteral("edit-undo"));
         a = menu->addAction(tr("&Redo") + ACCEL_KEY(QKeySequence::Redo), this, SLOT(redo()));
         a->setEnabled(d->doc->isRedoAvailable());
+        setActionIcon(a, QStringLiteral("edit-redo"));
         menu->addSeparator();
 
         a = menu->addAction(tr("Cu&t") + ACCEL_KEY(QKeySequence::Cut), this, SLOT(cut()));
         a->setEnabled(d->cursor.hasSelection());
+        setActionIcon(a, QStringLiteral("edit-cut"));
     }
 
     if (showTextSelectionActions) {
         a = menu->addAction(tr("&Copy") + ACCEL_KEY(QKeySequence::Copy), this, SLOT(copy()));
         a->setEnabled(d->cursor.hasSelection());
+        setActionIcon(a, QStringLiteral("edit-copy"));
     }
 
     if ((d->interactionFlags & Qt::LinksAccessibleByKeyboard)
@@ -2169,9 +2180,11 @@ QMenu *QWidgetTextControl::createStandardContextMenu(const QPointF &pos, QWidget
 #if !defined(QT_NO_CLIPBOARD)
         a = menu->addAction(tr("&Paste") + ACCEL_KEY(QKeySequence::Paste), this, SLOT(paste()));
         a->setEnabled(canPaste());
+        setActionIcon(a, QStringLiteral("edit-paste"));
 #endif
         a = menu->addAction(tr("Delete"), this, SLOT(_q_deleteSelected()));
         a->setEnabled(d->cursor.hasSelection());
+        setActionIcon(a, QStringLiteral("edit-delete"));
     }
 
 

@@ -79,6 +79,9 @@
 
 QT_USE_NAMESPACE
 
+template <bool b> struct QTBUG_31218 {};
+struct QTBUG_31218_Derived : QTBUG_31218<-1<0> {};
+
 struct MyStruct {};
 struct MyStruct2 {};
 
@@ -322,6 +325,8 @@ public slots:
 signals:
     void signalWithArray(const double[3]);
     void signalWithNamedArray(const double namedArray[3]);
+    void signalWithIterator(QList<QUrl>::iterator);
+    void signalWithListPointer(QList<QUrl>*); //QTBUG-31002
 
 private slots:
     // for tst_Moc::preprocessorConditionals
@@ -518,6 +523,7 @@ private slots:
     void structQObject();
     void namespacedFlags();
     void warnOnMultipleInheritance();
+    void ignoreOptionClashes();
     void forgottenQInterface();
     void os9Newline();
     void winNewline();
@@ -959,6 +965,46 @@ void tst_Moc::warnOnMultipleInheritance()
     QString mocWarning = QString::fromLocal8Bit(proc.readAllStandardError());
     QCOMPARE(mocWarning, header +
                 QString(":53: Warning: Class Bar inherits from two QObject subclasses QWindow and Foo. This is not supported!\n"));
+#else
+    QSKIP("Only tested on linux/gcc");
+#endif
+}
+
+void tst_Moc::ignoreOptionClashes()
+{
+#ifdef MOC_CROSS_COMPILED
+    QSKIP("Not tested when cross-compiled");
+#endif
+#if defined(Q_OS_LINUX) && defined(Q_CC_GNU) && !defined(QT_NO_PROCESS)
+    QProcess proc;
+    QStringList args;
+    const QString header = m_sourceDirectory + QStringLiteral("/interface-from-include.h");
+    const QString includeDir = m_sourceDirectory + "/Test.framework/Headers";
+    // given --ignore-option-clashes, -pthread should be ignored, but the -I path should not be.
+    args << "--ignore-option-clashes" << "-pthread" << "-I" << includeDir << "-fno-builtin" << header;
+    proc.start("moc", args);
+    bool finished = proc.waitForFinished();
+    if (!finished)
+        qWarning("waitForFinished failed. QProcess error: %d", (int)proc.error());
+    QVERIFY(finished);
+    if (proc.exitCode() != 0) {
+        qDebug() << proc.readAllStandardError();
+    }
+    QCOMPARE(proc.exitCode(), 0);
+    QCOMPARE(proc.readAllStandardError(), QByteArray());
+    QByteArray mocOut = proc.readAllStandardOutput();
+
+    // If -pthread wasn't ignored, it was parsed as a prefix of "thread/", which breaks compilation.
+    QStringList gccArgs;
+    gccArgs << "-c" << "-x" << "c++" << "-I" << ".."
+         << "-I" << qtIncludePath << "-I" << includeDir << "-o" << "/dev/null" << "-fPIE" <<  "-";
+    proc.start("gcc", gccArgs);
+    QVERIFY(proc.waitForStarted());
+    proc.write(mocOut);
+    proc.closeWriteChannel();
+
+    QVERIFY(proc.waitForFinished());
+    QCOMPARE(QString::fromLocal8Bit(proc.readAllStandardError()), QString());
 #else
     QSKIP("Only tested on linux/gcc");
 #endif
@@ -1734,6 +1780,11 @@ void tst_Moc::warnings()
 #endif
 
     QProcess proc;
+
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    env.insert("QT_MESSAGE_PATTERN", "no qDebug or qWarning please");
+    proc.setProcessEnvironment(env);
+
     proc.start("moc", args);
     QVERIFY(proc.waitForStarted());
 

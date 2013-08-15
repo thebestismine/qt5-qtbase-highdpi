@@ -91,11 +91,38 @@
 #endif
 #endif
 
+#include <QtCore/QFileInfo>
+
 QT_BEGIN_NAMESPACE
 
-QXcbIntegration::QXcbIntegration(const QStringList &parameters)
+#if defined(QT_DEBUG) && defined(Q_OS_LINUX)
+// Find out if our parent process is gdb by looking at the 'exe' symlink under /proc,.
+// or, for older Linuxes, read out 'cmdline'.
+static bool runningUnderDebugger()
+{
+    const QString parentProc = QLatin1String("/proc/") + QString::number(getppid());
+    const QFileInfo parentProcExe(parentProc + QLatin1String("/exe"));
+    if (parentProcExe.isSymLink())
+        return parentProcExe.symLinkTarget().endsWith(QLatin1String("/gdb"));
+    QFile f(parentProc + QLatin1String("/cmdline"));
+    if (!f.open(QIODevice::ReadOnly))
+        return false;
+    QByteArray s;
+    char c;
+    while (f.getChar(&c) && c) {
+        if (c == '/')
+            s.clear();
+        else
+            s += c;
+    }
+    return s == "gdb";
+}
+#endif
+
+QXcbIntegration::QXcbIntegration(const QStringList &parameters, int &argc, char **argv)
     : m_eventDispatcher(createUnixEventDispatcher())
     ,  m_services(new QGenericUnixServices)
+    , m_instanceName(0)
 {
     QGuiApplicationPrivate::instance()->setEventDispatcher(m_eventDispatcher);
 
@@ -104,7 +131,36 @@ QXcbIntegration::QXcbIntegration(const QStringList &parameters)
 #endif
     m_nativeInterface.reset(new QXcbNativeInterface);
 
-    m_connections << new QXcbConnection(m_nativeInterface.data());
+    bool canGrab = true;
+    #if defined(QT_DEBUG) && defined(Q_OS_LINUX)
+    canGrab = !runningUnderDebugger();
+    #endif
+    static bool canNotGrabEnv = qgetenv("QT_XCB_NO_GRAB_SERVER").length();
+    if (canNotGrabEnv)
+        canGrab = false;
+
+    // Parse arguments
+    const char *displayName = 0;
+    if (argc) {
+        int j = 1;
+        for (int i = 1; i < argc; i++) {
+            char *arg = argv[i];
+            if (arg) {
+                if (!strcmp(arg, "-display") && i < argc - 1) {
+                    displayName = argv[++i];
+                    arg = 0;
+                } else if (!strcmp(arg, "-name") && i < argc - 1) {
+                    m_instanceName = argv[++i];
+                    arg = 0;
+                }
+            }
+            if (arg)
+                argv[j++] = arg;
+        }
+        argc = j;
+    } // argc
+
+    m_connections << new QXcbConnection(m_nativeInterface.data(), canGrab, displayName);
 
     for (int i = 0; i < parameters.size() - 1; i += 2) {
 #ifdef Q_XCB_DEBUG
@@ -293,6 +349,11 @@ Qt::KeyboardModifiers QXcbIntegration::queryKeyboardModifiers() const
     return conn->keyboard()->translateModifiers(keybMask);
 }
 
+QList<int> QXcbIntegration::possibleKeys(const QKeyEvent *e) const
+{
+    return m_connections.at(0)->keyboard()->possibleKeys(e);
+}
+
 QStringList QXcbIntegration::themeNames() const
 {
     return QGenericUnixTheme::themeNames();
@@ -301,6 +362,81 @@ QStringList QXcbIntegration::themeNames() const
 QPlatformTheme *QXcbIntegration::createPlatformTheme(const QString &name) const
 {
     return QGenericUnixTheme::createUnixTheme(name);
+}
+
+QVariant QXcbIntegration::styleHint(QPlatformIntegration::StyleHint hint) const
+{
+    switch (hint) {
+    case QPlatformIntegration::CursorFlashTime:
+    case QPlatformIntegration::KeyboardInputInterval:
+    case QPlatformIntegration::MouseDoubleClickInterval:
+    case QPlatformIntegration::StartDragDistance:
+    case QPlatformIntegration::StartDragTime:
+    case QPlatformIntegration::KeyboardAutoRepeatRate:
+    case QPlatformIntegration::PasswordMaskDelay:
+    case QPlatformIntegration::FontSmoothingGamma:
+    case QPlatformIntegration::StartDragVelocity:
+    case QPlatformIntegration::UseRtlExtensions:
+    case QPlatformIntegration::PasswordMaskCharacter:
+        // TODO using various xcb, gnome or KDE settings
+        break; // Not implemented, use defaults
+    case QPlatformIntegration::ShowIsFullScreen:
+        // X11 always has support for windows, but the
+        // window manager could prevent it (e.g. matchbox)
+        return false;
+    case QPlatformIntegration::SynthesizeMouseFromTouchEvents:
+        // We do not want Qt to synthesize mouse events if X11 already does it.
+        return m_connections.at(0)->hasTouchWithoutMouseEmulation();
+    default:
+        break;
+    }
+    return QPlatformIntegration::styleHint(hint);
+}
+
+static QString argv0BaseName()
+{
+    QString result;
+    const QStringList arguments = QCoreApplication::arguments();
+    if (!arguments.isEmpty() && !arguments.front().isEmpty()) {
+        result = arguments.front();
+        const int lastSlashPos = result.lastIndexOf(QLatin1Char('/'));
+        if (lastSlashPos != -1)
+            result.remove(0, lastSlashPos + 1);
+    }
+    return result;
+}
+
+static const char resourceNameVar[] = "RESOURCE_NAME";
+
+QByteArray QXcbIntegration::wmClass() const
+{
+    if (m_wmClass.isEmpty()) {
+        // Instance name according to ICCCM 4.1.2.5
+        QString name;
+        if (m_instanceName)
+            name = QString::fromLocal8Bit(m_instanceName);
+        if (name.isEmpty() && qEnvironmentVariableIsSet(resourceNameVar))
+            name = QString::fromLocal8Bit(qgetenv(resourceNameVar));
+        if (name.isEmpty())
+            name = argv0BaseName();
+
+        // Note: QCoreApplication::applicationName() cannot be called from the QGuiApplication constructor,
+        // hence this delayed initialization.
+        QString className = QCoreApplication::applicationName();
+        if (className.isEmpty()) {
+            className = argv0BaseName();
+            if (!className.isEmpty() && className.at(0).isLower())
+                className[0] = className.at(0).toUpper();
+        }
+
+        if (!name.isEmpty() && !className.isEmpty()) {
+            m_wmClass = name.toLocal8Bit();
+            m_wmClass.append('\0');
+            m_wmClass.append(className.toLocal8Bit());
+            m_wmClass.append('\0');
+        }
+    }
+    return m_wmClass;
 }
 
 QT_END_NAMESPACE

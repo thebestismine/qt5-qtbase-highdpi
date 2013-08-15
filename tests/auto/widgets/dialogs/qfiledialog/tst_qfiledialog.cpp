@@ -44,6 +44,7 @@
 
 #include <qcoreapplication.h>
 #include <qdebug.h>
+#include <qsharedpointer.h>
 #include <qfiledialog.h>
 #include <qabstractitemdelegate.h>
 #include <qdirmodel.h>
@@ -441,33 +442,25 @@ void tst_QFiledialog::completer_data()
 
 void tst_QFiledialog::completer()
 {
+    typedef QSharedPointer<QTemporaryFile> TemporaryFilePtr;
+
     QFETCH(QString, input);
     QFETCH(QString, startPath);
     QFETCH(int, expected);
 
-    QString tempPath = QDir::tempPath() + '/' + "QFileDialogTestDir";
-    if (startPath.isEmpty())
-        startPath = tempPath;
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
 
-    startPath = QDir::cleanPath(startPath);
+    const QString tempPath = tempDir.path();
+    startPath = startPath.isEmpty() ? tempPath : QDir::cleanPath(startPath);
 
     // make temp dir and files
-    {
-        QDir cleanup(tempPath);
-        QStringList x = cleanup.entryList();
-        for (int i = 0; i < x.count(); ++i)
-            QFile::remove(tempPath + '/' + x[i]);
-        cleanup.rmdir(tempPath);
-    }
-    QDir tmp(QDir::tempPath());
-    if (!tmp.exists(tempPath))
-        QVERIFY(tmp.mkdir("QFileDialogTestDir"));
-    QList<QTemporaryFile*> files;
+    QList<TemporaryFilePtr> files;
     QT_TRY {
     for (int i = 0; i < 10; ++i) {
-        QScopedPointer<QTemporaryFile> file(new QTemporaryFile(tempPath + "/rXXXXXX"));
-        file->open();
-        files.append(file.take());
+        TemporaryFilePtr file(new QTemporaryFile(tempPath + QStringLiteral("/rXXXXXX")));
+        QVERIFY(file->open());
+        files.append(file);
     }
 
     // ### flesh this out more
@@ -515,7 +508,7 @@ void tst_QFiledialog::completer()
 
     QStringList expectedFiles;
     if (expected == -1) {
-        QString fullPath = startPath.isEmpty() ? tempPath : startPath;
+        QString fullPath = startPath;
         if (!fullPath.endsWith(QLatin1Char('/')))
             fullPath.append(QLatin1Char('/'));
         fullPath.append(input);
@@ -551,10 +544,8 @@ void tst_QFiledialog::completer()
 
     QTRY_COMPARE(cModel->rowCount(), expected);
     } QT_CATCH(...) {
-        qDeleteAll(files);
         QT_RETHROW;
     }
-    qDeleteAll(files);
 }
 
 void tst_QFiledialog::completer_up()
@@ -620,6 +611,8 @@ void tst_QFiledialog::defaultSuffix()
     QNonNativeFileDialog fd;
     QCOMPARE(fd.defaultSuffix(), QString());
     fd.setDefaultSuffix("txt");
+    QCOMPARE(fd.defaultSuffix(), QString("txt"));
+    fd.setDefaultSuffix(".txt");
     QCOMPARE(fd.defaultSuffix(), QString("txt"));
     fd.setDefaultSuffix(QString());
     QCOMPARE(fd.defaultSuffix(), QString());
@@ -888,9 +881,9 @@ void tst_QFiledialog::selectFiles()
 {
     QNonNativeFileDialog fd;
     fd.setViewMode(QFileDialog::List);
-    QString tempPath = QDir::tempPath() + '/' + "QFileDialogTestDir4SelectFiles";
-    QDir dir;
-    QVERIFY(dir.mkpath(tempPath));
+    QTemporaryDir tempDir;
+    QVERIFY(tempDir.isValid());
+    const QString tempPath = tempDir.path();
     fd.setDirectory(tempPath);
     QSignalSpy spyCurrentChanged(&fd, SIGNAL(currentChanged(QString)));
     QSignalSpy spyDirectoryEntered(&fd, SIGNAL(directoryEntered(QString)));
@@ -934,15 +927,12 @@ void tst_QFiledialog::selectFiles()
     QCOMPARE(spyDirectoryEntered.count(), 0);
     QCOMPARE(spyFilesSelected.count(), 0);
     QCOMPARE(spyFilterSelected.count(), 0);
-    for (int i=0; i < 5; ++i)
-        QFile::remove(filesPath + QString::fromLatin1("/qfiledialog_auto_test_not_pres_%1").arg(i));
 
     //If the selection is invalid then we fill the line edit but without the /
     QNonNativeFileDialog * dialog = new QNonNativeFileDialog( 0, "Save" );
     dialog->setFileMode( QFileDialog::AnyFile );
     dialog->setAcceptMode( QFileDialog::AcceptSave );
-    QString temporary = QDir::tempPath() + QLatin1String("/blah");
-    dialog->selectFile(temporary);
+    dialog->selectFile(tempPath + QStringLiteral("/blah"));
     dialog->show();
     QVERIFY(QTest::qWaitForWindowExposed(dialog));
     QLineEdit *lineEdit = dialog->findChild<QLineEdit*>("fileNameEdit");
@@ -1346,6 +1336,38 @@ QString saveName(QWidget *, const QString &, const QString &, const QString &, Q
     return "saveName";
 }
 
+QT_BEGIN_NAMESPACE
+typedef QUrl (*_qt_filedialog_existing_directory_url_hook)(QWidget *parent, const QString &caption, const QUrl &dir, QFileDialog::Options options, const QStringList &supportedSchemes);
+extern Q_WIDGETS_EXPORT _qt_filedialog_existing_directory_url_hook qt_filedialog_existing_directory_url_hook;
+QT_END_NAMESPACE
+QUrl existingUrl(QWidget *, const QString &, const QUrl &, QFileDialog::Options, const QStringList &) {
+    return QUrl("http://dirUrl");
+}
+
+QT_BEGIN_NAMESPACE
+typedef QUrl (*_qt_filedialog_open_file_url_hook)(QWidget * parent, const QString &caption, const QUrl &dir, const QString &filter, QString *selectedFilter, QFileDialog::Options options, const QStringList &supportedSchemes);
+extern Q_WIDGETS_EXPORT _qt_filedialog_open_file_url_hook qt_filedialog_open_file_url_hook;
+QT_END_NAMESPACE
+QUrl openUrl(QWidget *, const QString &, const QUrl &, const QString &, QString *, QFileDialog::Options, const QStringList &) {
+    return QUrl("http://openUrl");
+}
+
+QT_BEGIN_NAMESPACE
+typedef QList<QUrl> (*_qt_filedialog_open_file_urls_hook)(QWidget * parent, const QString &caption, const QUrl &dir, const QString &filter, QString *selectedFilter, QFileDialog::Options options, const QStringList &supportedSchemes);
+extern Q_WIDGETS_EXPORT _qt_filedialog_open_file_urls_hook qt_filedialog_open_file_urls_hook;
+QT_END_NAMESPACE
+QList<QUrl> openUrls(QWidget *, const QString &, const QUrl &, const QString &, QString *, QFileDialog::Options, const QStringList &) {
+    return QList<QUrl>() << QUrl("http://openUrls");
+}
+
+QT_BEGIN_NAMESPACE
+typedef QUrl (*_qt_filedialog_save_file_url_hook)(QWidget * parent, const QString &caption, const QUrl &dir, const QString &filter, QString *selectedFilter, QFileDialog::Options options, const QStringList &supportedSchemes);
+extern Q_WIDGETS_EXPORT _qt_filedialog_save_file_url_hook qt_filedialog_save_file_url_hook;
+QT_END_NAMESPACE
+QUrl saveUrl(QWidget *, const QString &, const QUrl &, const QString &, QString *, QFileDialog::Options, const QStringList &) {
+    return QUrl("http://saveUrl");
+}
+
 
 void tst_QFiledialog::hooks()
 {
@@ -1358,6 +1380,20 @@ void tst_QFiledialog::hooks()
     QCOMPARE(QFileDialog::getOpenFileName(), QString("openName"));
     QCOMPARE(QFileDialog::getOpenFileNames(), QStringList("openNames"));
     QCOMPARE(QFileDialog::getSaveFileName(), QString("saveName"));
+    QCOMPARE(QFileDialog::getExistingDirectoryUrl(), QUrl::fromLocalFile("dir"));
+    QCOMPARE(QFileDialog::getOpenFileUrl(), QUrl::fromLocalFile("openName"));
+    QCOMPARE(QFileDialog::getOpenFileUrls(), QList<QUrl>() << QUrl::fromLocalFile("openNames"));
+    QCOMPARE(QFileDialog::getSaveFileUrl(), QUrl::fromLocalFile("saveName"));
+
+    qt_filedialog_existing_directory_url_hook = &existingUrl;
+    qt_filedialog_save_file_url_hook = &saveUrl;
+    qt_filedialog_open_file_url_hook = &openUrl;
+    qt_filedialog_open_file_urls_hook = &openUrls;
+
+    QCOMPARE(QFileDialog::getExistingDirectoryUrl(), QUrl("http://dirUrl"));
+    QCOMPARE(QFileDialog::getOpenFileUrl(), QUrl("http://openUrl"));
+    QCOMPARE(QFileDialog::getOpenFileUrls(), QList<QUrl>() << QUrl("http://openUrls"));
+    QCOMPARE(QFileDialog::getSaveFileUrl(), QUrl("http://saveUrl"));
 }
 
 #ifdef Q_OS_UNIX

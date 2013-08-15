@@ -61,7 +61,7 @@ QT_FORWARD_DECLARE_CLASS(QCocoaWindow)
 @end
 
 @interface QNSPanel : NSPanel {
-    @public QT_PREPEND_NAMESPACE(QCocoaWindow) *m_cocoaPlatformWindow;
+    @public QCocoaWindow *m_cocoaPlatformWindow;
 }
 - (void)clearPlatformWindow;
 - (BOOL)canBecomeKeyWindow;
@@ -107,6 +107,8 @@ public:
     void setWindowTitle(const QString &title);
     void setWindowFilePath(const QString &filePath);
     void setWindowIcon(const QIcon &icon);
+    void setAlertState(bool enabled);
+    bool isAlertState() const;
     void raise();
     void lower();
     bool isExposed() const;
@@ -117,6 +119,7 @@ public:
     bool setKeyboardGrabEnabled(bool grab);
     bool setMouseGrabEnabled(bool grab);
     QMargins frameMargins() const;
+    QSurfaceFormat format() const;
 
     void requestActivateWindow();
 
@@ -126,11 +129,15 @@ public:
     NSView *contentView() const;
     void setContentView(NSView *contentView);
 
+    void setEmbeddedInForeignView(bool subwindow);
+
     void windowWillMove();
     void windowDidMove();
     void windowDidResize();
-    void windowWillClose();
+    bool windowShouldClose();
     bool windowIsPopupType(Qt::WindowType type = Qt::Widget) const;
+
+    void setSynchedWindowStateFromWindow();
 
     NSInteger windowLevel(Qt::WindowFlags flags);
     NSUInteger windowStyleMask(Qt::WindowFlags flags);
@@ -175,7 +182,10 @@ public: // for QNSView
     NSView *m_contentView;
     QNSView *m_qtView;
     NSWindow *m_nsWindow;
-    bool m_contentViewIsEmbedded; // true if the m_contentView is embedded in a "foregin" NSView hiearchy
+
+    // TODO merge to one variable if possible
+    bool m_contentViewIsEmbedded; // true if the m_contentView is actually embedded in a "foreign" NSView hiearchy
+    bool m_contentViewIsToBeEmbedded; // true if the m_contentView is intended to be embedded in a "foreign" NSView hiearchy
 
     QNSWindowDelegate *m_nsWindowDelegate;
     Qt::WindowFlags m_windowFlags;
@@ -192,6 +202,9 @@ public: // for QNSView
     bool m_frameStrutEventsEnabled;
     bool m_isExposed;
     int m_registerTouchCount;
+
+    static const int NoAlertRequest;
+    NSInteger m_alertRequest;
 };
 
 QT_END_NAMESPACE

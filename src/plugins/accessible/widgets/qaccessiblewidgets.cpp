@@ -430,8 +430,9 @@ QAccessible::State QAccessibleMdiSubWindow::state() const
         state.focused = true;
     if (!mdiSubWindow()->isVisible())
         state.invisible = true;
-    if (!mdiSubWindow()->parentWidget()->contentsRect().contains(mdiSubWindow()->geometry()))
-        state.offscreen = true;
+    if (const QWidget *parent = mdiSubWindow()->parentWidget())
+        if (!parent->contentsRect().contains(mdiSubWindow()->geometry()))
+            state.offscreen = true;
     if (!mdiSubWindow()->isEnabled())
         state.disabled = true;
     return state;
@@ -1127,7 +1128,7 @@ QAccessibleMainWindow::QAccessibleMainWindow(QWidget *widget)
 QAccessibleInterface *QAccessibleMainWindow::child(int index) const
 {
     QList<QWidget*> kids = childWidgets(mainWindow(), true);
-    if (index < kids.count()) {
+    if (index >= 0 && index < kids.count()) {
         return QAccessible::queryAccessibleInterface(kids.at(index));
     }
     return 0;

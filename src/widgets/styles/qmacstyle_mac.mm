@@ -69,6 +69,7 @@
 #include <qheaderview.h>
 #include <qlineedit.h>
 #include <qmainwindow.h>
+#include <qmdisubwindow.h>
 #include <qmenubar.h>
 #include <qpaintdevice.h>
 #include <qpainter.h>
@@ -119,9 +120,12 @@ QMacStylePrivate *mPrivate;
 {
     Q_UNUSED(notification);
     QEvent event(QEvent::StyleChange);
-    foreach (QWidget *widget, QApplication::allWidgets()) {
-        if (QScrollBar *scrollBar = qobject_cast<QScrollBar *>(widget))
-            QCoreApplication::sendEvent(scrollBar, &event);
+    QMutableSetIterator<QPointer<QObject> > it(QMacStylePrivate::scrollBars);
+    while (it.hasNext()) {
+        if (!it.next())
+            it.remove();
+        else
+            QCoreApplication::sendEvent(it.value(), &event);
     }
 }
 @end
@@ -141,6 +145,13 @@ const int QMacStylePrivate::BevelButtonH = 22;
 const int QMacStylePrivate::PushButtonContentPadding = 6;
 const qreal QMacStylePrivate::ScrollBarFadeOutDuration = 200.0;
 const qreal QMacStylePrivate::ScrollBarFadeOutDelay = 450.0;
+
+QSet<QPointer<QObject> > QMacStylePrivate::scrollBars;
+
+static uint qHash(const QPointer<QObject> &ptr)
+{
+    return qHash(ptr.data());
+}
 
 // These colors specify the titlebar gradient colors on
 // Leopard. Ideally we should get them from the system.
@@ -839,8 +850,17 @@ static QSize qt_aqua_get_known_size(QStyle::ContentsType ct, const QWidget *widg
             gbi.direction = QApplication::isRightToLeft() ? kThemeGrowLeft | kThemeGrowDown
                                                           : kThemeGrowRight | kThemeGrowDown;
             gbi.size = sz == QAquaSizeSmall ? kHIThemeGrowBoxSizeSmall : kHIThemeGrowBoxSizeNormal;
-            if (HIThemeGetGrowBoxBounds(&p, &gbi, &r) == noErr)
-                ret = QSize(r.size.width, r.size.height);
+            if (HIThemeGetGrowBoxBounds(&p, &gbi, &r) == noErr) {
+                int width = 0;
+                // Snow Leopard and older get a size grip, as well as QMdiSubWindows.
+                if (QSysInfo::MacintoshVersion <= QSysInfo::MV_10_6
+#ifndef QT_NO_MDIAREA
+                    || (widg && widg->parentWidget() && qobject_cast<QMdiSubWindow *>(widg->parentWidget()))
+#endif
+                   )
+                    width = r.size.width;
+                ret = QSize(width, r.size.height);
+            }
         }
         break;
     case QStyle::CT_ComboBox:
@@ -1620,6 +1640,19 @@ void QMacStylePrivate::getSliderInfo(QStyle::ComplexControl cc, const QStyleOpti
     }
 }
 
+void QMacStylePrivate::setAutoDefaultButton(QObject *button) const
+{
+    if (autoDefaultButton != button) {
+        if (QStyleAnimation *anim = animation(autoDefaultButton)) {
+            anim->updateTarget();
+            stopAnimation(autoDefaultButton);
+        }
+        autoDefaultButton = button;
+    }
+    if (autoDefaultButton && !animation(autoDefaultButton))
+        startAnimation(new QStyleAnimation(autoDefaultButton));
+}
+
 QMacStylePrivate::QMacStylePrivate()
     : mouseDown(false)
 {
@@ -1660,7 +1693,20 @@ void QMacStylePrivate::drawColorlessButton(const HIRect &macRect, HIThemeButtonD
         extraHeight = 0,
         finalyoff = 0;
 
-    const QStyleOptionComboBox *combo = qstyleoption_cast<const QStyleOptionComboBox *>(opt);
+    const bool combo = opt->type == QStyleOption::SO_ComboBox;
+    const bool button = opt->type == QStyleOption::SO_Button;
+    const bool pressed = bdi->state == kThemeStatePressed;
+
+    if (button && pressed) {
+        if (bdi->kind == kThemePushButton) {
+            extraHeight = 2;
+        } else if (bdi->kind == kThemePushButtonSmall) {
+            xoff = 1;
+            extraWidth = 2;
+            extraHeight = 5;
+        }
+    }
+
     int width = int(macRect.size.width) + extraWidth;
     int height = int(macRect.size.height) + extraHeight;
 
@@ -1668,8 +1714,9 @@ void QMacStylePrivate::drawColorlessButton(const HIRect &macRect, HIThemeButtonD
         return;   // nothing to draw
 
     QString key = QLatin1String("$qt_mac_style_ctb_") + QString::number(bdi->kind) + QLatin1Char('_')
-                  + QString::number(bdi->value) + QLatin1Char('_') + QString::number(width)
-                  + QLatin1Char('_') + QString::number(height);
+                  + QString::number(bdi->value) + QLatin1Char('_')
+                  + (button ? QString::number(bdi->state) + QLatin1Char('_') : QString())
+                  + QLatin1Char('_') + QString::number(width) + QLatin1Char('_') + QString::number(height);
     QPixmap pm;
     if (!QPixmapCache::find(key, pm)) {
         QPixmap activePixmap(width, height);
@@ -1680,17 +1727,18 @@ void QMacStylePrivate::drawColorlessButton(const HIRect &macRect, HIThemeButtonD
                 // ourselves, if a scaled version is needed.
                 QPainter tmpPainter(&activePixmap);
                 QMacStylePrivate::drawCombobox(macRect, *bdi, &tmpPainter);
-            }
-            else {
+            } else {
                 QMacCGContext cg(&activePixmap);
                 HIRect newRect = CGRectMake(xoff, yoff, macRect.size.width, macRect.size.height);
+                if (button && pressed)
+                    bdi->state = kThemeStateActive;
                 HIThemeDrawButton(&newRect, bdi, cg, kHIThemeOrientationNormal, 0);
             }
         }
 
-        if (!combo && bdi->value == kThemeButtonOff) {
+        if (!combo && !button && bdi->value == kThemeButtonOff) {
             pm = activePixmap;
-        } else if (combo) {
+        } else if (combo || button) {
             QImage image = activePixmap.toImage();
 
             for (int y = 0; y < height; ++y) {
@@ -1711,6 +1759,8 @@ void QMacStylePrivate::drawColorlessButton(const HIRect &macRect, HIThemeButtonD
                         qSwap(darkest, mid);
 
                     int gray = (mid + 2 * lightest) / 3;
+                    if (pressed)
+                        gray *= 0.88;
                     pixel = qRgba(gray, gray, gray, qAlpha(pixel));
                 }
             }
@@ -1753,7 +1803,7 @@ void QMacStylePrivate::drawColorlessButton(const HIRect &macRect, HIThemeButtonD
         }
         QPixmapCache::insert(key, pm);
     }
-    p->drawPixmap(int(macRect.origin.x), int(macRect.origin.y) + finalyoff, width, height, pm);
+    p->drawPixmap(int(macRect.origin.x) - xoff, int(macRect.origin.y) + finalyoff, width, height, pm);
 }
 
 QMacStyle::QMacStyle()
@@ -3349,7 +3399,7 @@ void QMacStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPainter
         if (const QStyleOptionToolButton *tb = qstyleoption_cast<const QStyleOptionToolButton *>(opt)) {
             QStyleOptionToolButton myTb = *tb;
             myTb.state &= ~State_AutoRaise;
-            if (w && qobject_cast<QToolBar *>(w->parentWidget())) {
+            if (QStyleHelper::hasAncestor(opt->styleObject, QAccessible::ToolBar)) {
                 QRect cr = tb->rect;
                 int shiftX = 0;
                 int shiftY = 0;
@@ -3388,7 +3438,7 @@ void QMacStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPainter
                         if (tb->toolButtonStyle != Qt::ToolButtonIconOnly) {
                             needText = true;
                             if (tb->toolButtonStyle == Qt::ToolButtonTextUnderIcon) {
-                                QMainWindow *mw = qobject_cast<QMainWindow *>(w->window());
+                                QMainWindow *mw = w ? qobject_cast<QMainWindow *>(w->window()) : 0;
                                 if (mw && mw->unifiedTitleAndToolBarOnMac()) {
                                     pr.setHeight(pixmap.size().height() / pixmap.devicePixelRatio());
                                     cr.adjust(0, pr.bottom() + 1, 0, 1);
@@ -3470,15 +3520,9 @@ void QMacStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPainter
             // takes precedence over a normal default button
             if (btn->features & QStyleOptionButton::AutoDefaultButton
                     && opt->state & State_Active && opt->state & State_HasFocus) {
-                d->autoDefaultButton = opt->styleObject;
-                if (!d->animation(opt->styleObject))
-                    d->startAnimation(new QStyleAnimation(opt->styleObject));
+                d->setAutoDefaultButton(opt->styleObject);
             } else if (d->autoDefaultButton == opt->styleObject) {
-                if (QStyleAnimation *animation = d->animation(opt->styleObject)) {
-                    animation->updateTarget();
-                    d->stopAnimation(opt->styleObject);
-                }
-                d->autoDefaultButton = 0;
+                d->setAutoDefaultButton(0);
             }
 
             if (!d->autoDefaultButton) {
@@ -3539,23 +3583,52 @@ void QMacStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPainter
                 newRect.origin.y += QMacStylePrivate::PushButtonTopOffset;
                 newRect.size.width -= QMacStylePrivate::PushButtonRightOffset - 4;
             }
-            HIThemeDrawButton(&newRect, &bdi, cg, kHIThemeOrientationNormal, 0);
 
-            if (btn->features & QStyleOptionButton::HasMenu) {
+            bool hasMenu = btn->features & QStyleOptionButton::HasMenu;
+            if (hasMenu && bdi.state == kThemeStatePressed && QSysInfo::macVersion() > QSysInfo::MV_10_6)
+                d->drawColorlessButton(newRect, &bdi, p, opt);
+            else
+                HIThemeDrawButton(&newRect, &bdi, cg, kHIThemeOrientationNormal, 0);
+
+            if (hasMenu) {
                 int mbi = proxy()->pixelMetric(QStyle::PM_MenuButtonIndicator, btn, w);
                 QRect ir = btn->rect;
-                int arrowYOffset = bdi.kind == kThemePushButton ? 4 : 2;
-                HIRect arrowRect = CGRectMake(ir.right() - mbi - QMacStylePrivate::PushButtonRightOffset,
-                                              ir.height() / 2 - arrowYOffset, mbi, ir.height() / 2);
+                int arrowXOffset = 0;
+                if (QSysInfo::macVersion() > QSysInfo::MV_10_6)
+                    arrowXOffset = bdi.kind == kThemePushButton ? 6 :
+                                   bdi.kind == kThemePushButtonSmall ? 7 : 8;
+                int arrowYOffset;
+                if (QSysInfo::macVersion() > QSysInfo::MV_10_6)
+                    arrowYOffset = bdi.kind == kThemePushButton ? 3 :
+                                   bdi.kind == kThemePushButtonSmall ? 1 : 2;
+                else
+                    arrowYOffset = bdi.kind == kThemePushButton ? 4 : 2;
+                if (!w) {
+                    // adjustment for Qt Quick Controls
+                    arrowYOffset -= ir.top();
+                    if (bdi.kind == kThemePushButtonSmall)
+                        arrowYOffset += 1;
+                }
+                QRect ar = QRect(ir.right() - mbi - QMacStylePrivate::PushButtonRightOffset,
+                                 ir.height() / 2 - arrowYOffset, mbi, ir.height() / 2);
+                ar = visualRect(btn->direction, ir, ar);
+                HIRect arrowRect = CGRectMake(ar.x() + arrowXOffset, ar.y(), ar.width(), ar.height());
 
                 HIThemePopupArrowDrawInfo pdi;
                 pdi.version = qt_mac_hitheme_version;
                 pdi.state = tds == kThemeStateInactive ? kThemeStateActive : tds;
                 pdi.orientation = kThemeArrowDown;
-                if (arrowRect.size.width < 8.)
-                    pdi.size = kThemeArrow5pt;
-                else
-                    pdi.size = kThemeArrow9pt;
+                if (QSysInfo::macVersion() > QSysInfo::MV_10_6) {
+                    if (bdi.kind == kThemePushButtonMini)
+                        pdi.size = kThemeArrow5pt;
+                    else if (bdi.kind == kThemePushButton || bdi.kind == kThemePushButtonSmall)
+                        pdi.size = kThemeArrow7pt;
+                } else {
+                    if (arrowRect.size.width < 8.)
+                        pdi.size = kThemeArrow5pt;
+                    else
+                        pdi.size = kThemeArrow9pt;
+                }
                 HIThemeDrawPopupArrow(&arrowRect, &pdi, cg, kHIThemeOrientationNormal);
             }
         }
@@ -3597,8 +3670,8 @@ void QMacStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPainter
                     tti.version = qt_mac_hitheme_version;
                     tti.state = tds;
                     QColor textColor = btn->palette.buttonText().color();
-                    CGFloat colorComp[] = { textColor.redF(), textColor.greenF(),
-                                          textColor.blueF(), textColor.alphaF() };
+                    CGFloat colorComp[] = { static_cast<CGFloat>(textColor.redF()), static_cast<CGFloat>(textColor.greenF()),
+                                          static_cast<CGFloat>(textColor.blueF()), static_cast<CGFloat>(textColor.alphaF()) };
                     CGContextSetFillColorSpace(cg, qt_mac_genericColorSpace());
                     CGContextSetFillColor(cg, colorComp);
                     tti.fontID = themeId;
@@ -3621,8 +3694,12 @@ void QMacStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPainter
                     QRect freeContentRect = btn->rect;
                     QRect textRect = itemTextRect(
                         btn->fontMetrics, freeContentRect, Qt::AlignCenter, btn->state & State_Enabled, btn->text);
-                    if (hasMenu)
-                        textRect.adjust(-1, 0, -1, 0);
+                    if (hasMenu) {
+                        if (QSysInfo::macVersion() > QSysInfo::MV_10_6)
+                            textRect.moveTo(w ? 15 : 11, textRect.top()); // Supports Qt Quick Controls
+                        else
+                            textRect.adjust(-1, 0, -1, 0);
+                    }
                     // Draw the icon:
                     if (hasIcon) {
                         int contentW = textRect.width();
@@ -3662,6 +3739,8 @@ void QMacStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPainter
         if (const QStyleOptionComboBox *cb = qstyleoption_cast<const QStyleOptionComboBox *>(opt)) {
             QStyleOptionComboBox comboCopy = *cb;
             comboCopy.direction = Qt::LeftToRight;
+            if ((opt->state & QStyle::State_Small) && QSysInfo::macVersion() > QSysInfo::MV_10_6)
+                comboCopy.rect.translate(0, w ? -1 : -2); // Supports Qt Quick Controls
             QCommonStyle::drawControl(CE_ComboBoxLabel, &comboCopy, p, w);
         }
         break;
@@ -3831,8 +3910,8 @@ void QMacStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPainter
                 tti.version = qt_mac_hitheme_version;
                 tti.state = tds;
                 QColor textColor = myTab.palette.windowText().color();
-                CGFloat colorComp[] = { textColor.redF(), textColor.greenF(),
-                                        textColor.blueF(), textColor.alphaF() };
+                CGFloat colorComp[] = { static_cast<CGFloat>(textColor.redF()), static_cast<CGFloat>(textColor.greenF()),
+                                        static_cast<CGFloat>(textColor.blueF()), static_cast<CGFloat>(textColor.alphaF()) };
                 CGContextSetFillColorSpace(cg, qt_mac_genericColorSpace());
                 CGContextSetFillColor(cg, colorComp);
                 switch (d->aquaSizeConstrain(opt, w)) {
@@ -4011,8 +4090,8 @@ void QMacStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPainter
                 CGContextSetShouldAntialias(cg, true);
                 CGContextSetShouldSmoothFonts(cg, true);
                 QColor textColor = p->pen().color();
-                CGFloat colorComp[] = { textColor.redF(), textColor.greenF(),
-                                      textColor.blueF(), textColor.alphaF() };
+                CGFloat colorComp[] = { static_cast<CGFloat>(textColor.redF()), static_cast<CGFloat>(textColor.greenF()),
+                                      static_cast<CGFloat>(textColor.blueF()), static_cast<CGFloat>(textColor.alphaF()) };
                 CGContextSetFillColorSpace(cg, qt_mac_genericColorSpace());
                 CGContextSetFillColor(cg, colorComp);
                 HIThemeTextInfo tti;
@@ -4264,6 +4343,14 @@ void QMacStyle::drawControl(ControlElement ce, const QStyleOption *opt, QPainter
     case CE_ProgressBarGroove:
         break;
     case CE_SizeGrip: {
+        // We do not draw size grips on versions > 10.6 unless it's a QMdiSubWindow
+        if (QSysInfo::MacintoshVersion > QSysInfo::MV_10_6
+#ifndef QT_NO_MDIAREA
+            && !(w && w->parentWidget() && qobject_cast<QMdiSubWindow *>(w->parentWidget()))
+#endif
+            )
+            break;
+
         if (w && w->testAttribute(Qt::WA_MacOpaqueSizeGrip)) {
             HIThemeGrowBoxDrawInfo gdi;
             gdi.version = qt_mac_hitheme_version;
@@ -4878,6 +4965,8 @@ void QMacStyle::drawComplexControl(ComplexControl cc, const QStyleOptionComplex 
             // no longer possible to move it, second the up/down buttons are removed when
             // there is not enough space for them.
             if (cc == CC_ScrollBar) {
+                if (opt && opt->styleObject && !QMacStylePrivate::scrollBars.contains(opt->styleObject))
+                    QMacStylePrivate::scrollBars.insert(QPointer<QObject>(opt->styleObject));
                 const int scrollBarLength = (slider->orientation == Qt::Horizontal)
                     ? slider->rect.width() : slider->rect.height();
                 const QMacStyle::WidgetSizePolicy sizePolicy = widgetSizePolicy(widget, opt);
@@ -4895,7 +4984,7 @@ void QMacStyle::drawComplexControl(ComplexControl cc, const QStyleOptionComplex 
 #if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_7
             if (cc == CC_ScrollBar && proxy()->styleHint(SH_ScrollBar_Transient, opt, widget)) {
                 bool wasActive = false;
-                CGFloat opacity = 1.0;
+                CGFloat opacity = 0.0;
                 CGFloat expandScale = 1.0;
                 CGFloat expandOffset = -1.0;
                 bool shouldExpand = false;
@@ -4920,6 +5009,10 @@ void QMacStyle::drawComplexControl(ComplexControl cc, const QStyleOptionComplex 
                             oldRect != slider->rect ||
                             oldState != slider->state ||
                             oldActiveControls != slider->activeSubControls) {
+
+                        // if the scrollbar is transient or its attributes, geometry or
+                        // state has changed, the opacity is reset back to 100% opaque
+                        opacity = 1.0;
 
                         styleObject->setProperty("_q_stylepos", slider->sliderPosition);
                         styleObject->setProperty("_q_stylemin", slider->minimum);
@@ -5319,8 +5412,8 @@ void QMacStyle::drawComplexControl(ComplexControl cc, const QStyleOptionComplex 
                 tti.version = qt_mac_hitheme_version;
                 tti.state = tds;
                 QColor textColor = groupBox.palette.windowText().color();
-                CGFloat colorComp[] = { textColor.redF(), textColor.greenF(),
-                                      textColor.blueF(), textColor.alphaF() };
+                CGFloat colorComp[] = { static_cast<CGFloat>(textColor.redF()), static_cast<CGFloat>(textColor.greenF()),
+                                      static_cast<CGFloat>(textColor.blueF()), static_cast<CGFloat>(textColor.alphaF()) };
                 CGContextSetFillColorSpace(cg, qt_mac_genericColorSpace());
                 CGContextSetFillColor(cg, colorComp);
                 tti.fontID = flat ? kThemeSystemFont : kThemeSmallSystemFont;
@@ -5961,10 +6054,14 @@ QSize QMacStyle::sizeFromContents(ContentsType ct, const QStyleOption *opt,
     bool useAquaGuideline = true;
 
     switch (ct) {
-    case QStyle::CT_SpinBox:
-        // hack to work around horrible sizeHint() code in QAbstractSpinBox
-        sz = QCommonStyle::sizeFromContents(ct, opt, csz, widget);
-        sz.setHeight(sz.height() - 3);
+
+    case CT_SpinBox:
+        if (const QStyleOptionSpinBox *vopt = qstyleoption_cast<const QStyleOptionSpinBox *>(opt)) {
+            // Add button + frame widths
+            int buttonWidth = 20;
+            int fw = proxy()->pixelMetric(PM_SpinBoxFrameWidth, vopt, widget);
+            sz += QSize(buttonWidth + 2*fw, 2*fw - 3);
+        }
         break;
     case QStyle::CT_TabWidget:
         // the size between the pane and the "contentsRect" (+4,+4)

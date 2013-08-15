@@ -78,8 +78,8 @@
 
 QT_BEGIN_NAMESPACE
 
-#if defined(Q_OS_MAC) && !defined(Q_OS_IOS)
-    typedef OSStatus (*PtrSecCertificateGetData)(SecCertificateRef, CSSM_DATA_PTR);
+#if defined(Q_OS_MACX)
+    typedef CFDataRef (*PtrSecCertificateCopyData)(SecCertificateRef);
     typedef OSStatus (*PtrSecTrustSettingsCopyCertificates)(int, CFArrayRef*);
     typedef OSStatus (*PtrSecTrustCopyAnchorCertificates)(CFArrayRef*);
 #endif
@@ -109,6 +109,7 @@ public:
     QSslSocket::SslMode mode;
     bool autoStartHandshake;
     bool connectionEncrypted;
+    bool shutdown;
     bool ignoreAllSslErrors;
     QList<QSslError> ignoreErrorsList;
     bool* readyReadEmittedPointer;
@@ -144,8 +145,8 @@ public:
     static void addDefaultCaCertificate(const QSslCertificate &cert);
     static void addDefaultCaCertificates(const QList<QSslCertificate> &certs);
 
-#if defined(Q_OS_MAC) && !defined(Q_OS_IOS)
-    static PtrSecCertificateGetData ptrSecCertificateGetData;
+#if defined(Q_OS_MACX)
+    static PtrSecCertificateCopyData ptrSecCertificateCopyData;
     static PtrSecTrustSettingsCopyCertificates ptrSecTrustSettingsCopyCertificates;
     static PtrSecTrustCopyAnchorCertificates ptrSecTrustCopyAnchorCertificates;
 #elif defined(Q_OS_WIN)

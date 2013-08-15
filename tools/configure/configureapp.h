@@ -43,6 +43,7 @@
 #include <qstring.h>
 #include <qstringlist.h>
 #include <qlist.h>
+#include <qbuffer.h>
 #include <qtextstream.h>
 #include <qdir.h>
 
@@ -57,9 +58,7 @@ public:
     ~Configure();
 
     void parseCmdLine();
-#if !defined(EVAL)
     void validateArgs();
-#endif
     bool displayHelp();
 
     QString defaultTo(const QString &option);
@@ -70,27 +69,20 @@ public:
     bool verifyConfiguration();
 
     void generateOutputVars();
-#if !defined(EVAL)
     void generateHeaders();
-    void generateBuildKey();
     void generateCachefile();
     void displayConfig();
-#endif
     void generateMakefiles();
     void appendMakeItem(int inList, const QString &item);
-#if !defined(EVAL)
     void generateConfigfiles();
     void detectArch();
     void generateQConfigPri();
-    void generateSystemVars();
-#endif
+    void prepareConfigTests();
     void showSummary();
     QString firstLicensePath();
 
-#if !defined(EVAL)
     bool showLicense(QString licenseFile);
     void readLicense();
-#endif
 
     QString addDefine(QString def);
 
@@ -113,6 +105,7 @@ private:
 
     // Our variable dictionaries
     QMap<QString,QString> dictionary;
+    QStringList allBuildParts;
     QStringList defaultBuildParts;
     QStringList buildParts;
     QStringList nobuildParts;
@@ -167,15 +160,12 @@ private:
 
     QString formatPath(const QString &path);
     QString formatPaths(const QStringList &paths);
-    bool filesDiffer(const QString &file1, const QString &file2);
 
     QString locateFile(const QString &fileName) const;
     bool findFile(const QString &fileName) const { return !locateFile(fileName).isEmpty(); }
     static QString findFileInPaths(const QString &fileName, const QStringList &paths);
-#if !defined(EVAL)
     void reloadCmdLine();
     void saveCmdLine();
-#endif
 
     bool tryCompileProject(const QString &projectPath, const QString &extraOptions = QString());
     bool compilerSupportsFlag(const QString &compilerAndArgs);
@@ -202,5 +192,14 @@ public:
     Configure::ProjectType qmakeTemplate;
 };
 
+class FileWriter : public QTextStream
+{
+public:
+    FileWriter(const QString &name);
+    bool flush();
+private:
+    QString m_name;
+    QBuffer m_buffer;
+};
 
 QT_END_NAMESPACE

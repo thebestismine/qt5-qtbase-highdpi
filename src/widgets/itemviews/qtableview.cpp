@@ -931,6 +931,59 @@ void QTableViewPrivate::drawCell(QPainter *painter, const QStyleOptionViewItem &
 }
 
 /*!
+  \internal
+  Get sizeHint width for single Index (providing existing hint and style option)
+*/
+int QTableViewPrivate::widthHintForIndex(const QModelIndex &index, int hint, const QStyleOptionViewItem &option) const
+{
+    Q_Q(const QTableView);
+    QWidget *editor = editorForIndex(index).widget.data();
+    if (editor && persistent.contains(editor)) {
+        hint = qMax(hint, editor->sizeHint().width());
+        int min = editor->minimumSize().width();
+        int max = editor->maximumSize().width();
+        hint = qBound(min, hint, max);
+    }
+    hint = qMax(hint, q->itemDelegate(index)->sizeHint(option, index).width());
+    return hint;
+}
+
+/*!
+  \internal
+  Get sizeHint height for single Index (providing existing hint and style option)
+*/
+int QTableViewPrivate::heightHintForIndex(const QModelIndex &index, int hint, QStyleOptionViewItem &option) const
+{
+    Q_Q(const QTableView);
+    QWidget *editor = editorForIndex(index).widget.data();
+    if (editor && persistent.contains(editor)) {
+        hint = qMax(hint, editor->sizeHint().height());
+        int min = editor->minimumSize().height();
+        int max = editor->maximumSize().height();
+        hint = qBound(min, hint, max);
+    }
+
+    if (wrapItemText) {// for wrapping boundaries
+        option.rect.setY(q->rowViewportPosition(index.row()));
+        int height = q->rowHeight(index.row());
+        // if the option.height == 0 then q->itemDelegate(index)->sizeHint(option, index) will be wrong.
+        // The option.height == 0 is used to conclude that the text is not wrapped, and hence it will
+        // (exactly like widthHintForIndex) return a QSize with a long width (that we don't use) -
+        // and the height of the text if it was/is on one line.
+        // What we want is a height hint for the current width (and we know that this section is not hidden)
+        // Therefore we catch this special situation with:
+        if (height == 0)
+            height = 1;
+        option.rect.setHeight(height);
+        option.rect.setX(q->columnViewportPosition(index.column()));
+        option.rect.setWidth(q->columnWidth(index.column()));
+    }
+    hint = qMax(hint, q->itemDelegate(index)->sizeHint(option, index).height());
+    return hint;
+}
+
+
+/*!
     \class QTableView
 
     \brief The QTableView class provides a default model/view
@@ -1056,6 +1109,19 @@ QTableView::~QTableView()
 /*!
   \reimp
 */
+QSize QTableView::viewportSizeHint() const
+{
+    Q_D(const QTableView);
+    QSize result( (d->verticalHeader->isHidden() ? 0 : d->verticalHeader->width()) + d->horizontalHeader->length(),
+                  (d->horizontalHeader->isHidden() ? 0 : d->horizontalHeader->height()) + d->verticalHeader->length());
+    result += QSize(verticalScrollBar()->isVisible() ? verticalScrollBar()->width() : 0,
+                    horizontalScrollBar()->isVisible() ? horizontalScrollBar()->height() : 0);
+    return result;
+}
+
+/*!
+  \reimp
+*/
 void QTableView::setModel(QAbstractItemModel *model)
 {
     Q_D(QTableView);
@@ -1113,15 +1179,7 @@ void QTableView::doItemsLayout()
 {
     Q_D(QTableView);
     QAbstractItemView::doItemsLayout();
-    if (verticalScrollMode() == QAbstractItemView::ScrollPerItem) {
-        const int max = verticalScrollBar()->maximum();
-        if (max > 0 && verticalScrollBar()->value() == max)
-            d->verticalHeader->setOffsetToLastSection();
-        else
-            d->verticalHeader->setOffsetToSectionPosition(verticalScrollBar()->value());
-    } else {
-        d->verticalHeader->setOffset(verticalScrollBar()->value());
-    }
+    d->verticalHeader->d_func()->setScrollOffset(verticalScrollBar(), verticalScrollMode());
     if (!d->verticalHeader->updatesEnabled())
         d->verticalHeader->setUpdatesEnabled(true);
 }
@@ -1258,29 +1316,19 @@ void QTableView::scrollContentsBy(int dx, int dy)
 
     dx = isRightToLeft() ? -dx : dx;
     if (dx) {
+        int oldOffset = d->horizontalHeader->offset();
+        d->horizontalHeader->d_func()->setScrollOffset(horizontalScrollBar(), horizontalScrollMode());
         if (horizontalScrollMode() == QAbstractItemView::ScrollPerItem) {
-            int oldOffset = d->horizontalHeader->offset();
-            if (horizontalScrollBar()->value() == horizontalScrollBar()->maximum())
-                d->horizontalHeader->setOffsetToLastSection();
-            else
-                d->horizontalHeader->setOffsetToSectionPosition(horizontalScrollBar()->value());
             int newOffset = d->horizontalHeader->offset();
             dx = isRightToLeft() ? newOffset - oldOffset : oldOffset - newOffset;
-        } else {
-            d->horizontalHeader->setOffset(horizontalScrollBar()->value());
         }
     }
     if (dy) {
+        int oldOffset = d->verticalHeader->offset();
+        d->verticalHeader->d_func()->setScrollOffset(verticalScrollBar(), verticalScrollMode());
         if (verticalScrollMode() == QAbstractItemView::ScrollPerItem) {
-            int oldOffset = d->verticalHeader->offset();
-            if (verticalScrollBar()->value() == verticalScrollBar()->maximum())
-                d->verticalHeader->setOffsetToLastSection();
-            else
-                d->verticalHeader->setOffsetToSectionPosition(verticalScrollBar()->value());
             int newOffset = d->verticalHeader->offset();
             dy = oldOffset - newOffset;
-        } else {
-            d->verticalHeader->setOffset(verticalScrollBar()->value());
         }
     }
     d->scrollContentsBy(dx, dy);
@@ -1760,13 +1808,13 @@ QModelIndex QTableView::moveCursor(CursorAction cursorAction, Qt::KeyboardModifi
             visualRow = bottom;
         break;
     case MovePageUp: {
-        int newRow = rowAt(visualRect(current).top() - d->viewport->height());
+        int newRow = rowAt(visualRect(current).bottom() - d->viewport->height());
         if (newRow == -1)
             newRow = d->logicalRow(0);
         return d->model->index(newRow, current.column(), d->root);
     }
     case MovePageDown: {
-        int newRow = rowAt(visualRect(current).bottom() + d->viewport->height());
+        int newRow = rowAt(visualRect(current).top() + d->viewport->height());
         if (newRow == -1)
             newRow = d->logicalRow(bottom);
         return d->model->index(newRow, current.column(), d->root);
@@ -2175,7 +2223,7 @@ void QTableView::updateGeometries()
     if a larger row height is required by either the vertical header or
     the item delegate, that width will be used instead.
 
-    \sa QWidget::sizeHint, verticalHeader()
+    \sa QWidget::sizeHint, verticalHeader(), QHeaderView::resizeContentsPrecision()
 */
 int QTableView::sizeHintForRow(int row) const
 {
@@ -2185,6 +2233,8 @@ int QTableView::sizeHintForRow(int row) const
         return -1;
 
     ensurePolished();
+    const int maximumProcessCols = d->verticalHeader->resizeContentsPrecision();
+
 
     int left = qMax(0, d->horizontalHeader->visualIndexAt(0));
     int right = d->horizontalHeader->visualIndexAt(d->viewport->width());
@@ -2195,27 +2245,55 @@ int QTableView::sizeHintForRow(int row) const
 
     int hint = 0;
     QModelIndex index;
-    for (int column = left; column <= right; ++column) {
+    int columnsProcessed = 0;
+    int column = left;
+    for (; column <= right; ++column) {
         int logicalColumn = d->horizontalHeader->logicalIndex(column);
         if (d->horizontalHeader->isSectionHidden(logicalColumn))
             continue;
         index = d->model->index(row, logicalColumn, d->root);
-        if (d->wrapItemText) {// for wrapping boundaries
-            option.rect.setY(rowViewportPosition(index.row()));
-            option.rect.setHeight(rowHeight(index.row()));
-            option.rect.setX(columnViewportPosition(index.column()));
-            option.rect.setWidth(columnWidth(index.column()));
-        }
+        hint = d->heightHintForIndex(index, hint, option);
 
-        QWidget *editor = d->editorForIndex(index).widget.data();
-        if (editor && d->persistent.contains(editor)) {
-            hint = qMax(hint, editor->sizeHint().height());
-            int min = editor->minimumSize().height();
-            int max = editor->maximumSize().height();
-            hint = qBound(min, hint, max);
-        }
+        ++columnsProcessed;
+        if (columnsProcessed == maximumProcessCols)
+            break;
+    }
 
-        hint = qMax(hint, itemDelegate(index)->sizeHint(option, index).height());
+    int actualRight = d->model->columnCount(d->root) - 1;
+    int idxLeft = left;
+    int idxRight = column - 1;
+
+    if (maximumProcessCols == 0)
+        columnsProcessed = 0; // skip the while loop
+
+    while (columnsProcessed != maximumProcessCols && (idxLeft > 0 || idxRight < actualRight)) {
+        int logicalIdx  = -1;
+
+        if ((columnsProcessed % 2 && idxLeft > 0) || idxRight == actualRight) {
+            while (idxLeft > 0) {
+                --idxLeft;
+                int logcol = d->horizontalHeader->logicalIndex(idxLeft);
+                if (d->horizontalHeader->isSectionHidden(logcol))
+                    continue;
+                logicalIdx = logcol;
+                break;
+            }
+        } else {
+            while (idxRight < actualRight) {
+                ++idxRight;
+                int logcol = d->horizontalHeader->logicalIndex(idxRight);
+                if (d->horizontalHeader->isSectionHidden(logcol))
+                    continue;
+                logicalIdx = logcol;
+                break;
+            }
+        }
+        if (logicalIdx < 0)
+            continue;
+
+        index = d->model->index(row, logicalIdx, d->root);
+        hint = d->heightHintForIndex(index, hint, option);
+        ++columnsProcessed;
     }
 
     return d->showGrid ? hint + 1 : hint;
@@ -2234,7 +2312,7 @@ int QTableView::sizeHintForRow(int row) const
     required by either the horizontal header or the item delegate, the larger
     width will be used instead.
 
-    \sa QWidget::sizeHint, horizontalHeader()
+    \sa QWidget::sizeHint, horizontalHeader(), QHeaderView::resizeContentsPrecision()
 */
 int QTableView::sizeHintForColumn(int column) const
 {
@@ -2244,6 +2322,7 @@ int QTableView::sizeHintForColumn(int column) const
         return -1;
 
     ensurePolished();
+    const int maximumProcessRows = d->horizontalHeader->resizeContentsPrecision();
 
     int top = qMax(0, d->verticalHeader->visualIndexAt(0));
     int bottom = d->verticalHeader->visualIndexAt(d->viewport->height());
@@ -2253,22 +2332,56 @@ int QTableView::sizeHintForColumn(int column) const
     QStyleOptionViewItem option = d->viewOptions();
 
     int hint = 0;
+    int rowsProcessed = 0;
     QModelIndex index;
-    for (int row = top; row <= bottom; ++row) {
+    int row = top;
+    for (; row <= bottom; ++row) {
         int logicalRow = d->verticalHeader->logicalIndex(row);
         if (d->verticalHeader->isSectionHidden(logicalRow))
             continue;
         index = d->model->index(logicalRow, column, d->root);
 
-        QWidget *editor = d->editorForIndex(index).widget.data();
-        if (editor && d->persistent.contains(editor)) {
-            hint = qMax(hint, editor->sizeHint().width());
-            int min = editor->minimumSize().width();
-            int max = editor->maximumSize().width();
-            hint = qBound(min, hint, max);
-        }
+        hint = d->widthHintForIndex(index, hint, option);
+        ++rowsProcessed;
+        if (rowsProcessed == maximumProcessRows)
+            break;
+    }
 
-        hint = qMax(hint, itemDelegate(index)->sizeHint(option, index).width());
+    int actualBottom = d->model->rowCount(d->root) - 1;
+    int idxTop = top;
+    int idxBottom = row - 1;
+
+    if (maximumProcessRows == 0)
+        rowsProcessed = 0;  // skip the while loop
+
+    while (rowsProcessed != maximumProcessRows && (idxTop > 0 || idxBottom < actualBottom)) {
+        int logicalIdx  = -1;
+
+        if ((rowsProcessed % 2 && idxTop > 0) || idxBottom == actualBottom) {
+            while (idxTop > 0) {
+                --idxTop;
+                int logrow = d->verticalHeader->logicalIndex(idxTop);
+                if (d->verticalHeader->isSectionHidden(logrow))
+                    continue;
+                logicalIdx = logrow;
+                break;
+            }
+        } else {
+            while (idxBottom < actualBottom) {
+                ++idxBottom;
+                int logrow = d->verticalHeader->logicalIndex(idxBottom);
+                if (d->verticalHeader->isSectionHidden(logrow))
+                    continue;
+                logicalIdx = logrow;
+                break;
+            }
+        }
+        if (logicalIdx < 0)
+            continue;
+
+        index = d->model->index(logicalIdx, column, d->root);
+        hint = d->widthHintForIndex(index, hint, option);
+        ++rowsProcessed;
     }
 
     return d->showGrid ? hint + 1 : hint;
@@ -2934,6 +3047,8 @@ void QTableView::showColumn(int column)
 /*!
     Resizes the given \a row based on the size hints of the delegate
     used to render each item in the row.
+
+    \sa resizeRowsToContents(), sizeHintForRow(), QHeaderView::resizeContentsPrecision()
 */
 void QTableView::resizeRowToContents(int row)
 {
@@ -2946,6 +3061,8 @@ void QTableView::resizeRowToContents(int row)
 /*!
     Resizes all rows based on the size hints of the delegate
     used to render each item in the rows.
+
+    \sa resizeRowToContents(), sizeHintForRow(), QHeaderView::resizeContentsPrecision()
 */
 void QTableView::resizeRowsToContents()
 {
@@ -2959,6 +3076,8 @@ void QTableView::resizeRowsToContents()
 
     \note Only visible columns will be resized. Reimplement sizeHintForColumn()
     to resize hidden columns as well.
+
+    \sa resizeColumnsToContents(), sizeHintForColumn(), QHeaderView::resizeContentsPrecision()
 */
 void QTableView::resizeColumnToContents(int column)
 {
@@ -2971,6 +3090,8 @@ void QTableView::resizeColumnToContents(int column)
 /*!
     Resizes all columns based on the size hints of the delegate
     used to render each item in the columns.
+
+    \sa resizeColumnToContents(), sizeHintForColumn(), QHeaderView::resizeContentsPrecision()
 */
 void QTableView::resizeColumnsToContents()
 {

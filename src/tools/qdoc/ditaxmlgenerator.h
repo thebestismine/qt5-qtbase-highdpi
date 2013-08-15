@@ -1,7 +1,7 @@
 /****************************************************************************
 **
 ** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/
+** Contact: http://www.qt-project.org/legal
 **
 ** This file is part of the tools applications of the Qt Toolkit.
 **
@@ -458,7 +458,7 @@ private:
     int leaveSection();
     bool inSection() const { return (sectionNestingLevel > 0); }
     int currentSectionNestingLevel() const { return sectionNestingLevel; }
-    QString metadataDefault(DitaTag t) const;
+    QStringList metadataDefault(DitaTag t) const;
     QString stripMarkup(const QString& src) const;
     Node* collectNodesByTypeAndSubtype(const InnerNode* parent);
     void writeDitaRefs(const DitaRefList& ditarefs);
@@ -507,7 +507,7 @@ private:
     static QString ditaTags[];
     QStack<QXmlStreamWriter*> xmlWriterStack;
     QStack<DitaTag> tagStack;
-    QStringPairMap metadataDefaults;
+    ConfigVarMultimap metadataDefaults;
     QVector<NodeMultiMap*> nodeTypeMaps;
     QVector<NodeMultiMap*> nodeSubtypeMaps;
     QVector<NodeMultiMap*> pageTypeMaps;

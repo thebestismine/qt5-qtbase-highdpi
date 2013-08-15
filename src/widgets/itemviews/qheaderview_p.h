@@ -99,7 +99,8 @@ public:
           sectionIndicatorOffset(0),
           sectionIndicator(0),
           globalResizeMode(QHeaderView::Interactive),
-          sectionStartposRecalc(true)
+          sectionStartposRecalc(true),
+          resizeContentsPrecision(1000)
     {}
 
 
@@ -291,6 +292,7 @@ public:
     QHeaderView::ResizeMode globalResizeMode;
     QList<QPersistentModelIndex> persistentHiddenSections;
     mutable bool sectionStartposRecalc;
+    int resizeContentsPrecision;
     // header sections
 
     struct SectionItem {
@@ -341,6 +343,7 @@ public:
     // other
     int viewSectionSizeHint(int logical) const;
     int adjustedVisualIndex(int visualIndex) const;
+    void setScrollOffset(const QScrollBar *scrollBar, QAbstractItemView::ScrollMode scrollMode);
 
 #ifndef QT_NO_DATASTREAM
     void write(QDataStream &out) const;

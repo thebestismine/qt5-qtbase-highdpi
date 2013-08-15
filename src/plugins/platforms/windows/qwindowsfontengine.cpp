@@ -1095,7 +1095,7 @@ QWindowsNativeImage *QWindowsFontEngine::drawGDIGlyph(HFONT font, glyph_t glyph,
         xform.eDx = margin;
         xform.eDy = margin;
 
-        HDC hdc = CreateCompatibleDC(QWindowsContext::instance()->displayContext());
+        const HDC hdc = m_fontEngineData->hdc;
 
         SetGraphicsMode(hdc, GM_ADVANCED);
         SetWorldTransform(hdc, &xform);
@@ -1107,8 +1107,16 @@ QWindowsNativeImage *QWindowsFontEngine::drawGDIGlyph(HFONT font, glyph_t glyph,
         memset(&mat, 0, sizeof(mat));
         mat.eM11.value = mat.eM22.value = 1;
 
-        if (GetGlyphOutline(hdc, glyph, ggo_options, &tgm, 0, 0, &mat) == GDI_ERROR) {
-            qWarning("QWinFontEngine: unable to query transformed glyph metrics...");
+        const DWORD result = GetGlyphOutline(hdc, glyph, ggo_options, &tgm, 0, 0, &mat);
+
+        XFORM identity = {1, 0, 0, 1, 0, 0};
+        SetWorldTransform(hdc, &identity);
+        SetGraphicsMode(hdc, GM_COMPATIBLE);
+        SelectObject(hdc, old_font);
+
+        if (result == GDI_ERROR) {
+            const int errorCode = GetLastError();
+            qErrnoWarning(errorCode, "QWinFontEngine: unable to query transformed glyph metrics (GetGlyphOutline() failed, error %d)...", errorCode);
             return 0;
         }
 
@@ -1117,18 +1125,13 @@ QWindowsNativeImage *QWindowsFontEngine::drawGDIGlyph(HFONT font, glyph_t glyph,
 
         xform.eDx -= tgm.gmptGlyphOrigin.x;
         xform.eDy += tgm.gmptGlyphOrigin.y;
-
-        SetGraphicsMode(hdc, GM_COMPATIBLE);
-        SelectObject(hdc, old_font);
-        DeleteDC(hdc);
     }
 #else // else wince
     unsigned int options = 0;
-#ifdef DEBUG
-    Q_ASSERT(!has_transformation);
-#else
-    Q_UNUSED(has_transformation);
-#endif
+    if (has_transformation) {
+        qWarning() << "QWindowsFontEngine is unable to apply transformations other than translations for fonts on Windows CE."
+                   << "If you need them anyway, start your application with -platform windows:fontengine=freetype.";
+   }
 #endif // wince
     QWindowsNativeImage *ni = new QWindowsNativeImage(iw + 2 * margin + 4,
                                                       ih + 2 * margin + 4,
@@ -1410,6 +1413,12 @@ void QWindowsMultiFontEngine::loadEngine(int at)
 
 
     // TODO: increase cost in QFontCache for the font engine loaded here
+}
+
+bool QWindowsFontEngine::supportsTransformation(const QTransform &transform) const
+{
+    // Support all transformations for ttf files, and translations for raster fonts
+    return ttf || transform.type() <= QTransform::TxTranslate;
 }
 
 QT_END_NAMESPACE

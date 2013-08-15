@@ -53,6 +53,7 @@ QT_BEGIN_NAMESPACE
 const char _CLCompile[]                         = "ClCompile";
 const char _ItemGroup[]                         = "ItemGroup";
 const char _Link[]                              = "Link";
+const char _ManifestTool[]                      = "ManifestTool";
 const char _Midl[]                              = "Midl";
 const char _ResourceCompile[]                   = "ResourceCompile";
 
@@ -104,6 +105,7 @@ const char _DisableSpecificWarnings[]           = "DisableSpecificWarnings";
 const char _DisplayLibrary[]                    = "DisplayLibrary";
 const char _DLLDataFileName[]                   = "DLLDataFileName";
 const char _EmbedManagedResourceFile[]          = "EmbedManagedResourceFile";
+const char _EmbedManifest[]                     = "EmbedManifest";
 const char _EnableCOMDATFolding[]               = "EnableCOMDATFolding";
 const char _EnableUAC[]                         = "EnableUAC";
 const char _EnableErrorChecks[]                 = "EnableErrorChecks";
@@ -182,6 +184,7 @@ const char _Optimization[]                      = "Optimization";
 const char _OptimizeReferences[]                = "OptimizeReferences";
 const char _OutputDirectory[]                   = "OutputDirectory";
 const char _OutputFile[]                        = "OutputFile";
+const char _PlatformToolSet[]                   = "PlatformToolSet";
 const char _PrecompiledHeader[]                 = "PrecompiledHeader";
 const char _PrecompiledHeaderFile[]             = "PrecompiledHeaderFile";
 const char _PrecompiledHeaderOutputFile[]       = "PrecompiledHeaderOutputFile";
@@ -467,10 +470,6 @@ void VCXProjectWriter::write(XmlOutput &xml, VCProjectSingleConfig &tool)
             << attrTag("Condition", condition)
             << valueTag(tool.Configuration.IntermediateDirectory);
     }
-    if (tool.Configuration.CompilerVersion >= NET2012) {
-        xml << tagValue("PlatformToolSet",
-                        platformToolSetVersion(tool.Configuration.CompilerVersion));
-    }
     if ( !tool.Configuration.PrimaryOutput.isEmpty() ) {
         xml<< tag("TargetName")
             << attrTag("Condition", condition)
@@ -667,10 +666,6 @@ void VCXProjectWriter::write(XmlOutput &xml, VCProject &tool)
             xml << tag("IntDir")
                 << attrTag("Condition", condition)
                 << valueTag(config.IntermediateDirectory);
-        }
-        if (config.CompilerVersion >= NET2012) {
-            xml << tagValue("PlatformToolSet",
-                            platformToolSetVersion(config.CompilerVersion));
         }
         if (!config.PrimaryOutput.isEmpty()) {
             xml << tag("TargetName")
@@ -1412,7 +1407,7 @@ void VCXProjectWriter::write(XmlOutput &xml, const VCCLCompilerTool &tool)
             << attrTagT(_StringPooling, tool.StringPooling)
             << attrTagS(_StructMemberAlignment, toString(tool.StructMemberAlignment))
             << attrTagT(_SuppressStartupBanner, tool.SuppressStartupBanner)
-//unused    << attrTagS(_TreatSpecificWarningsAsErrors, tool.TreatSpecificWarningsAsErrors)
+            << attrTagX(_TreatSpecificWarningsAsErrors, tool.TreatSpecificWarningsAsErrors, ";")
             << attrTagT(_TreatWarningAsError, tool.WarnAsError)
             << attrTagT(_TreatWChar_tAsBuiltInType, tool.TreatWChar_tAsBuiltInType)
             << attrTagT(_UndefineAllPreprocessorDefinitions, tool.UndefineAllPreprocessorDefinitions)
@@ -1534,7 +1529,7 @@ void VCXProjectWriter::write(XmlOutput &xml, const VCMIDLTool &tool)
             << attrTagL(_LocaleID, tool.LocaleID, /*ifNot*/ -1)
             << attrTagT(_MkTypLibCompatible, tool.MkTypLibCompatible)
             << attrTagS(_OutputDirectory, tool.OutputDirectory)
-            << attrTagX(_PreprocessorDefinitions, unquote(tool.PreprocessorDefinitions), ";")
+            << attrTagX(_PreprocessorDefinitions, tool.PreprocessorDefinitions, ";")
             << attrTagS(_ProxyFileName, tool.ProxyFileName)
             << attrTagS(_RedirectOutputAndErrors, tool.RedirectOutputAndErrors)
             << attrTagS(_ServerStubFile, tool.ServerStubFile)
@@ -1619,7 +1614,7 @@ void VCXProjectWriter::write(XmlOutput &xml, const VCResourceCompilerTool &tool)
             << attrTagS(_Culture, toString(tool.Culture))
             << attrTagT(_IgnoreStandardIncludePath, tool.IgnoreStandardIncludePath)
 //unused    << attrTagT(_NullTerminateStrings, tool.NullTerminateStrings)
-            << attrTagX(_PreprocessorDefinitions, unquote(tool.PreprocessorDefinitions), ";")
+            << attrTagX(_PreprocessorDefinitions, tool.PreprocessorDefinitions, ";")
             << attrTagS(_ResourceOutputFileName, tool.ResourceOutputFileName)
             << attrTagT(_ShowProgress, toTriState(tool.ShowProgress))
             << attrTagT(_SuppressStartupBanner, tool.SuppressStartupBanner)
@@ -1649,6 +1644,7 @@ void VCXProjectWriter::write(XmlOutput &xml, const VCConfiguration &tool)
         xml << tag("PropertyGroup")
             << attrTag("Condition", generateCondition(tool))
             << attrTag("Label", "Configuration")
+            << attrTagS(_PlatformToolSet, platformToolSetVersion(tool.CompilerVersion))
             << attrTagS(_OutputDirectory, tool.OutputDirectory)
             << attrTagT(_ATLMinimizesCRunTimeLibraryUsage, tool.ATLMinimizesCRunTimeLibraryUsage)
             << attrTagT(_BuildBrowserInformation, tool.BuildBrowserInformation)
@@ -1663,6 +1659,7 @@ void VCXProjectWriter::write(XmlOutput &xml, const VCConfiguration &tool)
             << attrTagS(_UseOfATL, toString(tool.UseOfATL))
             << attrTagS(_UseOfMfc, toString(tool.UseOfMfc))
             << attrTagT(_WholeProgramOptimization, tool.WholeProgramOptimization)
+            << attrTagT(_EmbedManifest, tool.manifestTool.EmbedManifest)
         << closetag();
 }
 
@@ -2056,8 +2053,9 @@ QString VCXProjectWriter::platformToolSetVersion(const DotNET version)
     {
     case NET2012:
         return "v110";
+    case NET2013:
+        return "v120";
     }
-    Q_ASSERT(!"This MSVC version does not support the PlatformToolSet tag!");
     return QString();
 }
 

@@ -351,7 +351,7 @@ static int unpackControlTypes(QSizePolicy::ControlTypes controls, QSizePolicy::C
     \section1 Styles in Item Views
 
     The painting of items in views is performed by a delegate. Qt's
-    default delegate, QStyledItemDelegate, is also used for for calculating bounding
+    default delegate, QStyledItemDelegate, is also used for calculating bounding
     rectangles of items, and their sub-elements for the various kind
     of item \l{Qt::ItemDataRole}{data roles}
     QStyledItemDelegate supports. See the QStyledItemDelegate class
@@ -1894,6 +1894,16 @@ void QStyle::drawItemPixmap(QPainter *painter, const QRect &rect, int alignment,
     \value SH_Menu_SupportsSections Determines if the style displays sections in menus or treat them as
            plain separators. Sections are separators with a text and icon hint.
 
+    \value SH_ToolTip_WakeUpDelay Determines the delay before a tooltip is shown, in milliseconds.
+
+    \value SH_ToolTip_FallAsleepDelay Determines the delay (in milliseconds) before a new wake time is needed when
+           a tooltip is shown (notice: shown, not hidden). When a new wake isn't needed, a user-requested tooltip
+           will be shown nearly instantly.
+
+    \value SH_Widget_Animate Determines if the widget should show animations or not, for example
+           a transition between checked and unchecked statuses in a checkbox.
+           This enum value has been introduced in Qt 5.2.
+
     \sa styleHint()
 */
 
@@ -1986,6 +1996,7 @@ void QStyle::drawItemPixmap(QPainter *painter, const QRect &rect, int alignment,
     \value SP_MediaSeekBackward Icon indicating that media should seek backward.
     \value SP_MediaVolume Icon indicating a volume control.
     \value SP_MediaVolumeMuted Icon indicating a muted volume control.
+    \value SP_LineEditClearButton Icon for a standard clear button in a QLineEdit. This enum value was added in Qt 5.2.
     \value SP_CustomBase  Base value for custom standard pixmaps;
     custom values must be greater than this value.
 

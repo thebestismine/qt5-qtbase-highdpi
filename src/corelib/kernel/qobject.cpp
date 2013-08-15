@@ -3921,7 +3921,7 @@ QDebug operator<<(QDebug dbg, const QObject *o) {
     they have additional features accessible through the \l
     {Meta-Object System}.
 
-    \snippet code/src_corelib_kernel_qobject.cpp 36
+    \snippet code/doc_src_properties.cpp 0
 
     The property name and type and the \c READ function are required.
     The type can be any type supported by QVariant, or it can be a
@@ -4255,7 +4255,7 @@ void qDeleteInEventHandler(QObject *o)
     must not have an overloaded or templated operator().
  */
 
-/**
+/*!
     \internal
 
     Implementation of the template version of connect
@@ -4280,21 +4280,47 @@ QMetaObject::Connection QObject::connectImpl(const QObject *sender, void **signa
                                              QtPrivate::QSlotObjectBase *slotObj, Qt::ConnectionType type,
                                              const int *types, const QMetaObject *senderMetaObject)
 {
-    if (!sender || !signal || !slotObj || !senderMetaObject) {
+    if (!signal) {
         qWarning("QObject::connect: invalid null parameter");
         if (slotObj)
             slotObj->destroyIfLastRef();
         return QMetaObject::Connection();
     }
+
     int signal_index = -1;
     void *args[] = { &signal_index, signal };
-    senderMetaObject->static_metacall(QMetaObject::IndexOfMethod, 0, args);
-    if (signal_index < 0 || signal_index >= QMetaObjectPrivate::get(senderMetaObject)->signalCount) {
-        qWarning("QObject::connect: signal not found in %s", senderMetaObject->className());
+    for (; senderMetaObject && signal_index < 0; senderMetaObject = senderMetaObject->superClass()) {
+        senderMetaObject->static_metacall(QMetaObject::IndexOfMethod, 0, args);
+        if (signal_index >= 0 && signal_index < QMetaObjectPrivate::get(senderMetaObject)->signalCount)
+            break;
+    }
+    if (!senderMetaObject) {
+        qWarning("QObject::connect: signal not found in %s", sender->metaObject()->className());
         slotObj->destroyIfLastRef();
         return QMetaObject::Connection(0);
     }
     signal_index += QMetaObjectPrivate::signalOffset(senderMetaObject);
+    return QObjectPrivate::connectImpl(sender, signal_index, receiver, slot, slotObj, type, types, senderMetaObject);
+}
+
+/*!
+    \internal
+
+    Internal version of connect used by the template version of QObject::connect (called via connectImpl) and
+    also used by the QObjectPrivate::connect version used by QML. The signal_index is expected to be relative
+    to the number of signals.
+ */
+QMetaObject::Connection QObjectPrivate::connectImpl(const QObject *sender, int signal_index,
+                                             const QObject *receiver, void **slot,
+                                             QtPrivate::QSlotObjectBase *slotObj, Qt::ConnectionType type,
+                                             const int *types, const QMetaObject *senderMetaObject)
+{
+    if (!sender || !slotObj || !senderMetaObject) {
+        qWarning("QObject::connect: invalid null parameter");
+        if (slotObj)
+            slotObj->destroyIfLastRef();
+        return QMetaObject::Connection();
+    }
 
     QObject *s = const_cast<QObject *>(sender);
     QObject *r = const_cast<QObject *>(receiver);
@@ -4463,6 +4489,40 @@ bool QObject::disconnectImpl(const QObject *sender, void **signal, const QObject
     }
 
     return QMetaObjectPrivate::disconnect(sender, signal_index, senderMetaObject, receiver, -1, slot);
+}
+
+/*!
+ \internal
+ Used by QML to connect a signal by index to a slot implemented in JavaScript (wrapped in a custom QSlotOBjectBase subclass).
+
+ The signal_index is an index relative to the number of methods.
+ */
+QMetaObject::Connection QObjectPrivate::connect(const QObject *sender, int signal_index, QtPrivate::QSlotObjectBase *slotObj, Qt::ConnectionType type)
+{
+    if (!sender) {
+        qWarning("QObject::connect: invalid null parameter");
+        if (slotObj)
+            slotObj->destroyIfLastRef();
+        return QMetaObject::Connection();
+    }
+    const QMetaObject *senderMetaObject = sender->metaObject();
+    signal_index = methodIndexToSignalIndex(&senderMetaObject, signal_index);
+
+    return QObjectPrivate::connectImpl(sender, signal_index, sender, /*slot*/0, slotObj, type, /*types*/0, senderMetaObject);
+}
+
+/*!
+ \internal
+ Used by QML to disconnect a signal by index that's connected to a slot implemented in JavaScript (wrapped in a custom QSlotObjectBase subclass)
+ In the QML case the slot is not a pointer to a pointer to the function to disconnect, but instead it is a pointer to an array of internal values
+ required for the disconnect.
+ */
+bool QObjectPrivate::disconnect(const QObject *sender, int signal_index, void **slot)
+{
+    const QMetaObject *senderMetaObject = sender->metaObject();
+    signal_index = methodIndexToSignalIndex(&senderMetaObject, signal_index);
+
+    return QMetaObjectPrivate::disconnect(sender, signal_index, senderMetaObject, sender, -1, slot);
 }
 
 /*! \class QMetaObject::Connection

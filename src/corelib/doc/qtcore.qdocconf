@@ -39,3 +39,8 @@ exampledirs += \
                ../../../examples/tools/
 
 imagedirs   += images
+
+excludedirs += snippets
+
+navigation.landingpage = "Qt Core"
+navigation.cppclassespage = "Qt Core C++ Classes"

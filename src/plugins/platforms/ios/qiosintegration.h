@@ -46,6 +46,8 @@
 #include <qpa/qplatformnativeinterface.h>
 #include <qpa/qwindowsysteminterface.h>
 
+#include "qiosapplicationstate.h"
+
 QT_BEGIN_NAMESPACE
 
 class QIOSIntegration : public QPlatformIntegration, public QPlatformNativeInterface
@@ -79,6 +81,7 @@ private:
     QPlatformInputContext *m_inputContext;
     QPlatformScreen *m_screen;
     QTouchDevice *m_touchDevice;
+    QIOSApplicationState m_applicationState;
 };
 
 QT_END_NAMESPACE

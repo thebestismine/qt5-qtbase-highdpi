@@ -279,7 +279,16 @@ void QDBusAdaptorConnector::polish()
 
 void QDBusAdaptorConnector::relaySlot(void **argv)
 {
-    relay(sender(), senderSignalIndex(), argv);
+    QObject *sndr = sender();
+    if (Q_LIKELY(sndr)) {
+        relay(sndr, senderSignalIndex(), argv);
+    } else {
+        qWarning("QtDBus: cannot relay signals from parent %s(%p \"%s\") unless they are emitted in the object's thread %s(%p \"%s\"). "
+                 "Current thread is %s(%p \"%s\").",
+                 parent()->metaObject()->className(), parent(), qPrintable(parent()->objectName()),
+                 parent()->thread()->metaObject()->className(), parent()->thread(), qPrintable(parent()->thread()->objectName()),
+                 QThread::currentThread()->metaObject()->className(), QThread::currentThread(), qPrintable(QThread::currentThread()->objectName()));
+    }
 }
 
 void QDBusAdaptorConnector::relay(QObject *senderObj, int lastSignalIdx, void **argv)
@@ -298,15 +307,18 @@ void QDBusAdaptorConnector::relay(QObject *senderObj, int lastSignalIdx, void **
 
     // break down the parameter list
     QVector<int> types;
-    int inputCount = qDBusParametersForMethod(mm, types);
-    if (inputCount == -1)
+    QString errorMsg;
+    int inputCount = qDBusParametersForMethod(mm, types, errorMsg);
+    if (inputCount == -1) {
         // invalid signal signature
-        // qDBusParametersForMethod has already complained
+        qWarning("QDBusAbstractAdaptor: Cannot relay signal %s::%s: %s",
+                 senderMetaObject->className(), mm.methodSignature().constData(),
+                 qPrintable(errorMsg));
         return;
+    }
     if (inputCount + 1 != types.count() ||
         types.at(inputCount) == QDBusMetaTypeId::message()) {
         // invalid signal signature
-        // qDBusParametersForMethod has not yet complained about this one
         qWarning("QDBusAbstractAdaptor: Cannot relay signal %s::%s",
                  senderMetaObject->className(), mm.methodSignature().constData());
         return;

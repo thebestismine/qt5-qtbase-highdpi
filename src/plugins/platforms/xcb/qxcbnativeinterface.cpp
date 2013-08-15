@@ -42,6 +42,9 @@
 #include "qxcbnativeinterface.h"
 
 #include "qxcbscreen.h"
+#include "qxcbwindow.h"
+#include "qxcbintegration.h"
+#include "qxcbsystemtraytracker.h"
 
 #include <private/qguiapplication_p.h>
 #include <QtCore/QMap>
@@ -57,7 +60,9 @@
 #include "qglxintegration.h"
 #endif
 
-#ifndef XCB_USE_XLIB
+#ifdef XCB_USE_XLIB
+#  include <X11/Xlib.h>
+#else
 #  include <stdio.h>
 #endif
 
@@ -78,6 +83,9 @@ public:
         insert("apptime",QXcbNativeInterface::AppTime);
         insert("appusertime",QXcbNativeInterface::AppUserTime);
         insert("hintstyle", QXcbNativeInterface::ScreenHintStyle);
+        insert("startupid", QXcbNativeInterface::StartupId);
+        insert(QByteArrayLiteral("traywindow"), QXcbNativeInterface::TrayWindow);
+        insert(QByteArrayLiteral("gettimestamp"), QXcbNativeInterface::GetTimestamp);
     }
 };
 
@@ -91,12 +99,58 @@ QXcbNativeInterface::QXcbNativeInterface() :
 
 void QXcbNativeInterface::beep() // For QApplication::beep()
 {
-#ifdef XCB_USE_XLIB
-    ::Display *display = (::Display *)nativeResourceForScreen(QByteArrayLiteral("display"), QGuiApplication::primaryScreen());
-    XBell(display, 0);
-#else
-    fputc(7, stdout);
-#endif
+    QPlatformScreen *screen = QGuiApplication::primaryScreen()->handle();
+    xcb_connection_t *connection = static_cast<QXcbScreen *>(screen)->xcb_connection();
+    xcb_bell(connection, 0);
+}
+
+static inline QXcbSystemTrayTracker *systemTrayTracker(const QScreen *s)
+{
+    return static_cast<const QXcbScreen *>(s->handle())->connection()->systemTrayTracker();
+}
+
+bool QXcbNativeInterface::systemTrayAvailable(const QScreen *screen) const
+{
+    return systemTrayTracker(screen);
+}
+
+bool QXcbNativeInterface::requestSystemTrayWindowDock(const QWindow *window)
+{
+    const QPlatformWindow *platformWindow = window->handle();
+    if (!platformWindow)
+        return false;
+    QXcbSystemTrayTracker *trayTracker = systemTrayTracker(window->screen());
+    if (!trayTracker)
+        return false;
+    trayTracker->requestSystemTrayWindowDock(static_cast<const QXcbWindow *>(platformWindow)->xcb_window());
+    return true;
+}
+
+QRect QXcbNativeInterface::systemTrayWindowGlobalGeometry(const QWindow *window)
+{
+    if (const QPlatformWindow *platformWindow = window->handle())
+        if (const QXcbSystemTrayTracker *trayTracker = systemTrayTracker(window->screen()))
+            return trayTracker->systemTrayWindowGlobalGeometry(static_cast<const QXcbWindow *>(platformWindow)->xcb_window());
+    return QRect();
+}
+
+void *QXcbNativeInterface::nativeResourceForIntegration(const QByteArray &resourceString)
+{
+    QByteArray lowerCaseResource = resourceString.toLower();
+    if (!qXcbResourceMap()->contains(lowerCaseResource))
+        return 0;
+
+    ResourceType resource = qXcbResourceMap()->value(lowerCaseResource);
+    void *result = 0;
+    switch (resource) {
+    case StartupId:
+        result = startupId();
+        break;
+    default:
+        break;
+    }
+
+    return result;
 }
 
 void *QXcbNativeInterface::nativeResourceForContext(const QByteArray &resourceString, QOpenGLContext *context)
@@ -142,6 +196,14 @@ void *QXcbNativeInterface::nativeResourceForScreen(const QByteArray &resource, Q
         break;
     case ScreenHintStyle:
         result = reinterpret_cast<void *>(xcbScreen->hintStyle() + 1);
+        break;
+    case TrayWindow:
+        if (QXcbSystemTrayTracker *s = systemTrayTracker(screen))
+            result = (void *)quintptr(s->trayWindow());
+        break;
+    case GetTimestamp:
+        result = getTimestamp(xcbScreen);
+        break;
     default:
         break;
     }
@@ -194,6 +256,20 @@ void *QXcbNativeInterface::appTime(const QXcbScreen *screen)
 void *QXcbNativeInterface::appUserTime(const QXcbScreen *screen)
 {
     return reinterpret_cast<void *>(quintptr(screen->connection()->netWmUserTime()));
+}
+
+void *QXcbNativeInterface::getTimestamp(const QXcbScreen *screen)
+{
+    return reinterpret_cast<void *>(quintptr(screen->connection()->getTimestamp()));
+}
+
+void *QXcbNativeInterface::startupId()
+{
+    QXcbIntegration* integration = static_cast<QXcbIntegration *>(QGuiApplicationPrivate::platformIntegration());
+    QXcbConnection *defaultConnection = integration->defaultConnection();
+    if (defaultConnection)
+        return reinterpret_cast<void *>(const_cast<char *>(defaultConnection->startupId().constData()));
+    return 0;
 }
 
 void QXcbNativeInterface::setAppTime(QScreen* screen, xcb_timestamp_t time)

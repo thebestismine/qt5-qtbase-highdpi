@@ -356,6 +356,9 @@ QWidget *QGraphicsProxyWidgetPrivate::findFocusChild(QWidget *child, bool next) 
         }
     }
 
+    if (!child)
+        return 0;
+
     QWidget *oldChild = child;
     uint focus_flag = qt_tab_all_widgets() ? Qt::TabFocus : Qt::StrongFocus;
     do {
@@ -825,7 +828,9 @@ bool QGraphicsProxyWidget::event(QEvent *event)
     }
     case QEvent::InputMethod: {
         inputMethodEvent(static_cast<QInputMethodEvent *>(event));
-        break;
+        if (event->isAccepted())
+            return true;
+        return false;
     }
     case QEvent::ShortcutOverride: {
         QWidget *focusWidget = d->widget->focusWidget();

@@ -188,7 +188,7 @@ static bool read_pbm_body(QIODevice *device, char type, int w, int h, int mcc, Q
             }
         }
     } else {                                        // read ascii data
-        register uchar *p;
+        uchar *p;
         int n;
         for (y=0; y<h; y++) {
             p = outImage->scanLine(y);
@@ -274,12 +274,15 @@ static bool write_pbm_image(QIODevice *out, const QImage &sourceImage, const QBy
         case QImage::Format_RGB555:
         case QImage::Format_RGB888:
         case QImage::Format_RGB444:
+        case QImage::Format_RGBX8888:
             image = image.convertToFormat(QImage::Format_RGB32);
             break;
         case QImage::Format_ARGB8565_Premultiplied:
         case QImage::Format_ARGB6666_Premultiplied:
         case QImage::Format_ARGB8555_Premultiplied:
         case QImage::Format_ARGB4444_Premultiplied:
+        case QImage::Format_RGBA8888:
+        case QImage::Format_RGBA8888_Premultiplied:
             image = image.convertToFormat(QImage::Format_ARGB32);
             break;
         default:

@@ -226,9 +226,17 @@ void QOpenGL2PaintEngineExPrivate::updateBrushTexture()
         if (currentBrushPixmap.width() > max_texture_size || currentBrushPixmap.height() > max_texture_size)
             currentBrushPixmap = currentBrushPixmap.scaled(max_texture_size, max_texture_size, Qt::KeepAspectRatio);
 
+#if defined(QT_OPENGL_ES_2)
+        // OpenGL ES does not support GL_REPEAT wrap modes for NPOT textures. So instead,
+        // we emulate GL_REPEAT by only taking the fractional part of the texture coords
+        // in the qopenglslTextureBrushSrcFragmentShader program.
+        GLuint wrapMode = GL_CLAMP_TO_EDGE;
+#else
+        GLuint wrapMode = GL_REPEAT;
+#endif
         funcs.glActiveTexture(GL_TEXTURE0 + QT_BRUSH_TEXTURE_UNIT);
         QOpenGLTextureCache::cacheForContext(ctx)->bindTexture(ctx, currentBrushPixmap);
-        updateTextureFilter(GL_TEXTURE_2D, GL_REPEAT, q->state()->renderHints & QPainter::SmoothPixmapTransform);
+        updateTextureFilter(GL_TEXTURE_2D, wrapMode, q->state()->renderHints & QPainter::SmoothPixmapTransform);
         textureInvertedY = false;
     }
     brushTextureDirty = false;
@@ -541,8 +549,10 @@ void QOpenGL2PaintEngineEx::beginNativePainting()
 
 #ifndef QT_OPENGL_ES_2
     Q_ASSERT(QOpenGLContext::currentContext());
+    const QOpenGLContext *ctx = d->ctx;
     const QSurfaceFormat &fmt = d->device->context()->format();
     if (fmt.majorVersion() < 3 || (fmt.majorVersion() == 3 && fmt.minorVersion() < 1)
+        || (fmt.majorVersion() == 3 && fmt.minorVersion() == 1 && ctx->hasExtension(QByteArrayLiteral("GL_ARB_compatibility")))
         || fmt.profile() == QSurfaceFormat::CompatibilityProfile)
     {
         // be nice to people who mix OpenGL 1.x code with QPainter commands
@@ -1540,8 +1550,28 @@ namespace {
 
 bool QOpenGL2PaintEngineEx::shouldDrawCachedGlyphs(QFontEngine *fontEngine, const QTransform &t) const
 {
-    // Don't try to cache vastly transformed fonts
-    return t.type() < QTransform::TxProject && QPaintEngineEx::shouldDrawCachedGlyphs(fontEngine, t);
+    // The paint engine does not support projected cached glyph drawing
+    if (t.type() == QTransform::TxProject)
+        return false;
+
+    // The font engine might not support filling the glyph cache
+    // with the given transform applied, in which case we need to
+    // fall back to the QPainterPath code-path.
+    if (!fontEngine->supportsTransformation(t)) {
+        // Except that drawing paths is slow, so for scales between
+        // 0.5 and 2.0 we leave the glyph cache untransformed and deal
+        // with the transform ourselves when painting, resulting in
+        // drawing 1x cached glyphs with a smooth-scale.
+        float det = t.determinant();
+        if (det >= 0.25f && det <= 4.f) {
+            // Assuming the baseclass still agrees
+            return QPaintEngineEx::shouldDrawCachedGlyphs(fontEngine, t);
+        }
+
+        return false; // Fall back to path-drawing
+    }
+
+    return QPaintEngineEx::shouldDrawCachedGlyphs(fontEngine, t);
 }
 
 void QOpenGL2PaintEngineExPrivate::drawCachedGlyphs(QFontEngineGlyphCache::Type glyphType,
@@ -1553,20 +1583,24 @@ void QOpenGL2PaintEngineExPrivate::drawCachedGlyphs(QFontEngineGlyphCache::Type 
 
     void *cacheKey = ctx->shareGroup();
     bool recreateVertexArrays = false;
-    QFontEngine *fe = staticTextItem->fontEngine();
 
-    // We allow scaling, so that the glyph-cache will contain glyphs with the
-    // appropriate resolution in the case of displays with a device-pixel-ratio != 1.
-    QTransform transform = s->matrix.type() < QTransform::TxRotate ?
-        QTransform::fromScale(qAbs(s->matrix.m11()), qAbs(s->matrix.m22())) :
-        QTransform::fromScale(
-            QVector2D(s->matrix.m11(), s->matrix.m12()).length(),
-            QVector2D(s->matrix.m21(), s->matrix.m22()).length());
+    QTransform glyphCacheTransform;
+    QFontEngine *fe = staticTextItem->fontEngine();
+    if (fe->supportsTransformation(s->matrix)) {
+        // The font-engine supports rendering glyphs with the current transform, so we
+        // build a glyph-cache with the scale pre-applied, so that the cache contains
+        // glyphs with the appropriate resolution in the case of retina displays.
+        glyphCacheTransform = s->matrix.type() < QTransform::TxRotate ?
+            QTransform::fromScale(qAbs(s->matrix.m11()), qAbs(s->matrix.m22())) :
+            QTransform::fromScale(
+                QVector2D(s->matrix.m11(), s->matrix.m12()).length(),
+                QVector2D(s->matrix.m21(), s->matrix.m22()).length());
+    }
 
     QOpenGLTextureGlyphCache *cache =
-            (QOpenGLTextureGlyphCache *) fe->glyphCache(cacheKey, glyphType, transform);
+            (QOpenGLTextureGlyphCache *) fe->glyphCache(cacheKey, glyphType, glyphCacheTransform);
     if (!cache || cache->cacheType() != glyphType || cache->contextGroup() == 0) {
-        cache = new QOpenGLTextureGlyphCache(glyphType, transform);
+        cache = new QOpenGLTextureGlyphCache(glyphType, glyphCacheTransform);
         fe->setGlyphCache(cacheKey, cache);
         recreateVertexArrays = true;
     }

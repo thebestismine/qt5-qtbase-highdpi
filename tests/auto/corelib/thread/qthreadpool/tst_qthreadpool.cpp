@@ -94,6 +94,8 @@ private slots:
     void tryStart();
     void tryStartPeakThreadCount();
     void tryStartCount();
+    void priorityStart_data();
+    void priorityStart();
     void waitForDone();
     void waitForDoneTimeout();
     void destroyingWaitsForTasksToFinish();
@@ -212,22 +214,22 @@ void tst_QThreadPool::waitcomplete()
     QCOMPARE(testFunctionCount, runs);
 }
 
-volatile bool ran;
+QAtomicInt ran; // bool
 class TestTask : public QRunnable
 {
 public:
     void run()
     {
-        ran = true;
+        ran.store(true);
     }
 };
 
 void tst_QThreadPool::runTask()
 {
     QThreadPool manager;
-    ran = false;
+    ran.store(false);
     manager.start(new TestTask());
-    QTRY_VERIFY(ran);
+    QTRY_VERIFY(ran.load());
 }
 
 /*
@@ -235,19 +237,19 @@ void tst_QThreadPool::runTask()
 */
 void tst_QThreadPool::singleton()
 {
-    ran = false;
+    ran.store(false);
     QThreadPool::globalInstance()->start(new TestTask());
-    QTRY_VERIFY(ran);
+    QTRY_VERIFY(ran.load());
 }
 
-int *value = 0;
+QAtomicInt *value = 0;
 class IntAccessor : public QRunnable
 {
 public:
     void run()
     {
         for (int i = 0; i < 100; ++i) {
-            ++(*value);
+            value->ref();
             QTest::qSleep(1);
         }
     }
@@ -259,7 +261,7 @@ public:
 */
 void tst_QThreadPool::destruction()
 {
-    value = new int;
+    value = new QAtomicInt;
     QThreadPool *threadManager = new QThreadPool();
     threadManager->start(new IntAccessor());
     threadManager->start(new IntAccessor());
@@ -679,8 +681,8 @@ void tst_QThreadPool::tryStart()
 }
 
 QMutex mutex;
-int activeThreads = 0;
-int peakActiveThreads = 0;
+QAtomicInt activeThreads;
+QAtomicInt peakActiveThreads;
 void tst_QThreadPool::tryStartPeakThreadCount()
 {
     class CounterTask : public QRunnable
@@ -692,14 +694,14 @@ void tst_QThreadPool::tryStartPeakThreadCount()
         {
             {
                 QMutexLocker lock(&mutex);
-                ++activeThreads;
-                peakActiveThreads = qMax(peakActiveThreads, activeThreads);
+                activeThreads.ref();
+                peakActiveThreads.store(qMax(peakActiveThreads.load(), activeThreads.load()));
             }
 
             QTest::qWait(100);
             {
                 QMutexLocker lock(&mutex);
-                --activeThreads;
+                activeThreads.deref();
             }
         }
     };
@@ -711,13 +713,13 @@ void tst_QThreadPool::tryStartPeakThreadCount()
         if (threadPool.tryStart(&task) == false)
             QTest::qWait(10);
     }
-    QCOMPARE(peakActiveThreads, QThread::idealThreadCount());
+    QCOMPARE(peakActiveThreads.load(), QThread::idealThreadCount());
 
     for (int i = 0; i < 20; ++i) {
         if (threadPool.tryStart(&task) == false)
             QTest::qWait(10);
     }
-    QCOMPARE(peakActiveThreads, QThread::idealThreadCount());
+    QCOMPARE(peakActiveThreads.load(), QThread::idealThreadCount());
 }
 
 void tst_QThreadPool::tryStartCount()
@@ -745,6 +747,57 @@ void tst_QThreadPool::tryStartCount()
 
         QTest::qWait(100);
     }
+}
+
+void tst_QThreadPool::priorityStart_data()
+{
+    QTest::addColumn<int>("otherCount");
+    QTest::newRow("0") << 0;
+    QTest::newRow("1") << 1;
+    QTest::newRow("2") << 2;
+}
+
+void tst_QThreadPool::priorityStart()
+{
+    class Holder : public QRunnable
+    {
+    public:
+        QSemaphore &sem;
+        Holder(QSemaphore &sem) : sem(sem) {}
+        void run()
+        {
+            sem.acquire();
+        }
+    };
+    class Runner : public QRunnable
+    {
+    public:
+        QAtomicPointer<QRunnable> &ptr;
+        Runner(QAtomicPointer<QRunnable> &ptr) : ptr(ptr) {}
+        void run()
+        {
+            ptr.testAndSetRelaxed(0, this);
+        }
+    };
+
+    QFETCH(int, otherCount);
+    QSemaphore sem;
+    QAtomicPointer<QRunnable> firstStarted;
+    QRunnable *expected;
+    QThreadPool threadPool;
+    threadPool.setMaxThreadCount(1); // start only one thread at a time
+
+    // queue the holder first
+    // We need to be sure that all threads are active when we
+    // queue the two Runners
+    threadPool.start(new Holder(sem));
+    while (otherCount--)
+        threadPool.start(new Runner(firstStarted), 0); // priority 0
+    threadPool.start(expected = new Runner(firstStarted), 1); // priority 1
+
+    sem.release();
+    QVERIFY(threadPool.waitForDone());
+    QCOMPARE(firstStarted.load(), expected);
 }
 
 void tst_QThreadPool::waitForDone()

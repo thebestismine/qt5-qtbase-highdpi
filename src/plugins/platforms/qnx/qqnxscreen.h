@@ -114,7 +114,8 @@ private:
     void resizeTopLevelWindow(QQnxWindow *w, const QRect &previousScreenGeometry) const;
     void resizeWindows(const QRect &previousScreenGeometry);
     void addOverlayWindow(screen_window_t window);
-    void removeOverlayWindow(screen_window_t window);
+    void addUnderlayWindow(screen_window_t window);
+    void removeOverlayOrUnderlayWindow(screen_window_t window);
 
     QWindow *topMostChildWindow() const;
 
@@ -132,10 +133,10 @@ private:
     Qt::ScreenOrientation m_nativeOrientation;
     QRect m_initialGeometry;
     QRect m_currentGeometry;
-    QPlatformOpenGLContext *m_platformContext;
 
     QList<QQnxWindow *> m_childWindows;
     QList<screen_window_t> m_overlays;
+    QList<screen_window_t> m_underlays;
 
     QPlatformCursor *m_cursor;
 };

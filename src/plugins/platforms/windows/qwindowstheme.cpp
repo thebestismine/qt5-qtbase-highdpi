@@ -404,6 +404,8 @@ void QWindowsTheme::refreshFonts()
     const QFont messageBoxFont = QWindowsFontDatabase::LOGFONT_to_QFont(ncm.lfMessageFont);
     const QFont statusFont = QWindowsFontDatabase::LOGFONT_to_QFont(ncm.lfStatusFont);
     const QFont titleFont = QWindowsFontDatabase::LOGFONT_to_QFont(ncm.lfCaptionFont);
+    QFont fixedFont(QStringLiteral("Courier New"), messageBoxFont.pointSize());
+    fixedFont.setStyleHint(QFont::TypeWriter);
 
     LOGFONT lfIconTitleFont;
     SystemParametersInfo(SPI_GETICONTITLELOGFONT, sizeof(lfIconTitleFont), &lfIconTitleFont, 0);
@@ -418,6 +420,7 @@ void QWindowsTheme::refreshFonts()
     m_fonts[MdiSubWindowTitleFont] = new QFont(titleFont);
     m_fonts[DockWidgetTitleFont] = new QFont(titleFont);
     m_fonts[ItemViewFont] = new QFont(iconTitleFont);
+    m_fonts[FixedFont] = new QFont(fixedFont);
 
     if (QWindowsContext::verboseTheming)
         qDebug() << __FUNCTION__ << '\n'
@@ -595,7 +598,8 @@ public:
     void operator delete (void *) {}
 };
 
-QPixmap QWindowsTheme::fileIconPixmap(const QFileInfo &fileInfo, const QSizeF &size) const
+QPixmap QWindowsTheme::fileIconPixmap(const QFileInfo &fileInfo, const QSizeF &size,
+                                      QPlatformTheme::IconOptions iconOptions) const
 {
     /* We don't use the variable, but by storing it statically, we
      * ensure CoInitialize is only called once. */
@@ -604,6 +608,8 @@ QPixmap QWindowsTheme::fileIconPixmap(const QFileInfo &fileInfo, const QSizeF &s
 
     static QCache<QString, FakePointer<int> > dirIconEntryCache(1000);
     static QMutex mx;
+    static int defaultFolderIIcon = 0;
+    const bool useDefaultFolderIcon = iconOptions & QPlatformTheme::DontUseCustomDirectoryIcons;
 
     QPixmap pixmap;
     const QString filePath = QDir::toNativeSeparators(fileInfo.filePath());
@@ -612,7 +618,8 @@ QPixmap QWindowsTheme::fileIconPixmap(const QFileInfo &fileInfo, const QSizeF &s
     bool cacheableDirIcon = fileInfo.isDir() && !fileInfo.isRoot();
     if (cacheableDirIcon) {
         QMutexLocker locker(&mx);
-        int iIcon = **dirIconEntryCache.object(filePath);
+        int iIcon = (useDefaultFolderIcon && defaultFolderIIcon) ? defaultFolderIIcon
+                                                                 : **dirIconEntryCache.object(filePath);
         if (iIcon) {
             QPixmapCache::find(dirIconPixmapCacheKey(iIcon, iconSize), pixmap);
             if (pixmap.isNull()) // Let's keep both caches in sync
@@ -629,13 +636,24 @@ QPixmap QWindowsTheme::fileIconPixmap(const QFileInfo &fileInfo, const QSizeF &s
 #else
         iconSize|SHGFI_SYSICONINDEX;
 #endif // Q_OS_WINCE
-    unsigned long val = SHGetFileInfo((const wchar_t *)filePath.utf16(), 0,
-                                      &info, sizeof(SHFILEINFO), flags);
+    unsigned long val = 0;
+    if (cacheableDirIcon && useDefaultFolderIcon) {
+        flags |= SHGFI_USEFILEATTRIBUTES;
+        val = SHGetFileInfo(L"dummy",
+                            FILE_ATTRIBUTE_DIRECTORY,
+                            &info, sizeof(SHFILEINFO), flags);
+    } else {
+        val = SHGetFileInfo(reinterpret_cast<const wchar_t *>(filePath.utf16()), 0,
+                            &info, sizeof(SHFILEINFO), flags);
+    }
 
     // Even if GetFileInfo returns a valid result, hIcon can be empty in some cases
     if (val && info.hIcon) {
         QString key;
         if (cacheableDirIcon) {
+            if (useDefaultFolderIcon && !defaultFolderIIcon)
+                defaultFolderIIcon = info.iIcon;
+
             //using the unique icon index provided by windows save us from duplicate keys
             key = dirIconPixmapCacheKey(info.iIcon, iconSize);
             QPixmapCache::find(key, pixmap);

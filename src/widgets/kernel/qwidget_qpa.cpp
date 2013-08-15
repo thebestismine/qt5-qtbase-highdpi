@@ -137,6 +137,9 @@ void QWidgetPrivate::create_sys(WId window, bool initializeWindow, bool destroyO
     qt_window_private(win)->positionPolicy = topData()->posIncludesFrame ?
         QWindowPrivate::WindowFrameInclusive : QWindowPrivate::WindowFrameExclusive;
     win->create();
+    // Enable nonclient-area events for QDockWidget and other NonClientArea-mouse event processing.
+    if ((flags & Qt::Desktop) == Qt::Window)
+        win->handle()->setFrameStrutEventsEnabled(true);
 
     data.window_flags = win->flags();
 
@@ -172,7 +175,7 @@ void QWidget::destroy(bool destroyWindow, bool destroySubWindows)
         parentWidget()->d_func()->invalidateBuffer(d->effectiveRectFor(geometry()));
     d->deactivateWidgetCleanup();
 
-    if ((windowType() == Qt::Popup))
+    if ((windowType() == Qt::Popup) && qApp)
         qApp->d_func()->closePopup(this);
 
     if (this == QApplicationPrivate::active_window)
@@ -260,10 +263,8 @@ void QWidgetPrivate::setParent_sys(QWidget *newparent, Qt::WindowFlags f)
     bool explicitlyHidden = q->testAttribute(Qt::WA_WState_Hidden) && q->testAttribute(Qt::WA_WState_ExplicitShowHide);
 
     // Reparenting toplevel to child
-    if (!(f&Qt::Window) && (oldFlags&Qt::Window) && !q->testAttribute(Qt::WA_NativeWindow)) {
-        //qDebug() << "setParent_sys() change from toplevel";
+    if (wasCreated && !(f & Qt::Window) && (oldFlags & Qt::Window) && !q->testAttribute(Qt::WA_NativeWindow))
         q->destroy();
-    }
 
     adjustFlags(f, q);
     data.window_flags = f;
@@ -543,6 +544,13 @@ void QWidgetPrivate::show_sys()
 #endif
         invalidateBuffer(q->rect());
         window->setVisible(true);
+        // Was the window moved by the Window system or QPlatformWindow::initialGeometry() ?
+        if (window->isTopLevel()) {
+            const QPoint crectTopLeft = q->data->crect.topLeft();
+            const QPoint windowTopLeft = window->geometry().topLeft();
+            if (crectTopLeft == QPoint(0, 0) && windowTopLeft != crectTopLeft)
+                q->data->crect.moveTopLeft(windowTopLeft);
+        }
     }
 }
 
@@ -879,18 +887,24 @@ void QWidgetPrivate::deleteSysExtra()
 
 }
 
+#ifdef Q_OS_WIN
+static const char activeXNativeParentHandleProperty[] = "_q_embedded_native_parent_handle";
+#endif
+
 void QWidgetPrivate::createTLSysExtra()
 {
     Q_Q(QWidget);
-    extra->topextra->screenIndex = 0;
-    extra->topextra->window = 0;
-    if (q->testAttribute(Qt::WA_NativeWindow) || q->isWindow()) {
+    if (!extra->topextra->window && (q->testAttribute(Qt::WA_NativeWindow) || q->isWindow())) {
         extra->topextra->window = new QWidgetWindow(q);
         if (extra->minw || extra->minh)
             extra->topextra->window->setMinimumSize(QSize(extra->minw, extra->minh));
         if (extra->maxw != QWIDGETSIZE_MAX || extra->maxh != QWIDGETSIZE_MAX)
             extra->topextra->window->setMaximumSize(QSize(extra->maxw, extra->maxh));
 #ifdef Q_OS_WIN
+        // Pass on native parent handle for Widget embedded into Active X.
+        const QVariant activeXNativeParentHandle = q->property(activeXNativeParentHandleProperty);
+        if (activeXNativeParentHandle.isValid())
+            extra->topextra->window->setProperty(activeXNativeParentHandleProperty, activeXNativeParentHandle);
         if (q->inherits("QTipLabel") || q->inherits("QAlphaWidget"))
             extra->topextra->window->setProperty("_q_windowsDropShadow", QVariant(true));
 #endif

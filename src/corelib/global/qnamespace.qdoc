@@ -585,6 +585,10 @@
     \value LocalDate \e{This enum value is deprecated.} Use Qt::SystemLocaleShortDate
     instead (or Qt::SystemLocaleLongDate if you want long dates).
 
+    \value RFC2822Date \l{RFC 2822}, \l{RFC 850} and \l{RFC 1036} format: either
+    \c{[ddd,] dd MMM yyyy hh:mm[:ss] +/-TZ} or \c{ddd MMM dd yyyy hh:mm[:ss] +/-TZ}
+    for combined dates and times.
+
     \note For \c ISODate formats, each \c Y, \c M and \c D represents a single digit
     of the year, month and day used to specify the date. Each \c H, \c M and \c S
     represents a single digit of the hour, minute and second used to specify the time.
@@ -1621,6 +1625,13 @@
     \value Key_TouchpadToggle
     \value Key_TouchpadOn
     \value Key_TouchpadOff
+    \value Key_MicMute
+    \value Key_Red
+    \value Key_Green
+    \value Key_Yellow
+    \value Key_Blue
+    \value Key_ChannelUp
+    \value Key_ChannelDown
     \value Key_MediaLast
     \value Key_unknown
 
@@ -1998,6 +2009,12 @@
 
     \value MSWindowsOwnDC  Gives the window its own display
            context on Windows.
+
+    \value BypassWindowManagerHint This flag can be used to indicate to the platform plugin
+           that "all" window manager protocols should be disabled. This flag will behave
+           different depending on what operating system the application is running on and
+           what window manager is running. The flag can be used to get a native window
+           with no configuration set.
 
     \value X11BypassWindowManagerHint  Bypass the window
            manager completely. This results in a borderless window

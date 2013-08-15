@@ -102,6 +102,7 @@ private slots:
     void moreToFromUnicode();
 
     void shiftJis();
+    void userCodec();
 };
 
 void tst_QTextCodec::toUnicode_data()
@@ -1917,6 +1918,17 @@ void tst_QTextCodec::codecForHtml_data()
 
     html = "<!DOCTYPE html><html><head><meta charset=\" utf' 8 /><title>Test</title></head>";
     QTest::newRow("invalid charset, early terminator (')") << html << noDefault << fallback;
+
+    const char src[] = { char(0xff), char(0xfe), char(0x7a), char(0x03), 0, 0 };
+    html = src;
+    QTest::newRow("greek text UTF-16LE") << html << 106 << 1014;
+
+    html = "<meta http-equiv=\"content-type\" content=\"text/html; charset=utf-8\"><span style=\"color: rgb(0, 0, 0); font-family: "
+        "'Galatia SIL'; font-size: 27px; font-style: normal; font-variant: normal; font-weight: normal; letter-spacing: normal; "
+        "line-height: normal; orphans: auto; text-align: start; text-indent: 0px; text-transform: none; white-space: normal; widows: "
+        "auto; word-spacing: 0px; -webkit-text-size-adjust: auto; -webkit-text-stroke-width: 0px; display: inline !important; float: "
+        "none;\">&#x37b</span>\000";
+    QTest::newRow("greek text UTF-8") << html << 106 << 106;
 }
 
 void tst_QTextCodec::codecForHtml()
@@ -2299,6 +2311,53 @@ void tst_QTextCodec::shiftJis()
 
     QByteArray encoded = codec->fromUnicode(string);
     QCOMPARE(encoded, backslashTilde);
+}
+
+struct UserCodec : public QTextCodec
+{
+    // implement pure virtuals
+    QByteArray name() const Q_DECL_OVERRIDE
+    { return "UserCodec"; }
+    QList<QByteArray> aliases() const Q_DECL_OVERRIDE
+    { return QList<QByteArray>() << "usercodec" << "user-codec"; }
+    int mibEnum() const Q_DECL_OVERRIDE
+    { return 5000; }
+
+    virtual QString convertToUnicode(const char *, int, ConverterState *) const Q_DECL_OVERRIDE
+    { return QString(); }
+    virtual QByteArray convertFromUnicode(const QChar *, int, ConverterState *) const Q_DECL_OVERRIDE
+    { return QByteArray(); }
+};
+
+void tst_QTextCodec::userCodec()
+{
+    // check that it isn't there
+    static bool executedOnce = false;
+    if (executedOnce)
+        QSKIP("Test already executed once");
+
+    QVERIFY(!QTextCodec::availableCodecs().contains("UserCodec"));
+    QVERIFY(!QTextCodec::codecForName("UserCodec"));
+
+    QTextCodec *codec = new UserCodec;
+    executedOnce = true;
+
+    QList<QByteArray> availableCodecs = QTextCodec::availableCodecs();
+    QVERIFY(availableCodecs.contains("UserCodec"));
+    QVERIFY(availableCodecs.contains("usercodec"));
+    QVERIFY(availableCodecs.contains("user-codec"));
+
+    QTextCodec *pcodec = QTextCodec::codecForName("UserCodec");
+    QCOMPARE(pcodec, codec);
+
+    pcodec = QTextCodec::codecForName("user-codec");
+    QCOMPARE(pcodec, codec);
+
+    pcodec = QTextCodec::codecForName("User-Codec");
+    QCOMPARE(pcodec, codec);
+
+    pcodec = QTextCodec::codecForMib(5000);
+    QCOMPARE(pcodec, codec);
 }
 
 struct DontCrashAtExit {

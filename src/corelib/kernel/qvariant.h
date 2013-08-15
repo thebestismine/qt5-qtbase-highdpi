@@ -49,6 +49,7 @@
 #include <QtCore/qmap.h>
 #include <QtCore/qhash.h>
 #include <QtCore/qstring.h>
+#include <QtCore/qstringlist.h>
 #include <QtCore/qobject.h>
 
 QT_BEGIN_NAMESPACE
@@ -432,6 +433,14 @@ class Q_CORE_EXPORT QVariant
     { return cmp(v); }
     inline bool operator!=(const QVariant &v) const
     { return !cmp(v); }
+    inline bool operator<(const QVariant &v) const
+    { return compare(v) < 0; }
+    inline bool operator<=(const QVariant &v) const
+    { return compare(v) <= 0; }
+    inline bool operator>(const QVariant &v) const
+    { return compare(v) > 0; }
+    inline bool operator>=(const QVariant &v) const
+    { return compare(v) >= 0; }
 
 protected:
     friend inline bool operator==(const QVariant &, const QVariantComparisonHelper &);
@@ -449,6 +458,7 @@ public:
     Private d;
     void create(int type, const void *copy);
     bool cmp(const QVariant &other) const;
+    int compare(const QVariant &other) const;
     bool convert(const int t, void *ptr) const;
 
 private:
@@ -562,6 +572,173 @@ inline bool operator!=(const QVariant &v1, const QVariantComparisonHelper &v2)
 }
 #endif
 
+class QSequentialIterable
+{
+    QtMetaTypePrivate::QSequentialIterableImpl m_impl;
+public:
+    struct const_iterator
+    {
+    private:
+        QtMetaTypePrivate::QSequentialIterableImpl m_impl;
+        QAtomicInt *ref;
+        friend class QSequentialIterable;
+        inline explicit const_iterator(const QSequentialIterable &iter, QAtomicInt *ref_)
+          : m_impl(iter.m_impl), ref(ref_) { ref->ref(); }
+
+        inline explicit const_iterator(const QtMetaTypePrivate::QSequentialIterableImpl &impl, QAtomicInt *ref_)
+          : m_impl(impl), ref(ref_) { ref->ref(); }
+
+        inline void begin() { m_impl.moveToBegin(); }
+        inline void end() { m_impl.moveToEnd(); }
+    public:
+        inline ~const_iterator() {
+            if (!ref->deref()) {
+                m_impl.destroyIter();
+            }
+        }
+
+        inline const_iterator(const const_iterator &other) : m_impl(other.m_impl), ref(other.ref)  {
+            ref->ref();
+        }
+
+        inline const QVariant operator*() const {
+            const QtMetaTypePrivate::VariantData d = m_impl.getCurrent();
+            if (d.metaTypeId == qMetaTypeId<QVariant>())
+                return *reinterpret_cast<const QVariant*>(d.data);
+            return QVariant(d.metaTypeId, d.data, d.flags);
+        }
+        inline bool operator==(const const_iterator &o) const { return m_impl.equal(o.m_impl); }
+        inline bool operator!=(const const_iterator &o) const { return !m_impl.equal(o.m_impl); }
+        inline const_iterator &operator++() { m_impl.advance(1); return *this; }
+        inline const_iterator operator++(int) { QtMetaTypePrivate::QSequentialIterableImpl impl = m_impl; m_impl.advance(1); return const_iterator(impl, this->ref); }
+        inline const_iterator &operator--() { m_impl.advance(-1); return *this; }
+        inline const_iterator operator--(int) { QtMetaTypePrivate::QSequentialIterableImpl impl = m_impl; m_impl.advance(-1); return const_iterator(impl, this->ref); }
+        inline const_iterator &operator+=(int j) { m_impl.advance(j); return *this; }
+        inline const_iterator &operator-=(int j) { m_impl.advance(-j); return *this; }
+        inline const_iterator operator+(int j) const { QtMetaTypePrivate::QSequentialIterableImpl impl = m_impl; impl.advance(j); return const_iterator(impl, this->ref);  }
+        inline const_iterator operator-(int j) const { QtMetaTypePrivate::QSequentialIterableImpl impl = m_impl; impl.advance(-j); return const_iterator(impl, this->ref);  }
+    };
+
+    friend struct const_iterator;
+
+    explicit QSequentialIterable(QtMetaTypePrivate::QSequentialIterableImpl impl)
+      : m_impl(impl)
+    {
+    }
+
+    const_iterator begin() const { const_iterator it(*this, new QAtomicInt(0)); it.begin(); return it; }
+    const_iterator end() const { const_iterator it(*this, new QAtomicInt(0)); it.end(); return it; }
+
+    QVariant at(int idx) const {
+        const QtMetaTypePrivate::VariantData d = m_impl.at(idx);
+        if (d.metaTypeId == qMetaTypeId<QVariant>())
+            return *reinterpret_cast<const QVariant*>(d.data);
+        return QVariant(d.metaTypeId, d.data, d.flags);
+    }
+    int size() const { return m_impl.size(); }
+
+    bool canReverseIterate() const
+    { return m_impl._iteratorCapabilities & QtMetaTypePrivate::BiDirectionalCapability; }
+};
+
+class QAssociativeIterable
+{
+    QtMetaTypePrivate::QAssociativeIterableImpl m_impl;
+public:
+    struct const_iterator
+    {
+    private:
+        QtMetaTypePrivate::QAssociativeIterableImpl m_impl;
+        QAtomicInt *ref;
+        friend class QAssociativeIterable;
+        inline explicit const_iterator(const QAssociativeIterable &iter, QAtomicInt *ref_)
+          : m_impl(iter.m_impl), ref(ref_) { ref->ref(); }
+
+        inline explicit const_iterator(const QtMetaTypePrivate::QAssociativeIterableImpl &impl, QAtomicInt *ref_)
+          : m_impl(impl), ref(ref_) { ref->ref(); }
+
+        inline void begin() { m_impl.begin(); }
+        inline void end() { m_impl.end(); }
+    public:
+        inline ~const_iterator() {
+            if (!ref->deref()) {
+                m_impl.destroyIter();
+            }
+        }
+        inline const_iterator(const const_iterator &other) : m_impl(other.m_impl), ref(other.ref)  {
+            ref->ref();
+        }
+
+        inline const QVariant key() const {
+            const QtMetaTypePrivate::VariantData d = m_impl.getCurrentKey();
+            QVariant v(d.metaTypeId, d.data, d.flags);
+            if (d.metaTypeId == qMetaTypeId<QVariant>())
+                return *reinterpret_cast<const QVariant*>(d.data);
+            return v;
+        }
+
+        inline const QVariant value() const {
+            const QtMetaTypePrivate::VariantData d = m_impl.getCurrentValue();
+            QVariant v(d.metaTypeId, d.data, d.flags);
+            if (d.metaTypeId == qMetaTypeId<QVariant>())
+                return *reinterpret_cast<const QVariant*>(d.data);
+            return v;
+        }
+
+        inline const QVariant operator*() const {
+            const QtMetaTypePrivate::VariantData d = m_impl.getCurrentValue();
+            QVariant v(d.metaTypeId, d.data, d.flags);
+            if (d.metaTypeId == qMetaTypeId<QVariant>())
+                return *reinterpret_cast<const QVariant*>(d.data);
+            return v;
+        }
+        inline bool operator==(const const_iterator &o) const { return m_impl.equal(o.m_impl); }
+        inline bool operator!=(const const_iterator &o) const { return !m_impl.equal(o.m_impl); }
+        inline const_iterator &operator++() { m_impl.advance(1); return *this; }
+        inline const_iterator operator++(int) { QtMetaTypePrivate::QAssociativeIterableImpl impl = m_impl; m_impl.advance(1); return const_iterator(impl, this->ref); }
+        inline const_iterator &operator--() { m_impl.advance(-1); return *this; }
+        inline const_iterator operator--(int) { QtMetaTypePrivate::QAssociativeIterableImpl impl = m_impl; m_impl.advance(-1); return const_iterator(impl, this->ref); }
+        inline const_iterator &operator+=(int j) { m_impl.advance(j); return *this; }
+        inline const_iterator &operator-=(int j) { m_impl.advance(-j); return *this; }
+        inline const_iterator operator+(int j) const { QtMetaTypePrivate::QAssociativeIterableImpl impl = m_impl; impl.advance(j); return const_iterator(impl, this->ref);  }
+        inline const_iterator operator-(int j) const { QtMetaTypePrivate::QAssociativeIterableImpl impl = m_impl; impl.advance(-j); return const_iterator(impl, this->ref);  }
+    };
+
+    friend struct const_iterator;
+
+    explicit QAssociativeIterable(QtMetaTypePrivate::QAssociativeIterableImpl impl)
+      : m_impl(impl)
+    {
+    }
+
+    const_iterator begin() const { const_iterator it(*this, new QAtomicInt(0)); it.begin(); return it; }
+    const_iterator end() const { const_iterator it(*this, new QAtomicInt(0)); it.end(); return it; }
+
+    QVariant value(const QVariant &key) const
+    {
+        QVariant key_ = key;
+        if (!key_.canConvert(m_impl._metaType_id_key))
+            return QVariant();
+        if (!key_.convert(m_impl._metaType_id_key))
+            return QVariant();
+        const QtMetaTypePrivate::VariantData dkey(key_.userType(), key_.constData(), 0 /*key.flags()*/);
+        QtMetaTypePrivate::QAssociativeIterableImpl impl = m_impl;
+        impl.find(dkey);
+        QtMetaTypePrivate::QAssociativeIterableImpl endIt = m_impl;
+        endIt.end();
+        if (impl.equal(endIt))
+            return QVariant();
+        const QtMetaTypePrivate::VariantData d = impl.getCurrentValue();
+        QVariant v(d.metaTypeId, d.data, d.flags);
+        if (d.metaTypeId == qMetaTypeId<QVariant>())
+            return *reinterpret_cast<const QVariant*>(d.data);
+        return v;
+    }
+
+    int size() const { return m_impl.size(); }
+};
+
+#ifndef QT_MOC
 namespace QtPrivate {
     template<typename T>
     struct QVariantValueHelper : TreatAsQObjectBeforeMetaType<QVariantValueHelper<T>, T, const QVariant &, T>
@@ -571,11 +748,9 @@ namespace QtPrivate {
             const int vid = qMetaTypeId<T>();
             if (vid == v.userType())
                 return *reinterpret_cast<const T *>(v.constData());
-            if (vid < int(QMetaType::User)) {
-                T t;
-                if (v.convert(vid, &t))
-                    return t;
-            }
+            T t;
+            if (v.convert(vid, &t))
+                return t;
             return T();
         }
 #ifndef QT_NO_QOBJECT
@@ -585,12 +760,118 @@ namespace QtPrivate {
         }
 #endif
     };
+
+    template<typename T>
+    struct QVariantValueHelperInterface : QVariantValueHelper<T>
+    {
+    };
+
+    template<>
+    struct QVariantValueHelperInterface<QSequentialIterable>
+    {
+        static QSequentialIterable invoke(const QVariant &v)
+        {
+            if (v.userType() == qMetaTypeId<QVariantList>()) {
+                return QSequentialIterable(QtMetaTypePrivate::QSequentialIterableImpl(reinterpret_cast<const QVariantList*>(v.constData())));
+            }
+            if (v.userType() == qMetaTypeId<QStringList>()) {
+                return QSequentialIterable(QtMetaTypePrivate::QSequentialIterableImpl(reinterpret_cast<const QStringList*>(v.constData())));
+            }
+            return QSequentialIterable(v.value<QtMetaTypePrivate::QSequentialIterableImpl>());
+        }
+    };
+    template<>
+    struct QVariantValueHelperInterface<QAssociativeIterable>
+    {
+        static QAssociativeIterable invoke(const QVariant &v)
+        {
+            if (v.userType() == qMetaTypeId<QVariantMap>()) {
+                return QAssociativeIterable(QtMetaTypePrivate::QAssociativeIterableImpl(reinterpret_cast<const QVariantMap*>(v.constData())));
+            }
+            if (v.userType() == qMetaTypeId<QVariantHash>()) {
+                return QAssociativeIterable(QtMetaTypePrivate::QAssociativeIterableImpl(reinterpret_cast<const QVariantHash*>(v.constData())));
+            }
+            return QAssociativeIterable(v.value<QtMetaTypePrivate::QAssociativeIterableImpl>());
+        }
+    };
+    template<>
+    struct QVariantValueHelperInterface<QVariantList>
+    {
+        static QVariantList invoke(const QVariant &v)
+        {
+            if (v.userType() == qMetaTypeId<QStringList>() || QMetaType::hasRegisteredConverterFunction(v.userType(), qMetaTypeId<QtMetaTypePrivate::QSequentialIterableImpl>())) {
+                QSequentialIterable iter = QVariantValueHelperInterface<QSequentialIterable>::invoke(v);
+                QVariantList l;
+                l.reserve(iter.size());
+                for (QSequentialIterable::const_iterator it = iter.begin(), end = iter.end(); it != end; ++it)
+                    l << *it;
+                return l;
+            }
+            return QVariantValueHelper<QVariantList>::invoke(v);
+        }
+    };
+    template<>
+    struct QVariantValueHelperInterface<QVariantHash>
+    {
+        static QVariantHash invoke(const QVariant &v)
+        {
+            if (QMetaType::hasRegisteredConverterFunction(v.userType(), qMetaTypeId<QtMetaTypePrivate::QAssociativeIterableImpl>())) {
+                QAssociativeIterable iter = QVariantValueHelperInterface<QAssociativeIterable>::invoke(v);
+                QVariantHash l;
+                l.reserve(iter.size());
+                for (QAssociativeIterable::const_iterator it = iter.begin(), end = iter.end(); it != end; ++it)
+                    l.insert(it.key().toString(), it.value());
+                return l;
+            }
+            return QVariantValueHelper<QVariantHash>::invoke(v);
+        }
+    };
+    template<>
+    struct QVariantValueHelperInterface<QVariantMap>
+    {
+        static QVariantMap invoke(const QVariant &v)
+        {
+            if (QMetaType::hasRegisteredConverterFunction(v.userType(), qMetaTypeId<QtMetaTypePrivate::QAssociativeIterableImpl>())) {
+                QAssociativeIterable iter = QVariantValueHelperInterface<QAssociativeIterable>::invoke(v);
+                QVariantMap l;
+                for (QAssociativeIterable::const_iterator it = iter.begin(), end = iter.end(); it != end; ++it)
+                    l.insert(it.key().toString(), it.value());
+                return l;
+            }
+            return QVariantValueHelper<QVariantMap>::invoke(v);
+        }
+    };
+    template<>
+    struct QVariantValueHelperInterface<QPair<QVariant, QVariant> >
+    {
+        static QPair<QVariant, QVariant> invoke(const QVariant &v)
+        {
+            if (v.userType() == qMetaTypeId<QPair<QVariant, QVariant> >())
+                return QVariantValueHelper<QPair<QVariant, QVariant> >::invoke(v);
+
+            if (QMetaType::hasRegisteredConverterFunction(v.userType(), qMetaTypeId<QtMetaTypePrivate::QPairVariantInterfaceImpl>())) {
+                QtMetaTypePrivate::QPairVariantInterfaceImpl pi = v.value<QtMetaTypePrivate::QPairVariantInterfaceImpl>();
+
+                const QtMetaTypePrivate::VariantData d1 = pi.first();
+                QVariant v1(d1.metaTypeId, d1.data, d1.flags);
+                if (d1.metaTypeId == qMetaTypeId<QVariant>())
+                    v1 = *reinterpret_cast<const QVariant*>(d1.data);
+
+                const QtMetaTypePrivate::VariantData d2 = pi.second();
+                QVariant v2(d2.metaTypeId, d2.data, d2.flags);
+                if (d2.metaTypeId == qMetaTypeId<QVariant>())
+                    v2 = *reinterpret_cast<const QVariant*>(d2.data);
+
+                return QPair<QVariant, QVariant>(v1, v2);
+            }
+            return QVariantValueHelper<QPair<QVariant, QVariant> >::invoke(v);
+        }
+    };
 }
 
-#ifndef QT_MOC
 template<typename T> inline T qvariant_cast(const QVariant &v)
 {
-    return QtPrivate::QVariantValueHelper<T>::invoke(v);
+    return QtPrivate::QVariantValueHelperInterface<T>::invoke(v);
 }
 
 template<> inline QVariant qvariant_cast<QVariant>(const QVariant &v)

@@ -838,8 +838,6 @@ error:
     return i18n_name;
 }
 
-Q_GUI_EXPORT void qt_registerAliasToFontFamily(const QString &familyName, const QString &alias);
-
 static bool addFontToDatabase(const QString &familyName, uchar charSet,
                               const TEXTMETRIC *textmetric,
                               const FONTSIGNATURE *signature,
@@ -932,7 +930,7 @@ static bool addFontToDatabase(const QString &familyName, uchar charSet,
                                             QFont::StyleItalic, stretch, antialias, scalable, size, fixed, writingSystems, 0);
 
     if (!englishName.isEmpty())
-        qt_registerAliasToFontFamily(familyName, englishName);
+        QPlatformFontDatabase::registerAliasToFontFamily(familyName, englishName);
 
     return true;
 }
@@ -1586,11 +1584,14 @@ static QStringList extraTryFontsForFamily(const QString& family)
                 break;
             }
         }
-        QStringList fm = QFontDatabase().families();
+        QFontDatabase db;
+        const QStringList families = db.families();
         const char **tf = tryFonts;
         while (tf && *tf) {
-            if (fm.contains(QLatin1String(*tf)))
-                result << QLatin1String(*tf);
+            // QTBUG-31689, family might be an English alias for a localized font name.
+            const QString family = QString::fromLatin1(*tf);
+            if (families.contains(family) || db.hasFamily(family))
+                result << family;
             ++tf;
         }
     }

@@ -63,7 +63,8 @@ enum DotNET {
     NET2005 = 0x80,
     NET2008 = 0x90,
     NET2010 = 0xa0,
-    NET2012 = 0xb0
+    NET2012 = 0xb0,
+    NET2013 = 0xc0
 };
 
 /*
@@ -106,10 +107,10 @@ enum asmListingOption {
     asmListingAsmSrc
 };
 enum basicRuntimeCheckOption {
-    runtimeBasicCheckNone,
-    runtimeCheckStackFrame,
-    runtimeCheckUninitVariables,
-    runtimeBasicCheckAll
+    runtimeBasicCheckNone = 0,
+    runtimeCheckStackFrame = 1,
+    runtimeCheckUninitVariables = 2,
+    runtimeBasicCheckAll = runtimeCheckStackFrame | runtimeCheckUninitVariables
 };
 enum browseInfoOption {
     brInfoNone,
@@ -561,6 +562,7 @@ public:
     QStringList             UndefinePreprocessorDefinitions;
     pchOption               UsePrecompiledHeader;
     triState                UseUnicodeForAssemblerListing;
+    QStringList             TreatSpecificWarningsAsErrors;
     triState                WarnAsError;
     warningLevelOption      WarningLevel;
     triState                WholeProgramOptimization;
@@ -579,6 +581,9 @@ public:
     QString                 PreprocessOutputPath;
 
     VCConfiguration*        config;
+
+private:
+    bool parseRuntimeCheckOption(char c, int *rtc);
 };
 
 class VCLinkerTool : public VCToolBase
@@ -669,6 +674,16 @@ public:
     QString                 LinkErrorReporting;
 
     VCConfiguration*        config;
+};
+
+class VCManifestTool : public VCToolBase
+{
+public:
+    VCManifestTool();
+    ~VCManifestTool();
+    bool parseOption(const char* option);
+
+    triState                EmbedManifest;
 };
 
 class VCMIDLTool : public VCToolBase
@@ -870,6 +885,7 @@ public:
     VCCLCompilerTool        compiler;
     VCLinkerTool            linker;
     VCLibrarianTool         librarian;
+    VCManifestTool          manifestTool;
     VCCustomBuildTool       custom;
     VCMIDLTool              idl;
     VCPostBuildEventTool    postBuild;
@@ -1123,6 +1139,7 @@ public:
 
     virtual void write(XmlOutput &, const VCCLCompilerTool &);
     virtual void write(XmlOutput &, const VCLinkerTool &);
+    virtual void write(XmlOutput &, const VCManifestTool &);
     virtual void write(XmlOutput &, const VCMIDLTool &);
     virtual void write(XmlOutput &, const VCCustomBuildTool &);
     virtual void write(XmlOutput &, const VCLibrarianTool &);

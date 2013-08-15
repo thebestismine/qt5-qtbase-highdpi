@@ -82,11 +82,13 @@ public:
         { return static_cast<QPlatformColorDialogHelper *>(platformHelper()); }
 
     void init(const QColor &initial);
+    void initWidgets();
     QRgb currentColor() const;
     QColor currentQColor() const;
     void setCurrentColor(QRgb rgb);
     void setCurrentQColor(const QColor &color);
     bool selectColor(const QColor &color);
+    QColor grabScreenColor(const QPoint &p);
 
     int currentAlpha() const;
     void setCurrentAlpha(int a);
@@ -98,8 +100,11 @@ public:
 
     void _q_newHsv(int h, int s, int v);
     void _q_newColorTypedIn(QRgb rgb);
+    void _q_nextCustom(int, int);
     void _q_newCustom(int, int);
     void _q_newStandard(int, int);
+    void _q_pickScreenColor();
+    void releaseColorPicking();
 
     QWellArray *custom;
     QWellArray *standard;
@@ -111,12 +116,16 @@ public:
     QColorShower *cs;
     QLabel *lblBasicColors;
     QLabel *lblCustomColors;
+    QLabel *lblScreenColorInfo;
     QPushButton *ok;
     QPushButton *cancel;
     QPushButton *addCusBt;
+    QPushButton *screenColorPickerButton;
     QColor selectedQColor;
     int nextCust;
     bool smallDisplay;
+    bool screenColorPicking;
+    QRgb beforeScreenColorPicking;
     QSharedPointer<QColorDialogOptions> options;
 
     QPointer<QObject> receiverToDisconnectOnClose;

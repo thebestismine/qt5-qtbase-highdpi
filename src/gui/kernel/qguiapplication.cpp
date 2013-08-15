@@ -94,9 +94,14 @@
 #include <QtGui/QClipboard>
 #endif
 
-#ifdef Q_OS_MAC
+#if defined(Q_OS_MAC)
 #  include "private/qcore_mac_p.h"
-#endif
+#elif defined(Q_OS_WIN) && !defined(Q_OS_WINCE)
+#  include <QtCore/qt_windows.h>
+#  include <QtCore/QLibraryInfo>
+#endif // Q_OS_WIN && !Q_OS_WINCE
+
+#include <ctype.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -206,6 +211,111 @@ static inline void clearFontUnlocked()
     delete QGuiApplicationPrivate::app_font;
     QGuiApplicationPrivate::app_font = 0;
 }
+
+static inline bool isPopupWindow(const QWindow *w)
+{
+    return (w->flags() & Qt::WindowType_Mask) == Qt::Popup;
+}
+
+// Geometry specification for top level windows following the convention of the
+// -geometry command line arguments in X11 (see XParseGeometry).
+struct QWindowGeometrySpecification
+{
+    QWindowGeometrySpecification() : corner(Qt::TopLeftCorner), xOffset(-1), yOffset(-1), width(-1), height(-1) {}
+    static QWindowGeometrySpecification fromArgument(const QByteArray &a);
+    QRect apply(const QRect &windowGeometry, const QSize &windowMinimumSize, const QSize &windowMaximumSize, const QRect &availableGeometry) const;
+    inline QRect apply(const QRect &windowGeometry, const QWindow *window) const
+    { return apply(windowGeometry, window->minimumSize(), window->maximumSize(), window->screen()->virtualGeometry()); }
+
+    Qt::Corner corner;
+    int xOffset;
+    int yOffset;
+    int width;
+    int height;
+};
+
+// Parse a token of a X11 geometry specification "200x100+10-20".
+static inline int nextGeometryToken(const QByteArray &a, int &pos, char *op)
+{
+    *op = 0;
+    const int size = a.size();
+    if (pos >= size)
+        return -1;
+
+    *op = a.at(pos);
+    if (*op == '+' || *op == '-' || *op == 'x')
+        pos++;
+    else if (isdigit(*op))
+        *op = 'x'; // If it starts with a digit, it is supposed to be a width specification.
+    else
+        return -1;
+
+    const int numberPos = pos;
+    for ( ; pos < size && isdigit(a.at(pos)); ++pos) ;
+
+    bool ok;
+    const int result = a.mid(numberPos, pos - numberPos).toInt(&ok);
+    return ok ? result : -1;
+}
+
+QWindowGeometrySpecification QWindowGeometrySpecification::fromArgument(const QByteArray &a)
+{
+    QWindowGeometrySpecification result;
+    int pos = 0;
+    for (int i = 0; i < 4; ++i) {
+        char op;
+        const int value = nextGeometryToken(a, pos, &op);
+        if (value < 0)
+            break;
+        switch (op) {
+        case 'x':
+            (result.width >= 0 ? result.height : result.width) = value;
+            break;
+        case '+':
+        case '-':
+            if (result.xOffset >= 0) {
+                result.yOffset = value;
+                if (op == '-')
+                    result.corner = result.corner == Qt::TopRightCorner ? Qt::BottomRightCorner : Qt::BottomLeftCorner;
+            } else {
+                result.xOffset = value;
+                if (op == '-')
+                    result.corner = Qt::TopRightCorner;
+            }
+        }
+    }
+    return result;
+}
+
+QRect QWindowGeometrySpecification::apply(const QRect &windowGeometry, const QSize &windowMinimumSize, const QSize &windowMaximumSize, const QRect &availableGeometry) const
+{
+    QRect result = windowGeometry;
+    if (width >= 0 || height >= 0) {
+        QSize size = windowGeometry.size();
+        if (width >= 0)
+            size.setWidth(qBound(windowMinimumSize.width(), width, windowMaximumSize.width()));
+        if (height >= 0)
+            size.setHeight(qBound(windowMinimumSize.height(), height, windowMaximumSize.height()));
+        result.setSize(size);
+    }
+    if (xOffset >= 0 || yOffset >= 0) {
+        QPoint topLeft = windowGeometry.topLeft();
+        if (xOffset >= 0) {
+            topLeft.setX(corner == Qt::TopLeftCorner || corner == Qt::BottomLeftCorner ?
+                         xOffset :
+                         qMax(availableGeometry.right() - result.width() - xOffset, availableGeometry.left()));
+        }
+        if (yOffset >= 0) {
+            topLeft.setY(corner == Qt::TopLeftCorner || corner == Qt::TopRightCorner ?
+                         yOffset :
+                         qMax(availableGeometry.bottom() - result.height() - yOffset, availableGeometry.top()));
+        }
+        result.moveTopLeft(topLeft);
+    }
+    return result;
+}
+
+static QWindowGeometrySpecification windowGeometrySpecification;
 
 /*!
     \class QGuiApplication
@@ -474,18 +584,25 @@ QWindow *QGuiApplication::modalWindow()
     return QGuiApplicationPrivate::self->modalWindowList.first();
 }
 
+static void updateBlockedStatusRecursion(QWindow *window, bool shouldBeBlocked)
+{
+    QWindowPrivate *p = qt_window_private(window);
+    if (p->blockedByModalWindow != shouldBeBlocked) {
+        p->blockedByModalWindow = shouldBeBlocked;
+        QEvent e(shouldBeBlocked ? QEvent::WindowBlocked : QEvent::WindowUnblocked);
+        QGuiApplication::sendEvent(window, &e);
+        foreach (QObject *c, window->children())
+            if (c->isWindowType())
+                updateBlockedStatusRecursion(static_cast<QWindow *>(c), shouldBeBlocked);
+    }
+}
+
 void QGuiApplicationPrivate::updateBlockedStatus(QWindow *window)
 {
     bool shouldBeBlocked = false;
-    if ((window->type() & Qt::Popup) != Qt::Popup && !self->modalWindowList.isEmpty())
+    if (!isPopupWindow(window) && !self->modalWindowList.isEmpty())
         shouldBeBlocked = self->isWindowBlocked(window);
-
-    if (shouldBeBlocked != window->d_func()->blockedByModalWindow) {
-        QEvent e(shouldBeBlocked ? QEvent::WindowBlocked : QEvent::WindowUnblocked);
-
-        window->d_func()->blockedByModalWindow = shouldBeBlocked;
-        QGuiApplication::sendEvent(window, &e);
-    }
+    updateBlockedStatusRecursion(window, shouldBeBlocked);
 }
 
 void QGuiApplicationPrivate::showModalWindow(QWindow *modal)
@@ -493,7 +610,7 @@ void QGuiApplicationPrivate::showModalWindow(QWindow *modal)
     self->modalWindowList.prepend(modal);
 
     // Send leave for currently entered window if it should be blocked
-    if (currentMouseWindow && (currentMouseWindow->type() & Qt::Popup) != Qt::Popup) {
+    if (currentMouseWindow && !isPopupWindow(currentMouseWindow)) {
         bool shouldBeBlocked = self->isWindowBlocked(currentMouseWindow);
         if (shouldBeBlocked) {
             // Remove the new window from modalWindowList temporarily so leave can go through
@@ -770,24 +887,33 @@ QString QGuiApplication::platformName()
            *QGuiApplicationPrivate::platform_name : QString();
 }
 
-static void init_platform(const QString &pluginArgument, const QString &platformPluginPath)
+static void init_platform(const QString &pluginArgument, const QString &platformPluginPath, int &argc, char **argv)
 {
     // Split into platform name and arguments
     QStringList arguments = pluginArgument.split(QLatin1Char(':'));
     const QString name = arguments.takeFirst().toLower();
 
    // Create the platform integration.
-    QGuiApplicationPrivate::platform_integration = QPlatformIntegrationFactory::create(name, arguments, platformPluginPath);
+    QGuiApplicationPrivate::platform_integration = QPlatformIntegrationFactory::create(name, arguments, argc, argv, platformPluginPath);
     if (QGuiApplicationPrivate::platform_integration) {
         QGuiApplicationPrivate::platform_name = new QString(name);
     } else {
         QStringList keys = QPlatformIntegrationFactory::keys(platformPluginPath);
-        QString fatalMessage =
-            QString::fromLatin1("Failed to load platform plugin \"%1\". Available platforms are: \n").arg(name);
-        foreach(const QString &key, keys) {
-            fatalMessage.append(key + QLatin1Char('\n'));
+
+        QString fatalMessage
+                = QStringLiteral("This application failed to start because it could not find or load the Qt platform plugin \"%1\".\n\n").arg(name);
+        if (!keys.isEmpty()) {
+            fatalMessage += QStringLiteral("Available platform plugins are: %1.\n\n").arg(
+                        keys.join(QStringLiteral(", ")));
         }
-        qFatal("%s", fatalMessage.toLocal8Bit().constData());
+        fatalMessage += QStringLiteral("Reinstalling the application may fix this problem.");
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE)
+        // Windows: Display message box unless it is a console application
+        // or debug build showing an assert box.
+        if (!QLibraryInfo::isDebugBuild() && !GetConsoleWindow())
+            MessageBox(0, (LPCTSTR)fatalMessage.utf16(), (LPCTSTR)(QCoreApplication::applicationName().utf16()), MB_OK | MB_ICONERROR);
+#endif // Q_OS_WIN && !Q_OS_WINCE
+        qFatal("%s", qPrintable(fatalMessage));
         return;
     }
 
@@ -886,6 +1012,9 @@ void QGuiApplicationPrivate::createPlatformIntegration()
         } else if (arg == "-platform") {
             if (++i < argc)
                 platformName = argv[i];
+        } else if (arg == "-qwindowgeometry" || (platformName == "xcb" && arg == "-geometry")) {
+            if (++i < argc)
+                windowGeometrySpecification = QWindowGeometrySpecification::fromArgument(argv[i]);
         } else {
             argv[j++] = argv[i];
         }
@@ -896,7 +1025,7 @@ void QGuiApplicationPrivate::createPlatformIntegration()
         argc = j;
     }
 
-    init_platform(QLatin1String(platformName), platformPluginPath);
+    init_platform(QLatin1String(platformName), platformPluginPath, argc, argv);
 
 }
 
@@ -1285,6 +1414,9 @@ void QGuiApplicationPrivate::processWindowSystemEvent(QWindowSystemInterfacePriv
     case QWindowSystemInterfacePrivate::WindowStateChanged:
         QGuiApplicationPrivate::processWindowStateChangedEvent(static_cast<QWindowSystemInterfacePrivate::WindowStateChangedEvent *>(e));
         break;
+    case QWindowSystemInterfacePrivate::WindowScreenChanged:
+        QGuiApplicationPrivate::processWindowScreenChangedEvent(static_cast<QWindowSystemInterfacePrivate::WindowScreenChangedEvent *>(e));
+        break;
     case QWindowSystemInterfacePrivate::ApplicationStateChanged:
             QGuiApplicationPrivate::processApplicationStateChangedEvent(static_cast<QWindowSystemInterfacePrivate::ApplicationStateChangedEvent *>(e));
         break;
@@ -1348,6 +1480,8 @@ void QGuiApplicationPrivate::processWindowSystemEvent(QWindowSystemInterfacePriv
                     static_cast<QWindowSystemInterfacePrivate::ContextMenuEvent *>(e));
         break;
 #endif
+    case QWindowSystemInterfacePrivate::EnterWhatsThisMode:
+        QGuiApplication::postEvent(QGuiApplication::instance(), new QEvent(QEvent::EnterWhatsThisMode));
     default:
         qWarning() << "Unknown user input event type:" << e->type;
         break;
@@ -1504,7 +1638,7 @@ void QGuiApplicationPrivate::processWheelEvent(QWindowSystemInterfacePrivate::Wh
         return;
     }
 
-     QWheelEvent ev(localPoint, globalPoint, e->pixelDelta, e->angleDelta, e->qt4Delta, e->qt4Orientation, buttons, e->modifiers);
+     QWheelEvent ev(localPoint, globalPoint, e->pixelDelta, e->angleDelta, e->qt4Delta, e->qt4Orientation, buttons, e->modifiers, e->phase);
      ev.setTimestamp(e->timestamp);
      QGuiApplication::sendSpontaneousEvent(window, &ev);
 #endif /* ifndef QT_NO_WHEELEVENT */
@@ -1640,6 +1774,10 @@ void QGuiApplicationPrivate::processActivatedEvent(QWindowSystemInterfacePrivate
     }
 
     emit qApp->focusWindowChanged(newFocus);
+    if (previous)
+        emit previous->activeChanged();
+    if (newFocus)
+        emit newFocus->activeChanged();
 }
 
 void QGuiApplicationPrivate::processWindowStateChangedEvent(QWindowSystemInterfacePrivate::WindowStateChangedEvent *wse)
@@ -1648,6 +1786,16 @@ void QGuiApplicationPrivate::processWindowStateChangedEvent(QWindowSystemInterfa
         QWindowStateChangeEvent e(window->windowState());
         window->d_func()->windowState = wse->newState;
         QGuiApplication::sendSpontaneousEvent(window, &e);
+    }
+}
+
+void QGuiApplicationPrivate::processWindowScreenChangedEvent(QWindowSystemInterfacePrivate::WindowScreenChangedEvent *wse)
+{
+    if (QWindow *window  = wse->window.data()) {
+        if (QScreen *screen = wse->screen.data())
+            window->d_func()->setScreen(screen, false /* recreate */);
+        else // Fall back to default behavior, and try to find some appropriate screen
+            window->setScreen(0);
     }
 }
 
@@ -1736,6 +1884,9 @@ void QGuiApplicationPrivate::processCloseEvent(QWindowSystemInterfacePrivate::Cl
 
     QCloseEvent event;
     QGuiApplication::sendSpontaneousEvent(e->window.data(), &event);
+    if (e->accepted) {
+        *(e->accepted) = !event.isAccepted();
+    }
 }
 
 void QGuiApplicationPrivate::processFileOpenEvent(QWindowSystemInterfacePrivate::FileOpenEvent *e)
@@ -2231,8 +2382,8 @@ void QGuiApplicationPrivate::processExposeEvent(QWindowSystemInterfacePrivate::E
     if (!p->receivedExpose) {
         if (p->resizeEventPending) {
             // as a convenience for plugins, send a resize event before the first expose event if they haven't done so
-            QSize size = p->geometry.size();
-            QResizeEvent e(size, size);
+            // window->geometry() should have a valid size as soon as a handle exists.
+            QResizeEvent e(window->geometry().size(), p->geometry.size());
             QGuiApplication::sendSpontaneousEvent(window, &e);
 
             p->resizeEventPending = false;
@@ -2354,6 +2505,11 @@ void QGuiApplication::setPalette(const QPalette &pal)
     applicationResourceFlags |= ApplicationPaletteExplicitlySet;
 }
 
+QRect QGuiApplicationPrivate::applyWindowGeometrySpecification(const QRect &windowGeometry, const QWindow *window)
+{
+    return windowGeometrySpecification.apply(windowGeometry, window);
+}
+
 /*!
     Returns the default application font.
 
@@ -2457,10 +2613,18 @@ void QGuiApplicationPrivate::emitLastWindowClosed()
 
 bool QGuiApplicationPrivate::shouldQuit()
 {
+    const QWindowList processedWindows;
+    return shouldQuitInternal(processedWindows);
+}
+
+bool QGuiApplicationPrivate::shouldQuitInternal(const QWindowList &processedWindows)
+{
     /* if there is no visible top-level window left, we allow the quit */
     QWindowList list = QGuiApplication::topLevelWindows();
     for (int i = 0; i < list.size(); ++i) {
         QWindow *w = list.at(i);
+        if (processedWindows.contains(w))
+            continue;
         if (w->isVisible() && !w->transientParent())
             return false;
     }

@@ -60,6 +60,7 @@ QT_BEGIN_NAMESPACE
 
 class QDesktopWidget;
 class QAndroidPlatformServices;
+class QAndroidSystemLocale;
 
 #ifdef ANDROID_PLUGIN_OPENGL
 class QAndroidOpenGLPlatformWindow;
@@ -112,6 +113,8 @@ public:
     QPlatformNativeInterface *nativeInterface() const;
     QPlatformServices *services() const;
 
+    QVariant styleHint(StyleHint hint) const;
+
     QStringList themeNames() const;
     QPlatformTheme *createPlatformTheme(const QString &name) const;
 
@@ -152,6 +155,7 @@ private:
     QAndroidPlatformNativeInterface *m_androidPlatformNativeInterface;
     QAndroidPlatformServices *m_androidPlatformServices;
     QPlatformClipboard *m_androidPlatformClipboard;
+    QAndroidSystemLocale *m_androidSystemLocale;
 
     mutable QAndroidInputContext m_platformInputContext;
 };

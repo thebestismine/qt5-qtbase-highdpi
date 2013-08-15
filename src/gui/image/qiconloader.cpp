@@ -104,6 +104,10 @@ static inline QStringList systemIconSearchPaths()
     return QStringList();
 }
 
+#ifndef QT_NO_LIBRARY
+extern QFactoryLoader *qt_iconEngineFactoryLoader(); // qicon.cpp
+#endif
+
 void QIconLoader::ensureInitialized()
 {
     if (!m_initialized) {
@@ -116,10 +120,7 @@ void QIconLoader::ensureInitialized()
         if (m_systemTheme.isEmpty())
             m_systemTheme = fallbackTheme();
 #ifndef QT_NO_LIBRARY
-        QFactoryLoader iconFactoryLoader(QIconEngineFactoryInterface_iid,
-                                         QLatin1String("/iconengines"),
-                                         Qt::CaseInsensitive);
-        if (iconFactoryLoader.keyMap().key(QLatin1String("svg"), -1) != -1)
+        if (qt_iconEngineFactoryLoader()->keyMap().key(QLatin1String("svg"), -1) != -1)
             m_supportsSvg = true;
 #endif //QT_NO_LIBRARY
     }
@@ -127,6 +128,7 @@ void QIconLoader::ensureInitialized()
 
 QIconLoader *QIconLoader::instance()
 {
+   iconLoaderInstance()->ensureInitialized();
    return iconLoaderInstance();
 }
 
@@ -367,17 +369,14 @@ bool QIconLoaderEngine::hasIcon() const
 // Lazily load the icon
 void QIconLoaderEngine::ensureLoaded()
 {
-
-    iconLoaderInstance()->ensureInitialized();
-
-    if (!(iconLoaderInstance()->themeKey() == m_key)) {
+    if (!(QIconLoader::instance()->themeKey() == m_key)) {
 
         while (!m_entries.isEmpty())
             delete m_entries.takeLast();
 
         Q_ASSERT(m_entries.size() == 0);
-        m_entries = iconLoaderInstance()->loadIcon(m_iconName);
-        m_key = iconLoaderInstance()->themeKey();
+        m_entries = QIconLoader::instance()->loadIcon(m_iconName);
+        m_key = QIconLoader::instance()->themeKey();
     }
 }
 
@@ -564,7 +563,7 @@ void QIconLoaderEngine::virtual_hook(int id, void *data)
         {
             QIconEngine::AvailableSizesArgument &arg
                     = *reinterpret_cast<QIconEngine::AvailableSizesArgument*>(data);
-            const QList<QIconDirInfo> directoryKey = iconLoaderInstance()->theme().keyList();
+            const QList<QIconDirInfo> directoryKey = QIconLoader::instance()->theme().keyList();
             arg.sizes.clear();
 
             // Gets all sizes from the DirectoryInfo entries

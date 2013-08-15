@@ -44,6 +44,7 @@
 #include <qfontdatabase.h>
 #include <qfontinfo.h>
 #include <qfontmetrics.h>
+#include <qpa/qplatformfontdatabase.h>
 
 class tst_QFontDatabase : public QObject
 {
@@ -54,6 +55,7 @@ public:
     virtual ~tst_QFontDatabase();
 
 public slots:
+    void initTestCase();
     void init();
     void cleanup();
 private slots:
@@ -73,18 +75,26 @@ private slots:
 
     void addAppFont_data();
     void addAppFont();
+
+    void aliases();
+
+private:
+    const QString m_testFont;
 };
 
 tst_QFontDatabase::tst_QFontDatabase()
+    : m_testFont(QFINDTESTDATA("FreeMono.ttf"))
 {
-#ifndef Q_OS_IRIX
-    QDir::setCurrent(SRCDIR);
-#endif
 }
 
 tst_QFontDatabase::~tst_QFontDatabase()
 {
 
+}
+
+void tst_QFontDatabase::initTestCase()
+{
+    QVERIFY(!m_testFont.isEmpty());
 }
 
 void tst_QFontDatabase::init()
@@ -228,13 +238,13 @@ void tst_QFontDatabase::addAppFont()
 
     int id;
     if (useMemoryFont) {
-        QFile fontfile("FreeMono.ttf");
+        QFile fontfile(m_testFont);
         fontfile.open(QIODevice::ReadOnly);
         QByteArray fontdata = fontfile.readAll();
         QVERIFY(!fontdata.isEmpty());
         id = QFontDatabase::addApplicationFontFromData(fontdata);
     } else {
-        id = QFontDatabase::addApplicationFont("FreeMono.ttf");
+        id = QFontDatabase::addApplicationFont(m_testFont);
     }
 #if defined(Q_OS_HPUX) && defined(QT_NO_FONTCONFIG)
     // Documentation says that X11 systems that don't have fontconfig
@@ -243,11 +253,8 @@ void tst_QFontDatabase::addAppFont()
     return;
 #endif
     QCOMPARE(fontDbChangedSpy.count(), 1);
-// addApplicationFont is supported on Mac, don't skip the test if it breaks.
-#ifndef Q_OS_MAC
     if (id == -1)
         QSKIP("Skip the test since app fonts are not supported on this system");
-#endif
 
     const QStringList addedFamilies = QFontDatabase::applicationFontFamilies(id);
     QVERIFY(!addedFamilies.isEmpty());
@@ -262,10 +269,20 @@ void tst_QFontDatabase::addAppFont()
     QVERIFY(QFontDatabase::removeApplicationFont(id));
     QCOMPARE(fontDbChangedSpy.count(), 2);
 
-#ifdef Q_OS_MAC
-    QEXPECT_FAIL("font file", "QTBUG-23062", Continue);
-#endif
     QCOMPARE(db.families(), oldFamilies);
+}
+
+void tst_QFontDatabase::aliases()
+{
+    QFontDatabase db;
+    const QStringList families = db.families();
+    QVERIFY(!families.isEmpty());
+    const QString firstFont = families.front();
+    QVERIFY(db.hasFamily(firstFont));
+    const QString alias = QStringLiteral("AliasToFirstFont") + firstFont;
+    QVERIFY(!db.hasFamily(alias));
+    QPlatformFontDatabase::registerAliasToFontFamily(firstFont, alias);
+    QVERIFY(db.hasFamily(alias));
 }
 
 QTEST_MAIN(tst_QFontDatabase)

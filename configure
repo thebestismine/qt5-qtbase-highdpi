@@ -61,6 +61,13 @@ if [ -f "$LICENSE_FILE" ]; then
     diff "${LICENSE_FILE}.tmp" "${LICENSE_FILE}" >/dev/null 2>&1 || LICENSE_FILE="${LICENSE_FILE}.tmp"
 fi
 
+# do this early so we don't store it in config.status
+CFG_TOPLEVEL=
+if [ x"$1" = x"-top-level" ]; then
+    CFG_TOPLEVEL=yes
+    shift
+fi
+
 # later cache the command line in config.status
 OPT_CMDLINE=`echo $@ | sed "s,-v ,,g; s,-v$,,g"`
 
@@ -446,6 +453,8 @@ if [ "$OSTYPE" = "msys" ]; then
     BUILD_ON_MSYS=yes
     DEV_NULL=/tmp/empty-file
     echo "" > $DEV_NULL
+    relpath=`(cd "$relpath"; pwd -W)`
+    outpath=`pwd -W`
 fi
 
 #-------------------------------------------------------------------------------
@@ -874,10 +883,12 @@ CFG_SSE=auto
 CFG_FONTCONFIG=auto
 CFG_LIBFREETYPE=auto
 CFG_SQL_AVAILABLE=
+QT_ALL_BUILD_PARTS=" libs tools examples tests "
 QT_DEFAULT_BUILD_PARTS="libs tools examples"
 CFG_BUILD_PARTS=""
 CFG_NOBUILD_PARTS=""
 CFG_SKIP_MODULES=""
+CFG_COMPILE_EXAMPLES=yes
 CFG_RELEASE_QMAKE=no
 CFG_AUDIO_BACKEND=auto
 CFG_V8SNAPSHOT=auto
@@ -901,7 +912,7 @@ CFG_USE_GNUMAKE=no
 CFG_XINPUT2=auto
 CFG_XINPUT=runtime
 CFG_XKB=auto
-CFG_XKBCOMMON=no
+CFG_XKBCOMMON=auto
 CFG_XCB=auto
 CFG_XCB_GLX=no
 CFG_EGLFS=auto
@@ -1001,6 +1012,7 @@ CFG_SYSROOT=
 CFG_GCC_SYSROOT="yes"
 QT_HOST_PREFIX=
 QT_HOST_BINS=
+QT_HOST_LIBS=
 QT_HOST_DATA=
 
 #flags for SQL drivers
@@ -1109,7 +1121,45 @@ while [ "$#" -gt 0 ]; do
         VAL=no
         ;;
     #Qt style options that pass an argument
-    -prefix|-docdir|-headerdir|-plugindir|-importdir|-qmldir|-archdatadir|-datadir|-libdir|-bindir|-libexecdir|-translationdir|-sysconfdir|-examplesdir|-testsdir|-depths|-make|-nomake|-skip|-platform|-xplatform|-device|-device-option|-sdk|-arch|-host-arch|-mysql_config|-sysroot|-hostdatadir|-hostbindir|-qpa|-qconfig|-android-sdk|-android-ndk|-android-ndk-platform|-android-ndk-host|-android-arch|-android-toolchain-version)
+    -prefix| \
+    -docdir| \
+    -headerdir| \
+    -plugindir| \
+    -importdir| \
+    -qmldir| \
+    -archdatadir| \
+    -datadir| \
+    -libdir| \
+    -bindir| \
+    -libexecdir| \
+    -translationdir| \
+    -sysconfdir| \
+    -examplesdir| \
+    -testsdir| \
+    -hostdatadir| \
+    -hostbindir| \
+    -hostlibdir| \
+    -sysroot| \
+    -depths| \
+    -make| \
+    -nomake| \
+    -skip| \
+    -platform| \
+    -xplatform| \
+    -device| \
+    -device-option| \
+    -sdk| \
+    -arch| \
+    -host-arch| \
+    -mysql_config| \
+    -qpa| \
+    -qconfig| \
+    -android-sdk| \
+    -android-ndk| \
+    -android-ndk-platform| \
+    -android-ndk-host| \
+    -android-arch| \
+    -android-toolchain-version)
         VAR=`echo $1 | sed "s,^-\(.*\),\1,"`
         shift
         VAL="$1"
@@ -1294,6 +1344,9 @@ while [ "$#" -gt 0 ]; do
     hostbindir)
         QT_HOST_BINS="$VAL"
         ;;
+    hostlibdir)
+        QT_HOST_LIBS="$VAL"
+        ;;
     pkg-config)
         if [ "$VAL" = "yes" ] || [ "$VAL" = "no" ]; then
             CFG_PKGCONFIG="$VAL"
@@ -1385,10 +1438,22 @@ while [ "$#" -gt 0 ]; do
         fi
         ;;
     nomake)
+        if [ -n "${QT_ALL_BUILD_PARTS%%* $VAL *}" ]; then
+            echo "Unknown part $VAL passed to -nomake." >&2
+            exit 1
+        fi
 	CFG_NOBUILD_PARTS="$CFG_NOBUILD_PARTS $VAL"
         ;;
     make)
-	CFG_BUILD_PARTS="$CFG_BUILD_PARTS $VAL"
+        if [ "$VAL" = "no" ]; then
+            UNKNOWN_OPT=yes
+        else
+            if [ -n "${QT_ALL_BUILD_PARTS%%* $VAL *}" ]; then
+                echo "Unknown part $VAL passed to -make." >&2
+                exit 1
+            fi
+            CFG_BUILD_PARTS="$CFG_BUILD_PARTS $VAL"
+        fi
         ;;
     skip)
         VAL=qt${VAL#qt}
@@ -1397,6 +1462,13 @@ while [ "$#" -gt 0 ]; do
             exit 1
         fi
         CFG_SKIP_MODULES="$CFG_SKIP_MODULES $VAL"
+        ;;
+    compile-examples)
+        if [ "$VAL" = "yes" ] || [ "$VAL" = "no" ]; then
+            CFG_COMPILE_EXAMPLES="$VAL"
+        else
+            UNKNOWN_OPT=yes
+        fi
         ;;
     sdk)
         if [ "$BUILD_ON_MAC" = "yes" ]; then
@@ -1409,7 +1481,7 @@ while [ "$#" -gt 0 ]; do
         OPT_OBSOLETE_HOST_ARG=yes
         ;;
     harfbuzz)
-        if [ "$BUILD_ON_MAC" = "yes" ] && [ "$VAL" = "yes" ]; then
+        if ([ "$BUILD_ON_MAC" = "yes" ] && [ "$VAL" = "yes" ]) || [ "$VAL" = "no" ]; then
             CFG_MAC_HARFBUZZ="$VAL"
         else
             UNKNOWN_OPT=yes
@@ -1444,6 +1516,11 @@ while [ "$#" -gt 0 ]; do
     testcocoon)
         if [ "$VAL" = "yes" ]; then
             QTCONFIG_CONFIG="$QTCONFIG_CONFIG testcocoon"
+        fi
+        ;;
+    gcov)
+        if [ "$VAL" = "yes" ]; then
+            QTCONFIG_CONFIG="$QTCONFIG_CONFIG gcov"
         fi
         ;;
     platform)
@@ -1835,6 +1912,13 @@ while [ "$#" -gt 0 ]; do
     xkb)
         if [ "$VAL" = "yes" ] || [ "$VAL" = "no" ]; then
             CFG_XKB="$VAL"
+        else
+            UNKNOWN_OPT=yes
+        fi
+        ;;
+    xkbcommon)
+        if [ "$VAL" = "yes" ] || [ "$VAL" = "no" ] || [ "$VAL" = "qt" ] || [ "$VAL" = "system" ]; then
+            CFG_XKBCOMMON="$VAL"
         else
             UNKNOWN_OPT=yes
         fi
@@ -2323,12 +2407,6 @@ for e in gawk nawk awk; do
     fi
 done
 
-# find perl
-PERL="/usr/bin/perl"
-if "$WHICH" perl >/dev/null 2>&1 && ( perl /dev/null ) >/dev/null 2>&1; then
-    PERL=`$WHICH perl`
-fi
-
 ### skip this if the user just needs help...
 if [ "$OPT_HELP" != "yes" ]; then
 
@@ -2360,6 +2438,11 @@ if [ "$PLATFORM_MAC" = "no" -a "$CFG_DEBUG_RELEASE" = "yes" ]; then
     echo
 fi
 
+if [ "$CFG_XCB" != "no" ] && [ "$CFG_XKBCOMMON" = "no" ]; then
+    echo "Error: -no-xkbcommon is not supported on XCB platform plugin."
+    exit 101
+fi
+
 if [ "$CFG_SILENT" = "yes" ]; then
     QMAKE_CONFIG="$QMAKE_CONFIG silent"
 fi
@@ -2369,76 +2452,9 @@ fi
 if [ "$OPT_SHADOW" = "yes" ]; then
     echo "Preparing build tree..."
 
-    if [ -z "$PERL" ]; then
-        echo
-        echo "You need perl in your PATH to make a shadow build."
-        echo "Cannot proceed."
-        exit 1
-    fi
-
     [ -d "$outpath/bin" ] || mkdir -p "$outpath/bin"
 
-    # make a syncqt script that can be used in the shadow
-    rm -f "$outpath/bin/syncqt"
-    if [ -x "$relpath/bin/syncqt" ]; then
-        mkdir -p "$outpath/bin"
-        echo "#!/bin/sh" >"$outpath/bin/syncqt"
-        echo "perl \"$relpath/bin/syncqt\" \"\$@\"" >>"$outpath/bin/syncqt"
-        chmod 755 "$outpath/bin/syncqt"
-    fi
-
-    for i in elf2e32_qtwrapper createpackage patch_capabilities qtmodule-configtests; do
-        rm -f "$outpath/bin/$i"
-        if [ -x "$relpath/bin/$i" ]; then
-            mkdir -p "$outpath/bin"
-            echo "#!/bin/sh" >"$outpath/bin/$i"
-            echo "QTDIR=\"$relpath\"; export QTDIR" >>"$outpath/bin/$i"
-            echo "\"$relpath/bin/$i\" \"\$@\"" >>"$outpath/bin/$i"
-            chmod 755 "$outpath/bin/$i"
-        fi
-    done
-
-    # save a pre-existing mkspecs/modules dir
-    test -d "$outpath/mkspecs/modules" && \
-        mv "$outpath/mkspecs/modules" "$outpath/mkspecs-modules"
-    # ditto for mkspecs/modules-inst
-    test -d "$outpath/mkspecs/modules-inst" && \
-        mv "$outpath/mkspecs/modules-inst" "$outpath/mkspecs-modules-inst"
-
-    # symlink the mkspecs directory
     mkdir -p "$outpath/mkspecs"
-    rm -rf "$outpath"/mkspecs/*
-    ln -s "$relpath"/mkspecs/* "$outpath/mkspecs"
-
-    ShadowMkspecs()
-    {
-        rm -rf "$outpath/mkspecs/$1"
-        find "$relpath/mkspecs/$1" -type d | sed "s,^$relpath,$outpath," | xargs mkdir -p
-        find "$relpath/mkspecs/$1" -type f | sed "s,^$relpath/,," | while read f; do ln -s "$relpath/$f" "$outpath/$f"; done
-    }
-
-    # Special case for mkspecs/features directory.
-    # To be able to place .prf files into a shadow build directory,
-    # we're creating links for files only. The directory structure is reproduced.
-    ShadowMkspecs features
-
-    # The modules dir is special, too.
-    if test -d "$outpath/mkspecs-modules"; then
-        rm -rf "$outpath/mkspecs/modules"
-        mv "$outpath/mkspecs-modules" "$outpath/mkspecs/modules"
-    else
-        ShadowMkspecs modules
-    fi
-
-    # The modules-inst dir is not quite as special, but still.
-    if test -d "$outpath/mkspecs-modules-inst"; then
-        rm -rf "$outpath/mkspecs/modules-inst"
-        mv "$outpath/mkspecs-modules-inst" "$outpath/mkspecs/modules-inst"
-    fi
-
-    # Prepare doc directory
-    mkdir -p "$outpath/doc"
-    ln -f -s "$relpath"/doc/global "$outpath/doc"
 fi
 
 # symlink fonts to be able to run application from build directory
@@ -2485,7 +2501,10 @@ if [ -z "$PLATFORM" ]; then
         # about the OS version, since we're not using the clang version that comes
         # with the system. We use 'xcrun' to check the clang version that's part of
         # the Xcode installation.
-        if [ "$(/usr/bin/xcrun -sdk macosx clang -v 2>&1 | sed -n 's/.*version \([0-9]\).*/\1/p')" -ge 3 ]; then
+        XCRUN=`/usr/bin/xcrun -sdk macosx clang -v 2>&1`
+        CLANGVERSION=`echo "$XCRUN" | sed -n 's/.*version \([0-9]\).*/\1/p'`
+        expr "$CLANGVERSION" : '[0-9]' > /dev/null || { echo "Unable to determine CLANG version from output of xcrun: $XCRUN" ; exit 2 ; }
+        if [ "$CLANGVERSION" -ge 3 ]; then
             PLATFORM=macx-clang
 
             # Advertise g++ as an alternative on Lion and below
@@ -2663,15 +2682,12 @@ esac
 if [ "$XPLATFORM_ANDROID" = "yes" ]; then
     if [ -z "$CFG_DEFAULT_ANDROID_NDK_HOST" ]; then
         case $PLATFORM in
-        linux-*-64)
-            if [ -d "$CFG_DEFAULT_ANDROID_NDK_ROOT/toolchains/arm-linux-androideabi-$CFG_DEFAULT_ANDROID_NDK_TOOLCHAIN_VERSION/prebuilt/linux-x86_64" ]; then
-                CFG_DEFAULT_ANDROID_NDK_HOST=linux-x86_64
-            else
-                CFG_DEFAULT_ANDROID_NDK_HOST=linux-x86
-            fi
-            ;;
         linux-*)
-            CFG_DEFAULT_ANDROID_NDK_HOST=linux-x86
+            if [ -d "$CFG_DEFAULT_ANDROID_NDK_ROOT/toolchains/arm-linux-androideabi-$CFG_DEFAULT_ANDROID_NDK_TOOLCHAIN_VERSION/prebuilt/linux-x86" ]; then
+                CFG_DEFAULT_ANDROID_NDK_HOST=linux-x86
+            elif [ -d "$CFG_DEFAULT_ANDROID_NDK_ROOT/toolchains/arm-linux-androideabi-$CFG_DEFAULT_ANDROID_NDK_TOOLCHAIN_VERSION/prebuilt/linux-x86_64" ]; then
+                CFG_DEFAULT_ANDROID_NDK_HOST=linux-x86_64
+            fi
             ;;
         macx-*)
             CFG_DEFAULT_ANDROID_NDK_HOST=darwin-x86
@@ -2713,10 +2729,6 @@ if [ "$XPLATFORM_ANDROID" = "yes" ]; then
         QT_QPA_DEFAULT_PLATFORM="android"
         CFG_LARGEFILE="no"
 
-        # FIXME: Qt Creator requires this to be in the lib/ directory of Qt. This line can be removed
-        # once it's fixed to get the file directly from the NDK.
-        cp -f $CFG_DEFAULT_ANDROID_NDK_ROOT/sources/cxx-stl/gnu-libstdc++/$CFG_DEFAULT_ANDROID_NDK_TOOLCHAIN_VERSION/libs/$CFG_DEFAULT_ANDROID_TARGET_ARCH/libgnustl_shared.so $outpath/lib
-
         DeviceVar set DEFAULT_ANDROID_SDK_ROOT "$CFG_DEFAULT_ANDROID_SDK_ROOT"
         DeviceVar set DEFAULT_ANDROID_NDK_ROOT "$CFG_DEFAULT_ANDROID_NDK_ROOT"
         DeviceVar set DEFAULT_ANDROID_PLATFORM "$CFG_DEFAULT_ANDROID_PLATFORM"
@@ -2746,9 +2758,9 @@ if [ "$BUILD_ON_MAC" = "yes" ]; then
    if [ `basename $QMAKESPEC` = "macx-xcode" ] || [ `basename $XQMAKESPEC` = "macx-xcode" ]; then
       echo >&2
       echo "   Platform 'macx-xcode' should not be used when building Qt/Mac." >&2
-      echo "   Please build Qt/Mac with 'macx-g++', then if you would like to" >&2
-      echo "   use mac-xcode on your application code it can link to a Qt/Mac" >&2
-      echo "   built with 'macx-g++'" >&2
+      echo "   Please build Qt/Mac with 'macx-clang' or 'macx-g++', then use" >&2
+      echo "   the 'macx-xcode' spec for your application, and it will link to" >&2
+      echo "   the Qt/Mac build using the settings of the original mkspec." >&2
       echo >&2
       exit 2
     fi
@@ -2839,7 +2851,7 @@ if [ "$XPLATFORM_IOS" = "yes" ]; then
     CFG_NOBUILD_PARTS="$CFG_NOBUILD_PARTS examples tests"
     CFG_SHARED="no" # iOS builds should be static to be able to submit to the App Store
     CFG_CXX11="no" # C++11 support disabled for now
-    CFG_SKIP_MODULES="$CFG_SKIP_MODULES qtdeclarative qtquickcontrols qtwebkit qtgraphicaleffects qtdoc qtmultimedia qtwebkit-examples-and-demos qttools"
+    CFG_SKIP_MODULES="$CFG_SKIP_MODULES qtquickcontrols qtwebkit qtgraphicaleffects qtdoc qtmultimedia qtwebkit-examples-and-demos qttools"
 fi
 
 # disable GTK style support auto-detection on Mac
@@ -2984,21 +2996,44 @@ else
 fi
 
 # auto-detect default include and library search paths
-gccout=`LC_ALL=C $TEST_COMPILER $SYSROOT_FLAG $TEST_COMPILER_CXXFLAGS -xc++ -E -v - < /dev/null 2>&1 > /dev/null`
-# extract from one line like 'LIBRARY_PATH=/one/path:/another/path:...'
-libdirs=`echo "$gccout" | sed -n -e 's/^LIBRARY_PATH=\(.*\)/\1/p'`
-DEFAULT_LIBDIRS=`IFS=${HOST_DIRLIST_SEP}; for i in $libdirs; do test -d "$i" && cd "$i" && pwd; done`
-# extract from indented lines between '#include <...> search starts here:' and 'End of search list.'
-DEFAULT_INCDIRS=`echo "$gccout" | awk '
-/^End of search/ { yup=0 }
+unset tty
+[ "$OPT_VERBOSE" = "yes" ] && tty=/dev/stderr
+
+eval `LC_ALL=C $TEST_COMPILER $SYSROOT_FLAG $TEST_COMPILER_CXXFLAGS -xc++ -E -v - < /dev/null 2>&1 > /dev/null | $AWK '
+BEGIN { ORS = ""; FS = "="; incs = 0; libs = 0; }
+function quote(s)
+{
+    # We only handle spaces
+    if (match(s, " ") != 0)
+        return "\\\\\"" s "\\\\\"";
+    return s;
+}
+
+# extract include paths from indented lines between
+#   #include <...> search starts here:
+# and
+#   End of search list.
+/^\#include </ { yup=1; print "DEFAULT_INCDIRS=\""; next }
+/^End of search/ { yup=0; print "\"\n" }
 / \(framework directory\)$/ { next }
-yup { print substr($0, 2) }
-/^\#include </ { yup=1 }
-'`
-test -z "$DEFAULT_LIBDIRS" && DEFAULT_LIBDIRS="/lib
-/usr/lib"
-test -z "$DEFAULT_INCDIRS" && DEFAULT_INCDIRS="/usr/include
-/usr/local/include"
+yup { print quote(substr($0, 2)) " "; ++incs }
+
+# extract from one line like LIBRARY_PATH=/one/path:/another/path:...
+$1 == "LIBRARY_PATH" {
+    libs = split($2, library_paths, ":");
+    print "DEFAULT_LIBDIRS=\"";
+    for (lib in library_paths)
+        print quote(library_paths[lib]) " ";
+    print "\"\n"
+}
+
+END {
+    if (incs == 0)
+        print "DEFAULT_INCDIRS=\"/usr/include /usr/local/include\"\n";
+    if (libs == 0)
+        print "DEFAULT_LIBDIRS=\"/lib /usr/lib\"\n";
+}' | tee $tty`
+unset tty
 
 #setup the build parts
 if [ -z "$CFG_BUILD_PARTS" ]; then
@@ -3138,6 +3173,15 @@ if [ -z "$QT_HOST_BINS" ]; then #default
 fi
 QT_HOST_BINS=`"$relpath/config.tests/unix/makeabs" "$QT_HOST_BINS"`
 
+if [ -z "$QT_HOST_LIBS" ]; then #default
+    if $haveHpx; then
+        QT_HOST_LIBS="$QT_HOST_PREFIX/lib" #fallback
+    else
+        QT_HOST_LIBS="$QT_INSTALL_LIBS"
+    fi
+fi
+QT_HOST_LIBS=`"$relpath/config.tests/unix/makeabs" "$QT_HOST_LIBS"`
+
 if [ -z "$QT_HOST_DATA" ]; then #default
     if $haveHpx; then
         QT_HOST_DATA="$QT_HOST_PREFIX"
@@ -3146,6 +3190,10 @@ if [ -z "$QT_HOST_DATA" ]; then #default
     fi
 else
     QT_HOST_DATA=`"$relpath/config.tests/unix/makeabs" "$QT_HOST_DATA"`
+fi
+
+if [ "$CFG_COMPILE_EXAMPLES" = "yes" ]; then
+    QMAKE_CONFIG="$QMAKE_CONFIG compile_examples"
 fi
 
 #-------------------------------------------------------------------------------
@@ -3311,6 +3359,8 @@ Installation options:
 
     -hostbindir <dir> .. Host executables will be installed to <dir>
                          (default HOSTPREFIX/bin)
+    -hostlibdir <dir> .. Host libraries will be installed to <dir>
+                         (default HOSTPREFIX/lib)
     -hostdatadir <dir> . Data used by qmake will be installed to <dir>
                          (default HOSTPREFIX)
 
@@ -3393,6 +3443,7 @@ Configure options:
     -qtlibinfix <infix>  Renames all libQt*.so to libQt*<infix>.so.
 
     -testcocoon ........ Instrument Qt with the TestCocoon code coverage tool.
+    -gcov .............. Instrument Qt with the GCov code coverage tool.
 
     -D <string> ........ Add an explicit define to the preprocessor.
     -I <string> ........ Add an explicit include path.
@@ -3436,6 +3487,9 @@ Third Party Libraries:
                          (libxcb.so will still be used from operating system).
  +  -system-xcb ........ Use xcb- libraries from the operating system.
 
+    -qt-xkbcommon ...... Use the xkbcommon library bundled with Qt.
+ +  -system-xkbcommon .. Use the xkbcommon library from the operating system.
+
 Additional options:
 
     -make <part> ....... Add part to the list of parts to be built at make time.
@@ -3443,6 +3497,8 @@ Additional options:
     -nomake <part> ..... Exclude part from the list of parts to be built.
 
     -skip <module> ..... Exclude an entire module from the build.
+
+    -no-compile-examples ... Install only the sources of examples.
 
     -no-gui ............ Don't build the Qt GUI module and dependencies.
  +  -gui ............... Build the Qt GUI module and dependencies.
@@ -3822,6 +3878,7 @@ static const char qt_configure_prefix_path_strs[][256 + 12] = {
     "qt_ssrtpath=$CFG_SYSROOT",
     "qt_hpfxpath=$QT_HOST_PREFIX",
     "qt_hbinpath=$QT_HOST_BINS",
+    "qt_hlibpath=$QT_HOST_LIBS",
     "qt_hdatpath=$QT_HOST_DATA",
     "qt_targspec=$shortxspec",
     "qt_hostspec=$shortspec",
@@ -3870,8 +3927,15 @@ fi
 # -----------------------------------------------------------------------------
 
 # symlink includes
-if [ -n "$PERL" ] && [ -x "$relpath/bin/syncqt" ]; then
-    "$outpath/bin/syncqt" -minimal -module QtCore "$relpath" || exit 1
+if [ -e "$relpath/.git" ]; then
+    if [ -z "$PERL" ]; then
+        echo
+        echo "You need perl in your PATH to make a build from GIT."
+        echo "Cannot proceed."
+        exit 1
+    fi
+
+    "$relpath/bin/syncqt.pl" -minimal -module QtCore "$relpath" || exit 1
 fi
 
 # $1: input variable name (awk regexp)
@@ -3992,10 +4056,6 @@ if true; then ###[ '!' -f "$outpath/bin/qmake" ];
         if [ '!' -z "$D_FLAGS" ]; then
             EXTRA_CFLAGS="$EXTRA_CFLAGS $D_FLAGS"
         fi
-        QMAKE_BIN_DIR="$QT_INSTALL_BINS"
-        [ -z "$QMAKE_BIN_DIR" ] && QMAKE_BIN_DIR="${QT_INSTALL_PREFIX}/bin"
-        QMAKE_DATA_DIR="$QT_INSTALL_ARCHDATA"
-        [ -z "$QMAKE_DATA_DIR" ] && QMAKE_DATA_DIR="${QT_INSTALL_PREFIX}"
         echo >>"$mkfile"
 	adjrelpath=`echo "$relpath" | sed 's/ /\\\\\\\\ /g'`
 	adjoutpath=`echo "$outpath" | sed 's/ /\\\\\\\\ /g'`
@@ -4003,15 +4063,18 @@ if true; then ###[ '!' -f "$outpath/bin/qmake" ];
 
         echo "BUILD_PATH = $adjoutpath" >> "$mkfile"
         echo "SOURCE_PATH = $adjrelpath" >> "$mkfile"
+        if [ -e "$relpath/.git" ]; then
+            echo 'INC_PATH = $(BUILD_PATH)/include' >> "$mkfile"
+        else
+            echo 'INC_PATH = $(SOURCE_PATH)/include' >> "$mkfile"
+        fi
         echo "QMAKESPEC = $adjqmakespec" >> "$mkfile"
         echo "QT_VERSION = $QT_VERSION" >> "$mkfile"
         echo "EXTRA_CFLAGS = $EXTRA_CFLAGS" >> "$mkfile"
         echo "EXTRA_CXXFLAGS = $EXTRA_CXXFLAGS" >> "$mkfile"
-        echo "QTOBJS = $EXTRA_OBJS" >> "$mkfile"
-        echo "QTSRCS = $EXTRA_SRCS" >> "$mkfile"
+        echo "QTOBJS =" $EXTRA_OBJS >> "$mkfile"
+        echo "QTSRCS =" $EXTRA_SRCS >> "$mkfile"
         echo "LFLAGS = $EXTRA_LFLAGS" >> "$mkfile"
-        echo "QT_INSTALL_BINS = \$(INSTALL_ROOT)$QMAKE_BIN_DIR" >> "$mkfile"
-        echo "QT_INSTALL_DATA = \$(INSTALL_ROOT)$QMAKE_DATA_DIR" >> "$mkfile"
         echo "EXEEXT = $EXEEXT" >> "$mkfile"
         echo "RM_F = rm -f" >> "$mkfile"
         echo "RM_RF = rm -rf" >> "$mkfile"
@@ -4042,6 +4105,12 @@ cat > "$QTCONFFILE" <<EOF
 [EffectivePaths]
 Prefix=..
 EOF
+if [ x"$relpath" != x"$outpath" ]; then
+    cat >> "$QTCONFFILE" <<EOF
+[EffectiveSourcePaths]
+Prefix=$relpath
+EOF
+fi
 
 #-------------------------------------------------------------------------------
 # write out device config before we run the test.
@@ -4316,8 +4385,7 @@ fi
 
 # detect neon support
 if [ "$CFG_ARCH" = "arm" ] && [ "${CFG_NEON}" = "auto" ]; then
-    # The iOS toolchain has trouble building the pixman NEON draw-helpers
-    if [ "$XPLATFORM_IOS" != "yes" ] && compileTest unix/neon "neon"; then
+    if compileTest unix/neon "neon"; then
 	CFG_NEON=yes
     else
 	CFG_NEON=no
@@ -5155,6 +5223,16 @@ if [ "$CFG_XCB" != "no" ]; then
                 XCB_PACKAGES="xcb xcb-shm xcb-sync xcb-xfixes xcb-randr xcb-image xcb-keysyms xcb-icccm"
                 QMAKE_CFLAGS_XCB="`$PKG_CONFIG --cflags $XCB_PACKAGES 2>/dev/null`"
                 QMAKE_LIBS_XCB="`$PKG_CONFIG --libs $XCB_PACKAGES 2>/dev/null`"
+                # for xcb-xkb tests
+                QMAKE_CFLAGS_XKB="`$PKG_CONFIG --cflags xcb xcb-xkb 2>/dev/null`"
+                QMAKE_LIBS_XKB="`$PKG_CONFIG --libs xcb xcb-xkb 2>/dev/null`"
+            fi
+
+            if compileTest qpa/xcb-xkb "xcb-xkb" $QMAKE_CFLAGS_XKB $QMAKE_LIBS_XKB; then
+                CFG_XKB=yes
+            else
+                CFG_XKB=no
+                QMakeVar add DEFINES QT_NO_XKB
             fi
 
             if compileTest qpa/xcb-syslibs "xcb-syslibs" $QMAKE_CFLAGS_XCB $QMAKE_LIBS_XCB; then
@@ -5168,7 +5246,7 @@ if [ "$CFG_XCB" != "no" ]; then
                 fi
             else
                 echo "The test for linking against libxcb and support libraries failed!"
-                echo " You might need install dependency packages, or pass -qt-xcb."
+                echo " You might need to install dependency packages, or pass -qt-xcb."
                 echo " See src/plugins/platforms/xcb/README."
                 exit 1
             fi
@@ -5258,22 +5336,49 @@ if [ "$CFG_KMS" != "no" ]; then
 fi
 
 # Detect libxkbcommon
-if [ -n "$PKG_CONFIG" ] && $PKG_CONFIG --exists "xkbcommon >= 0.2.0" 2>/dev/null; then
-    QMAKE_CFLAGS_XKBCOMMON="`$PKG_CONFIG --cflags xkbcommon 2>/dev/null`"
-    QMAKE_LIBS_XKBCOMMON="`$PKG_CONFIG --libs xkbcommon 2>/dev/null`"
-    QT_CONFIG="$QT_CONFIG xkbcommon"
-    CFG_XKBCOMMON=yes
-elif [ "$CFG_XCB" != "no" ]; then
+ORIG_CFG_XKBCOMMON="$CFG_XKBCOMMON"
+if [ "$CFG_XKBCOMMON" != "qt" ]; then
+    # currently only xcb platform plugin requires xkbcommon, for other platforms it can be set to 'no'
+    if [ "$CFG_XKBCOMMON" != "no" ]; then
+        if [ -n "$PKG_CONFIG" ] && $PKG_CONFIG --exists "xkbcommon >= 0.2.0" 2>/dev/null; then
+            QMAKE_CFLAGS_XKBCOMMON="`$PKG_CONFIG --cflags xkbcommon 2>/dev/null`"
+            QMAKE_LIBS_XKBCOMMON="`$PKG_CONFIG --libs xkbcommon 2>/dev/null`"
+            QMAKE_VERSION_XKBCOMMON="`$PKG_CONFIG --modversion xkbcommon 2>/dev/null`"
+
+            QMakeVar set QMAKE_CFLAGS_XKBCOMMON "$QMAKE_CFLAGS_XKBCOMMON"
+            QMakeVar set QMAKE_LIBS_XKBCOMMON "$QMAKE_LIBS_XKBCOMMON"
+            QMakeVar set QMAKE_VERSION_XKBCOMMON "$QMAKE_VERSION_XKBCOMMON"
+            CFG_XKBCOMMON=yes
+        else
+            CFG_XKBCOMMON=no
+        fi
+
+        if [ "$CFG_XCB" != "no" ] && [ "$CFG_XKBCOMMON" = "no" ]; then
+            # use the bundled version instead
+            CFG_XKBCOMMON=qt
+        fi
+    fi
+fi
+
+if [ "$CFG_XKBCOMMON" = "qt" ]; then
+    QT_CONFIG="$QT_CONFIG xkbcommon-qt"
+elif [ "$CFG_XKBCOMMON" = "no" ]; then
     QMakeVar add DEFINES QT_NO_XKBCOMMON
 fi
 
-if [ "$CFG_XKBCOMMON" != "no" ]; then
-    QMakeVar set QMAKE_CFLAGS_XKBCOMMON "$QMAKE_CFLAGS_XKBCOMMON"
-    QMakeVar set QMAKE_LIBS_XKBCOMMON "$QMAKE_LIBS_XKBCOMMON"
-fi
-
 # EGL Support
-if [ "$CFG_EGL" != "no" ]; then
+if [ "$CFG_OPENGL" != "es2" ]; then
+    if [ "$CFG_EGL" = "yes" ] && [ "$CFG_OPENGL" = "desktop" ]; then
+        echo "EGL support was requested but Qt is being configured for desktop OpenGL."
+        echo "Either disable EGL support or enable OpenGL ES support."
+        exit 101
+    elif [ "$CFG_EGL" = "yes" ] && [ "$CFG_OPENGL" = "no" ]; then
+        echo "EGL support was requested but OpenGL ES support is disabled."
+        echo "Either disable EGL support or enable OpenGL ES support."
+        exit 101
+    fi
+    CFG_EGL=no
+elif [ "$CFG_EGL" != "no" ]; then
     if [ -n "$PKG_CONFIG" ] && $PKG_CONFIG --exists egl 2>/dev/null; then
         QMAKE_INCDIR_EGL=`$PKG_CONFIG --cflags-only-I egl 2>/dev/null | sed -e 's,^-I,,g' -e 's, -I, ,g'`
         QMAKE_LIBS_EGL=`$PKG_CONFIG --libs egl 2>/dev/null`
@@ -5291,13 +5396,6 @@ if [ "$CFG_EGL" != "no" ]; then
     else
         CFG_EGL=no
     fi
-elif [ "$CFG_OPENGL" = "desktop" ]; then
-    if [ "$CFG_EGL" = "yes" ]; then
-        echo "EGL support was requested but Qt is being configured for desktop OpenGL."
-        echo "Either disable EGL support or enable OpenGL ES support."
-        exit 101
-    fi
-    CFG_EGL=no
 fi
 
 if [ "$CFG_EGLFS" != "no" ]; then
@@ -5978,7 +6076,7 @@ case "$XPLATFORM" in
 	;;
     solaris-cc*)
         # Check the compiler version
-        case `${QMAKE_CONF_COMPILER} -V 2>&1 | awk '{print $4}'` in
+        case `${QMAKE_CONF_COMPILER} -V 2>&1 | $AWK '{print $4}'` in
             5.[012345678])
                 canBuildWebKit="no"
                 canBuildQtXmlPatterns="no"
@@ -6365,12 +6463,24 @@ echo "#define QT_QPA_DEFAULT_PLATFORM_NAME \"$QT_QPA_DEFAULT_PLATFORM\"" >>"$out
 if cmp -s "$outpath/src/corelib/global/qconfig.h" "$outpath/src/corelib/global/qconfig.h.new"; then
     rm -f "$outpath/src/corelib/global/qconfig.h.new"
 else
-    [ -f "$outpath/src/corelib/global/qconfig.h" ] && chmod +w "$outpath/src/corelib/global/qconfig.h"
-    mv "$outpath/src/corelib/global/qconfig.h.new" "$outpath/src/corelib/global/qconfig.h"
-    chmod -w "$outpath/src/corelib/global/qconfig.h"
-    if [ ! -f "$outpath/include/QtCore/qconfig.h" ]; then
-        ln -s "$outpath/src/corelib/global/qconfig.h" "$outpath/include/QtCore/qconfig.h"
-    fi
+    mv -f "$outpath/src/corelib/global/qconfig.h.new" "$outpath/src/corelib/global/qconfig.h"
+fi
+
+# create a forwarding header
+mkdir -p "$outpath/include/QtCore" || exit
+echo '#include "../../src/corelib/global/qconfig.h"' > $outpath/include/QtCore/qconfig.h.new
+if cmp -s "$outpath/include/QtCore/qconfig.h.new" "$outpath/include/QtCore/qconfig.h"; then
+    rm -f "$outpath/include/QtCore/qconfig.h.new"
+else
+    mv "$outpath/include/QtCore/qconfig.h.new" "$outpath/include/QtCore/qconfig.h" || exit
+fi
+
+# create a camelcase forwarding header
+echo '#include "qconfig.h"' > $outpath/include/QtCore/QtConfig.new
+if cmp -s "$outpath/include/QtCore/QtConfig.new" "$outpath/include/QtCore/QtConfig"; then
+    rm -f "$outpath/include/QtCore/QtConfig.new"
+else
+    mv "$outpath/include/QtCore/QtConfig.new" "$outpath/include/QtCore/QtConfig" || exit
 fi
 
 #-------------------------------------------------------------------------------
@@ -6410,12 +6520,14 @@ fi
 cat >>"$QTCONFIG.tmp" <<EOF
 #configuration
 CONFIG += $QTCONFIG_CONFIG
-QT_ARCH = $CFG_ARCH
-QT_HOST_ARCH = $CFG_HOST_ARCH
-QT_CPU_FEATURES = $CFG_CPUFEATURES
-QT_HOST_CPU_FEATURES = $CFG_HOST_CPUFEATURES
-QMAKE_DEFAULT_LIBDIRS = `echo "$DEFAULT_LIBDIRS" | sed 's,^,",;s,$,",' | tr '\n' ' '`
-QMAKE_DEFAULT_INCDIRS = `echo "$DEFAULT_INCDIRS" | sed 's,^,",;s,$,",' | tr '\n' ' '`
+host_build {
+    QT_ARCH = $CFG_HOST_ARCH
+    QT_TARGET_ARCH = $CFG_ARCH
+} else {
+    QT_ARCH = $CFG_ARCH
+    QMAKE_DEFAULT_LIBDIRS = $DEFAULT_LIBDIRS
+    QMAKE_DEFAULT_INCDIRS = $DEFAULT_INCDIRS
+}
 QT_EDITION = $Edition
 QT_CONFIG += $QT_CONFIG
 
@@ -6497,6 +6609,14 @@ if [ -n "$CFG_SKIP_MODULES" ]; then
     echo "QT_SKIP_MODULES += $CFG_SKIP_MODULES" >> "$QTMODULE.tmp"
 fi
 
+cat >>"$QTMODULE.tmp" <<EOF
+host_build {
+    QT_CPU_FEATURES.$CFG_HOST_ARCH = $CFG_HOST_CPUFEATURES
+} else {
+    QT_CPU_FEATURES.$CFG_ARCH = $CFG_CPUFEATURES
+}
+EOF
+
 if [ -n "$QT_CFLAGS_PSQL" ]; then
     echo "QT_CFLAGS_PSQL   = $QT_CFLAGS_PSQL" >> "$QTMODULE.tmp"
 fi
@@ -6567,6 +6687,48 @@ fi
 #-------------------------------------------------------------------------------
 exec 3>&1 1>$outpath/config.summary # redirect output temporarily to config.summary
 
+report_support()
+{
+    case "$#,$2" in
+        2,auto)
+            # 2 arguments and the result is "auto", so just say "yes"
+            # this is usually an error in the configure script, but oh well..
+            echo "$1 yes"
+            return
+            ;;
+        [012],* | *,no*)
+            # 0, 1 or 2 arguments, or anything starting with "no"
+            # print just the first part of the argument (before the dash)
+            echo "$1 ${2%%-*}"
+            return
+            :;
+    esac
+    heading=$1
+    shift
+
+    value=$1
+    shift
+
+    while [ $# -gt 0 ]; do
+        if [ "$value" = "$1" ]; then
+            echo "$heading yes ($2)"
+            return
+        fi
+        shift
+        shift
+    done
+    echo "$heading $value"
+}
+
+report_support_plugin()
+{
+    report_support "$1" "$2-$3" \
+        yes-qt "in $4, using bundled copy" \
+        yes-system "in $4, using system library" \
+        plugin-qt "plugin, using bundled copy" \
+        plugin-system "plugin, using system library"
+}
+
 echo
 echo "   Configure summary"
 echo
@@ -6624,135 +6786,89 @@ fi
 # Qt modules
 echo
 echo "Qt modules and options:"
-[ "$CFG_DBUS" = "no" ]     && echo "  Qt D-Bus ............... no"
-[ "$CFG_DBUS" = "yes" ]    && echo "  Qt D-Bus ............... yes (loading dbus-1 at runtime)"
-[ "$CFG_DBUS" = "linked" ] && echo "  Qt D-Bus ............... yes (linked to dbus-1)"
-echo "  Qt Concurrent .......... $CFG_CONCURRENT"
-echo "  Qt GUI ................. $CFG_GUI"
-echo "  Qt Widgets ............. $CFG_WIDGETS"
-if [ "$CFG_JAVASCRIPTCORE_JIT" = "auto" ]; then
-    echo "  JavaScriptCore JIT ..... To be decided by JavaScriptCore"
-else
-    echo "  JavaScriptCore JIT ..... $CFG_JAVASCRIPTCORE_JIT"
-fi
-echo "  QML debugging .......... $CFG_QML_DEBUG"
-echo "  Use system proxies ..... $CFG_SYSTEM_PROXIES"
+report_support "  Qt D-Bus ..............." "$CFG_DBUS" yes "loading dbus-1 at runtime" linked "linked to dbus-1"
+report_support "  Qt Concurrent .........." "$CFG_CONCURRENT"
+report_support "  Qt GUI ................." "$CFG_GUI"
+report_support "  Qt Widgets ............." "$CFG_WIDGETS"
+report_support "  JavaScriptCore JIT ....." "$CFG_JAVASCRIPTCORE_JIT" auto "To be decided by JavaScriptCore"
+report_support "  QML debugging .........." "$CFG_QML_DEBUG"
+report_support "  Use system proxies ....." "$CFG_SYSTEM_PROXIES"
 
 # Other things
 # Please keep sorted and properly grouped! The output is quite long, so it's
 # hard to find something you're searching for if it's not sorted.
 echo
 echo "Support enabled for:"
-echo "  Accessibility .......... $CFG_ACCESSIBILITY"
-echo "  ALSA ................... $CFG_ALSA"
-echo "  CUPS ................... $CFG_CUPS"
+report_support "  Accessibility .........." "$CFG_ACCESSIBILITY"
+report_support "  ALSA ..................." "$CFG_ALSA"
+report_support "  CUPS ..................." "$CFG_CUPS"
 [ "$XPLATFORM_MINGW" = "yes" ] && \
-    echo "  DirectWrite ............ $CFG_DIRECTWRITE"
-echo "  FontConfig ............. $CFG_FONTCONFIG"
-echo "  Iconv .................. $CFG_ICONV"
-echo "  ICU .................... $CFG_ICU"
-echo "  Image formats:"
-echo "    GIF .................. $CFG_GIF"
-if [ "$CFG_JPEG" = "no" ]; then
-    echo "    JPEG ................. $CFG_JPEG"
-else
-    echo "    JPEG ................. $CFG_JPEG ($CFG_LIBJPEG)"
-fi
-if [ "$CFG_PNG" = "no" ]; then
-    echo "    PNG .................. $CFG_PNG"
-else
-    echo "    PNG .................. $CFG_PNG ($CFG_LIBPNG)"
-fi
-echo "  Glib ................... $CFG_GLIB"
-echo "  GStreamer .............. $CFG_GSTREAMER"
-echo "  GTK theme .............. $CFG_QGTKSTYLE"
-echo "  Large Files ............ $CFG_LARGEFILE"
-echo "  Networking:"
+    report_support "  DirectWrite ............" "$CFG_DIRECTWRITE"
+report_support "  FontConfig ............." "$CFG_FONTCONFIG"
+report_support "  Iconv .................." "$CFG_ICONV"
+report_support "  ICU ...................." "$CFG_ICU"
+report_support "  Image formats:"
+report_support_plugin "    GIF .................." "$CFG_GIF" system QtGui
+report_support_plugin "    JPEG ................." "$CFG_JPEG" "$CFG_LIBJPEG" QtGui
+report_support_plugin "    PNG .................." "$CFG_PNG" "$CFG_LIBPNG" QtGui
+report_support "  Glib ..................." "$CFG_GLIB"
+report_support "  GStreamer .............." "$CFG_GSTREAMER"
+report_support "  GTK theme .............." "$CFG_QGTKSTYLE"
+report_support "  Large File ............." "$CFG_LARGEFILE"
+report_support "  libudev ................" "$CFG_LIBUDEV"
+report_support "  Networking:"
 [ "$BUILD_ON_MAC" = "yes" ] && \
-    echo "    CoreWlan ............. $CFG_COREWLAN"
-echo "    getaddrinfo .......... $CFG_GETADDRINFO"
-echo "    getifaddrs ........... $CFG_GETIFADDRS"
-echo "    IPv6 ifname .......... $CFG_IPV6IFNAME"
-OPENSSL_LINKAGE=""
-if [ "$CFG_OPENSSL" = "yes" ]; then
-    OPENSSL_LINKAGE="(loading libraries at run-time)"
-elif [ "$CFG_OPENSSL" = "linked" ]; then
-    OPENSSL_LINKAGE="(linked to the libraries)"
-fi
-echo "    OpenSSL .............. $CFG_OPENSSL $OPENSSL_LINKAGE"
-unset OPENSSL_LINKAGE
-echo "  NIS .................... $CFG_NIS"
-if [ "$CFG_OPENGL" = "desktop" ]; then
-    echo "  OpenGL ................. yes (Desktop OpenGL)"
-elif [ "$CFG_OPENGL" = "es2" ]; then
-    echo "  OpenGL ................. yes (OpenGL ES 2.x)"
-else
-    echo "  OpenGL ................. no"
-fi
-if [ "$CFG_OPENVG" ]; then
-    if [ "$CFG_OPENVG_SHIVA" = "yes" ]; then
-        echo "  OpenVG ................. ShivaVG"
-    else
-        echo "  OpenVG ................. $CFG_OPENVG"
-    fi
-fi
-if [ "$CFG_PCRE" = "no" ]; then
-    echo "  PCRE ................... no"
-else
-    pcre_sys=system
-    [ "$CFG_PCRE" = "qt" ] && pcre_sys=qt
-    echo "  PCRE ................... yes ($pcre_sys)"
-    unset pcre_sys
-fi
+    report_support "    CoreWlan ............." "$CFG_COREWLAN"
+report_support "    getaddrinfo .........." "$CFG_GETADDRINFO"
+report_support "    getifaddrs ..........." "$CFG_GETIFADDRS"
+report_support "    IPv6 ifname .........." "$CFG_IPV6IFNAME"
+report_support "    OpenSSL .............." "$CFG_OPENSSL" yes "loading libraries at run-time" linked "linked to the libraries"
+report_support "  NIS ...................." "$CFG_NIS"
+report_support "  OpenGL ................." "$CFG_OPENGL" yes "Desktop OpenGL" es2 "OpenGL ES 2.x"
+report_support "  OpenVG ................." "$CFG_OPENVG-$CFG_OPENVG_SHIVA" yes-yes "ShivaVG" yes-no "native"
+report_support "  PCRE ..................." "$CFG_PCRE" yes "system library" qt "bundled copy"
 if [ -n "$PKG_CONFIG" ]; then
-    echo "  pkg-config ............. yes"
+    report_support "  pkg-config ............. yes"
 else
-    echo "  pkg-config ............. no"
+    report_support "  pkg-config ............. no"
 fi
-echo "  PulseAudio ............. $CFG_PULSEAUDIO"
-echo "  QPA backends:"
-echo "    DirectFB ............. $CFG_DIRECTFB"
-echo "    EGLFS ................ $CFG_EGLFS"
-echo "    KMS .................. $CFG_KMS"
-echo "    LinuxFB .............. $CFG_LINUXFB"
-echo "    XCB .................. $CFG_XCB"
+report_support "  PulseAudio ............." "$CFG_PULSEAUDIO"
+report_support "  QPA backends:"
+report_support "    DirectFB ............." "$CFG_DIRECTFB"
+report_support "    EGLFS ................" "$CFG_EGLFS"
+report_support "    KMS .................." "$CFG_KMS"
+report_support "    LinuxFB .............." "$CFG_LINUXFB"
+report_support "    XCB .................." "$CFG_XCB" system "system library" qt "bundled copy"
 if [ "$CFG_XCB" != "no" ]; then
-    echo "      MIT-SHM ............ $CFG_MITSHM"
-    echo "      Xcursor ............ $CFG_XCURSOR"
-    echo "      Xfixes ............. $CFG_XFIXES"
-    echo "      Xi ................. $CFG_XINPUT"
-    echo "      Xi2 ................ $CFG_XINPUT2"
-    echo "      Xinerama ........... $CFG_XINERAMA"
-    echo "      Xrandr ............. $CFG_XRANDR"
-    echo "      Xrender ............ $CFG_XRENDER"
-    echo "      XKB ................ $CFG_XKB"
-    echo "      XShape ............. $CFG_XSHAPE"
-    echo "      XSync .............. $CFG_XSYNC"
-    echo "      XVideo ............. $CFG_XVIDEO"
+    report_support "      MIT-SHM ............" "$CFG_MITSHM"
+    report_support "      Xcursor ............" "$CFG_XCURSOR" runtime "loaded at runtime"
+    report_support "      Xfixes ............." "$CFG_XFIXES" runtime "loaded at runtime"
+    report_support "      Xi ................." "$CFG_XINPUT" runtime "loaded at runtime"
+    report_support "      Xi2 ................" "$CFG_XINPUT2" runtime "loaded at runtime"
+    report_support "      Xinerama ..........." "$CFG_XINERAMA" runtime "loaded at runtime"
+    report_support "      Xrandr ............." "$CFG_XRANDR" runtime "loaded at runtime"
+    report_support "      Xrender ............" "$CFG_XRENDER"
+    report_support "      XKB ................" "$CFG_XKB"
+    report_support "      XShape ............." "$CFG_XSHAPE"
+    report_support "      XSync .............." "$CFG_XSYNC"
+    report_support "      XVideo ............." "$CFG_XVIDEO"
 fi
-echo "  Session management ..... $CFG_SM"
+report_support "  Session management ....." "$CFG_SM"
 [ "$XPLATFORM_QNX" = "yes" ] && \
-    echo "  SLOG2 .................. $CFG_SLOG2"
-echo "  SQL drivers:"
-echo "    DB2 .................. $CFG_SQL_db2"
-echo "    InterBase ............ $CFG_SQL_ibase"
-echo "    MySQL ................ $CFG_SQL_mysql"
-echo "    OCI .................. $CFG_SQL_oci"
-echo "    ODBC ................. $CFG_SQL_odbc"
-echo "    PostgreSQL ........... $CFG_SQL_psql"
-echo "    SQLite 2 ............. $CFG_SQL_sqlite2"
-echo "    SQLite ............... $CFG_SQL_sqlite ($CFG_SQLITE)"
-echo "    TDS .................. $CFG_SQL_tds"
-echo "  udev ................... $CFG_LIBUDEV"
-echo "  xkbcommon .............. $CFG_XKBCOMMON"
-if [ "$CFG_ZLIB" = "no" ]; then
-    echo "  zlib ................... no"
-else
-    zlib_sys=system
-    [ "$CFG_ZLIB" = "yes" ] && zlib_sys=qt
-    echo "  zlib ................... yes ($zlib_sys)"
-    unset zlib_sys
-fi
+    report_support "  SLOG2 .................." "$CFG_SLOG2"
+report_support "  SQL drivers:"
+report_support "    DB2 .................." "$CFG_SQL_db2" plugin "plugin" yes "built into QtSql"
+report_support "    InterBase ............" "$CFG_SQL_ibase" plugin "plugin" yes "built into QtSql"
+report_support "    MySQL ................" "$CFG_SQL_mysql" plugin "plugin" yes "built into QtSql"
+report_support "    OCI .................." "$CFG_SQL_oci" plugin "plugin" yes "built into QtSql"
+report_support "    ODBC ................." "$CFG_SQL_odbc" plugin "plugin" yes "built into QtSql"
+report_support "    PostgreSQL ..........." "$CFG_SQL_psql" plugin "plugin" yes "built into QtSql"
+report_support "    SQLite 2 ............." "$CFG_SQL_sqlite2" plugin "plugin" yes "built into QtSql"
+report_support_plugin "    SQLite ..............." "$CFG_SQL_sqlite" "$CFG_SQLITE" QtSql
+report_support "    TDS .................." "$CFG_SQL_tds" plugin "plugin" yes "built into QtSql"
+report_support "  udev ..................." "$CFG_LIBUDEV"
+report_support "  xkbcommon .............." "$CFG_XKBCOMMON" system "system library" qt "bundled copy"
+report_support "  zlib ..................." "$CFG_ZLIB" system "system library" yes "bundled copy"
 
 echo
 
@@ -6772,10 +6888,9 @@ if [ "$CFG_OPENSSL" = "linked" ] && [ "$OPENSSL_LIBS" = "" ]; then
     echo "    OPENSSL_LIBS='-L/opt/ssl/lib -lssl -lcrypto' ./configure -openssl-linked"
     echo
 fi
-if [ "$CFG_XCB" != no ] && [ "$CFG_XKBCOMMON" = "no" ]; then
-    echo "WARNING: XCB support enabled but libxkbcommon 0.2.0 (or higher) not found."
-    echo "Not satisfying this requirement will disable the compose key functionality,"
-    echo "which includes text input with dead keys."
+if [ "$ORIG_CFG_XKBCOMMON" != qt ] && [ "$CFG_XKBCOMMON" = qt ]; then
+    echo "NOTE: libxkbcommon 0.2.0 (or higher) not found on the system, will use "
+    echo "the bundled version from 3rd party directory."
 fi
 
 exec 1>&3 3>&- # restore stdout
@@ -6800,14 +6915,23 @@ rm -f "$QMAKE_VARS_FILE" 2>/dev/null
 #-------------------------------------------------------------------------------
 
 if [ "$CFG_PROCESS" != "no" ]; then
+(   # fork to make the cd stay local
+
+    relpathMangled=$relpath
+    if [ -n "$CFG_TOPLEVEL" ]; then
+        relpathMangled=`dirname "$relpath"`
+        cd ..
+    fi
 
     if [ "$CFG_PROCESS" = "full" ]; then
         echo "Creating makefiles. Please wait..."
-        "$outpath/bin/qmake" -r "$relpath"
+        "$outpath/bin/qmake" -r "$relpathMangled"
         echo "Done"
     else
-        "$outpath/bin/qmake" "$relpath"
+        "$outpath/bin/qmake" "$relpathMangled"
     fi
+
+)
 fi
 
 #-------------------------------------------------------------------------------
@@ -6919,7 +7043,7 @@ fi
 MAKE=`basename "$MAKE"`
 echo
 echo Qt is now configured for building. Just run \'$MAKE\'.
-if [ "$relpath" = "$QT_INSTALL_PREFIX" ]; then
+if [ "$outpath" = "$QT_INSTALL_PREFIX" ]; then
     echo Once everything is built, Qt is installed.
     echo You should not run \'$MAKE install\'.
 else
@@ -6927,5 +7051,6 @@ else
     echo Qt will be installed into $QT_INSTALL_PREFIX
 fi
 echo
-echo To reconfigure, run \'$MAKE confclean\' and \'configure\'.
+echo Prior to reconfiguration, make sure you remove any leftovers from
+echo the previous build.
 echo

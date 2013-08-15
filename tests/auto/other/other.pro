@@ -4,8 +4,6 @@ SUBDIRS=\
    baselineexample \
    collections \
    compiler \
-   exceptionsafety \
-   # exceptionsafety_objects \    # QObjectPrivate is not safe
    gestures \
    headersclean \
    lancelot \
@@ -41,6 +39,7 @@ SUBDIRS=\
    windowsmobile \
    qaccessibility \
    qaccessibilitylinux \
+   qaccessibilitymac \
 
 !qtHaveModule(network): SUBDIRS -= \
    baselineexample \
@@ -63,9 +62,9 @@ wince*|!contains(QT_CONFIG, accessibility): SUBDIRS -= qaccessibility
 !mac: SUBDIRS -= \
            macgui \
            macnativeevents \
-           macplist
+           macplist \
+           qaccessibilitymac
 
 !embedded|wince*: SUBDIRS -= \
            qdirectpainter
 
-!linux*-g++*:SUBDIRS -= exceptionsafety_objects

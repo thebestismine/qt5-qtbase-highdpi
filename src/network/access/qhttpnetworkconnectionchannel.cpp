@@ -183,6 +183,9 @@ void QHttpNetworkConnectionChannel::close()
     else
         state = QHttpNetworkConnectionChannel::ClosingState;
 
+    // pendingEncrypt must only be true in between connected and encrypted states
+    pendingEncrypt = false;
+
     if (socket)
         socket->close();
 }
@@ -205,6 +208,17 @@ bool QHttpNetworkConnectionChannel::sendRequest()
             // _q_connected or _q_encrypted
             return false;
         }
+        QString scheme = request.url().scheme();
+        if (scheme == QLatin1String("preconnect-http")
+            || scheme == QLatin1String("preconnect-https")) {
+            state = QHttpNetworkConnectionChannel::IdleState;
+            reply->d_func()->state = QHttpNetworkReplyPrivate::AllDoneState;
+            allDone();
+            connection->preConnectFinished(); // will only decrease the counter
+            reply = 0; // so we can reuse this channel
+            return true; // we have a working connection and are done
+        }
+
         written = 0; // excluding the header
         bytesTotal = 0;
 
@@ -1170,6 +1184,22 @@ void QHttpNetworkConnectionChannel::_q_error(QAbstractSocket::SocketError socket
         break;
     case QAbstractSocket::SslHandshakeFailedError:
         errorCode = QNetworkReply::SslHandshakeFailedError;
+        break;
+    case QAbstractSocket::ProxyConnectionClosedError:
+        // try to reconnect/resend before sending an error.
+        if (reconnectAttempts-- > 0) {
+            closeAndResendCurrentRequest();
+            return;
+        }
+        errorCode = QNetworkReply::ProxyConnectionClosedError;
+        break;
+    case QAbstractSocket::ProxyConnectionTimeoutError:
+        // try to reconnect/resend before sending an error.
+        if (reconnectAttempts-- > 0) {
+            closeAndResendCurrentRequest();
+            return;
+        }
+        errorCode = QNetworkReply::ProxyTimeoutError;
         break;
     default:
         // all other errors are treated as NetworkError

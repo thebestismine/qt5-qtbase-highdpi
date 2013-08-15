@@ -55,7 +55,7 @@ class QXcbScreen;
 class QXcbIntegration : public QPlatformIntegration
 {
 public:
-    QXcbIntegration(const QStringList &parameters);
+    QXcbIntegration(const QStringList &parameters, int &argc, char **argv);
     ~QXcbIntegration();
 
     QPlatformWindow *createPlatformWindow(QWindow *window) const;
@@ -91,9 +91,15 @@ public:
     QPlatformServices *services() const;
 
     Qt::KeyboardModifiers queryKeyboardModifiers() const;
+    QList<int> possibleKeys(const QKeyEvent *e) const;
 
     QStringList themeNames() const;
     QPlatformTheme *createPlatformTheme(const QString &name) const;
+    QVariant styleHint(StyleHint hint) const;
+
+    QXcbConnection *defaultConnection() const { return m_connections.first(); }
+
+    QByteArray wmClass() const;
 
 private:
     QList<QXcbConnection *> m_connections;
@@ -111,6 +117,9 @@ private:
     QScopedPointer<QPlatformServices> m_services;
 
     friend class QXcbConnection; // access QPlatformIntegration::screenAdded()
+
+    mutable QByteArray m_wmClass;
+    const char *m_instanceName;
 };
 
 QT_END_NAMESPACE

@@ -217,8 +217,18 @@ void QDocIndexFiles::readIndexSection(const QDomElement& element,
             location = Location(name);
         node = qbtn;
     }
-    else if (element.nodeName() == "qmlproperty") {
+    else if (element.nodeName() == "qmlpropertygroup") {
         QmlClassNode* qcn = static_cast<QmlClassNode*>(parent);
+        QmlPropertyGroupNode* qpgn = new QmlPropertyGroupNode(qcn, name);
+        if (element.hasAttribute("location"))
+            name = element.attribute("location", QString());
+        if (!indexUrl.isEmpty())
+            location = Location(indexUrl + QLatin1Char('/') + name);
+        else if (!indexUrl.isNull())
+            location = Location(name);
+        node = qpgn;
+    }
+    else if (element.nodeName() == "qmlproperty") {
         QString type = element.attribute("type");
         bool attached = false;
         if (element.attribute("attached") == "true")
@@ -226,7 +236,15 @@ void QDocIndexFiles::readIndexSection(const QDomElement& element,
         bool readonly = false;
         if (element.attribute("writable") == "false")
             readonly = true;
-        QmlPropertyNode* qpn = new QmlPropertyNode(qcn, name, type, attached);
+        QmlPropertyNode* qpn = 0;
+        if (parent->type() == Node::Document) {
+            QmlClassNode* qcn = static_cast<QmlClassNode*>(parent);
+            qpn = new QmlPropertyNode(qcn, name, type, attached);
+        }
+        else if (parent->type() == Node::QmlPropertyGroup) {
+            QmlPropertyGroupNode* qpgn = static_cast<QmlPropertyGroupNode*>(parent);
+            qpn = new QmlPropertyNode(qpgn, name, type, attached);
+        }
         qpn->setReadOnly(readonly);
         node = qpn;
     }
@@ -279,10 +297,6 @@ void QDocIndexFiles::readIndexSection(const QDomElement& element,
         }
         else if (element.attribute("subtype") == "qmlclass") {
             subtype = Node::QmlClass;
-            ptype = Node::ApiPage;
-        }
-        else if (element.attribute("subtype") == "qmlpropertygroup") {
-            subtype = Node::QmlPropertyGroup;
             ptype = Node::ApiPage;
         }
         else if (element.attribute("subtype") == "qmlbasictype") {
@@ -501,10 +515,14 @@ void QDocIndexFiles::readIndexSection(const QDomElement& element,
 
     // Create some content for the node.
     QSet<QString> emptySet;
-    Doc doc(location, location, " ", emptySet); // placeholder
+    Doc doc(location, location, " ", emptySet, emptySet); // placeholder
     node->setDoc(doc);
     node->setIndexNodeFlag();
     node->setOutputSubdirectory(project_.toLower());
+    QString briefAttr = element.attribute("brief");
+    if (!briefAttr.isEmpty()) {
+        node->setReconstitutedBrief(briefAttr);
+    }
 
     if (node->isInnerNode()) {
         InnerNode* inner = static_cast<InnerNode*>(node);
@@ -640,6 +658,9 @@ bool QDocIndexFiles::generateIndexSection(QXmlStreamWriter& writer,
     case Node::QmlProperty:
         nodeName = "qmlproperty";
         break;
+    case Node::QmlPropertyGroup:
+        nodeName = "qmlpropertygroup";
+        break;
     case Node::QmlSignal:
         nodeName = "qmlsignal";
         break;
@@ -742,7 +763,9 @@ bool QDocIndexFiles::generateIndexSection(QXmlStreamWriter& writer,
     QString fullName = node->fullDocumentName();
     if (fullName != objName)
         writer.writeAttribute("fullname", fullName);
-    QString href = node->outputSubdirectory();
+    QString href;
+    if (Generator::useOutputSubdirs())
+        href = node->outputSubdirectory();
     if (!href.isEmpty())
         href.append(QLatin1Char('/'));
     href.append(gen_->fullDocumentLocation(node));
@@ -754,6 +777,7 @@ bool QDocIndexFiles::generateIndexSection(QXmlStreamWriter& writer,
         writer.writeAttribute("since", node->since());
     }
 
+    QString brief = node->doc().briefText().toString();
     switch (node->type()) {
     case Node::Class:
         {
@@ -769,6 +793,8 @@ bool QDocIndexFiles::generateIndexSection(QXmlStreamWriter& writer,
             if (!node->moduleName().isEmpty())
                 writer.writeAttribute("module", node->moduleName());
             writeMembersAttribute(writer, classNode, Node::Document, Node::Group, "groups");
+            if (!brief.isEmpty())
+                writer.writeAttribute("brief", brief);
         }
         break;
     case Node::Namespace:
@@ -777,6 +803,8 @@ bool QDocIndexFiles::generateIndexSection(QXmlStreamWriter& writer,
             if (!namespaceNode->moduleName().isEmpty())
                 writer.writeAttribute("module", namespaceNode->moduleName());
             writeMembersAttribute(writer, namespaceNode, Node::Document, Node::Group, "groups");
+            if (!brief.isEmpty())
+                writer.writeAttribute("brief", brief);
         }
         break;
     case Node::Document:
@@ -843,6 +871,8 @@ bool QDocIndexFiles::generateIndexSection(QXmlStreamWriter& writer,
                 writer.writeAttribute("module", node->moduleName());
             }
             writeMembersAttribute(writer, docNode, Node::Document, Node::Group, "groups");
+            if (!brief.isEmpty())
+                writer.writeAttribute("brief", brief);
         }
         break;
     case Node::Function:
@@ -902,6 +932,8 @@ bool QDocIndexFiles::generateIndexSection(QXmlStreamWriter& writer,
             if (propertyNode)
                 writer.writeAttribute("associated-property", propertyNode->name());
             writer.writeAttribute("type", functionNode->returnType());
+            if (!brief.isEmpty())
+                writer.writeAttribute("brief", brief);
         }
         break;
     case Node::QmlProperty:
@@ -910,12 +942,22 @@ bool QDocIndexFiles::generateIndexSection(QXmlStreamWriter& writer,
             writer.writeAttribute("type", qpn->dataType());
             writer.writeAttribute("attached", qpn->isAttached() ? "true" : "false");
             writer.writeAttribute("writable", qpn->isWritable(qdb_) ? "true" : "false");
+            if (!brief.isEmpty())
+                writer.writeAttribute("brief", brief);
+        }
+        break;
+    case Node::QmlPropertyGroup:
+        {
+            if (!brief.isEmpty())
+                writer.writeAttribute("brief", brief);
         }
         break;
     case Node::Property:
         {
             const PropertyNode* propertyNode = static_cast<const PropertyNode*>(node);
             writer.writeAttribute("type", propertyNode->dataType());
+            if (!brief.isEmpty())
+                writer.writeAttribute("brief", brief);
             foreach (const Node* fnNode, propertyNode->getters()) {
                 if (fnNode) {
                     const FunctionNode* functionNode = static_cast<const FunctionNode*>(fnNode);
@@ -955,6 +997,8 @@ bool QDocIndexFiles::generateIndexSection(QXmlStreamWriter& writer,
             const VariableNode* variableNode = static_cast<const VariableNode*>(node);
             writer.writeAttribute("type", variableNode->dataType());
             writer.writeAttribute("static", variableNode->isStatic() ? "true" : "false");
+            if (!brief.isEmpty())
+                writer.writeAttribute("brief", brief);
         }
         break;
     default:
@@ -1160,12 +1204,12 @@ void QDocIndexFiles::generateIndexSections(QXmlStreamWriter& writer,
 
             foreach (Node* child, cnodes) {
                 /*
-                  Don't generate anything for a QML property group node.
-                  It is just a place holder for a collection of QML property
-                  nodes. Recurse to its children, which are the QML property
-                  nodes.
+                  Don't generate anything for a collision node. We want
+                  children of collision nodes in the index, but leaving
+                  out the parent collision page will make searching for
+                  nodes easier.
                  */
-                if (child->subType() == Node::QmlPropertyGroup) {
+                if (child->subType() == Node::Collision) {
                     const InnerNode* pgn = static_cast<const InnerNode*>(child);
                     foreach (Node* c, pgn->childNodes()) {
                         generateIndexSections(writer, c, generateInternalNodes);

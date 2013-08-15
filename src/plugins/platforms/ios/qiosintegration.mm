@@ -43,12 +43,13 @@
 #include "qioswindow.h"
 #include "qiosbackingstore.h"
 #include "qiosscreen.h"
-#include "qioseventdispatcher.h"
 #include "qioscontext.h"
 #include "qiosinputcontext.h"
 #include "qiostheme.h"
 
+#include <QtPlatformSupport/private/qioseventdispatcher_p.h>
 #include <QtPlatformSupport/private/qcoretextfontdatabase_p.h>
+#include <QDir>
 
 #include <QtDebug>
 
@@ -71,6 +72,9 @@ QIOSIntegration::QIOSIntegration()
         exit(-1);
     }
 
+    // Set current directory to app bundle folder
+    QDir::setCurrent(QString::fromUtf8([[[NSBundle mainBundle] bundlePath] UTF8String]));
+
     screenAdded(m_screen);
 
     m_touchDevice = new QTouchDevice;
@@ -85,6 +89,8 @@ bool QIOSIntegration::hasCapability(Capability cap) const
     case OpenGL:
         return true;
     case MultipleWindows:
+        return true;
+    case ApplicationState:
         return true;
     default:
         return QPlatformIntegration::hasCapability(cap);
@@ -128,6 +134,8 @@ QVariant QIOSIntegration::styleHint(StyleHint hint) const
 {
     switch (hint) {
     case ShowIsFullScreen:
+        return true;
+    case SetFocusOnTouchRelease:
         return true;
     default:
         return QPlatformIntegration::styleHint(hint);

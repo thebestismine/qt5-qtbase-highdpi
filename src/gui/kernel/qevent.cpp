@@ -654,6 +654,9 @@ QWheelEvent::QWheelEvent(const QPointF &pos, const QPointF& globalPos, int delta
     event data: \a qt4Delta specifies the rotation, and \a qt4Orientation the
     direction.
 
+    The phase() is initialized to QWheelEvent::Changed. Use the other constructor
+    to specify the phase explicitly.
+
     \sa posF(), globalPosF(), angleDelta(), pixelDelta()
 */
 
@@ -661,9 +664,38 @@ QWheelEvent::QWheelEvent(const QPointF &pos, const QPointF& globalPos,
             QPoint pixelDelta, QPoint angleDelta, int qt4Delta, Qt::Orientation qt4Orientation,
             Qt::MouseButtons buttons, Qt::KeyboardModifiers modifiers)
     : QInputEvent(Wheel, modifiers), p(pos), g(globalPos), pixelD(pixelDelta),
-      angleD(angleDelta), qt4D(qt4Delta), qt4O(qt4Orientation), mouseState(buttons)
+      angleD(angleDelta), qt4D(qt4Delta), qt4O(qt4Orientation), mouseState(buttons), ph(Changed)
 {}
 
+/*!
+    Constructs a wheel event object.
+
+    The \a pos provides the location of the mouse cursor
+    within the window. The position in global coordinates is specified
+    by \a globalPos.
+
+    \a pixelDelta contains the scrolling distance in pixels on screen, while
+    \a angleDelta contains the wheel rotation distance. \a pixelDelta is
+    optional and can be null.
+
+    The mouse and keyboard states at the time of the event are specified by
+    \a buttons and \a modifiers.
+
+    For backwards compatibility, the event can also hold monodirectional wheel
+    event data: \a qt4Delta specifies the rotation, and \a qt4Orientation the
+    direction.
+
+    The phase of the event is specified by \a phase.
+
+    \sa posF(), globalPosF(), angleDelta(), pixelDelta(), phase()
+*/
+
+QWheelEvent::QWheelEvent(const QPointF &pos, const QPointF& globalPos,
+            QPoint pixelDelta, QPoint angleDelta, int qt4Delta, Qt::Orientation qt4Orientation,
+            Qt::MouseButtons buttons, Qt::KeyboardModifiers modifiers, Phase phase)
+    : QInputEvent(Wheel, modifiers), p(pos), g(globalPos), pixelD(pixelDelta),
+      angleD(angleDelta), qt4D(qt4Delta), qt4O(qt4Orientation), mouseState(buttons), ph(phase)
+{}
 
 #endif // QT_NO_WHEELEVENT
 
@@ -792,6 +824,28 @@ QWheelEvent::QWheelEvent(const QPointF &pos, const QPointF& globalPos,
     cursor position returned by QCursor::pos().
 
     \sa posF()
+*/
+
+/*!
+    \enum QWheelEvent::Phase
+    \since 5.2
+
+    This enum describes the phase of a wheel event.
+
+    \value Started Scrolling has started, but the scrolling
+    distance did not yet change.
+
+    \value Changed The scrolling distance has changed (default).
+
+    \value Ended Scrolling has ended, but the scrolling distance
+    did not change anymore.
+*/
+
+/*!
+    \fn QWheelEvent::Phase QWheelEvent::phase() const
+    \since 5.2
+
+    Returns the phase of this wheel event.
 */
 
 
@@ -947,11 +1001,14 @@ QKeyEvent::~QKeyEvent()
 /*!
     \fn QString QKeyEvent::text() const
 
-    Returns the Unicode text that this key generated. The text
-    returned can be an empty string in cases
-    where modifier keys, such as Shift, Control, Alt, and Meta,
-    are being pressed or released. In such cases key() will contain
-    a valid value.
+    Returns the Unicode text that this key generated.
+
+    Return values when modifier keys such as
+    Shift, Control, Alt, and Meta are pressed
+    differ among platforms and could return an empty string.
+
+    \note \l key() will always return a valid value,
+    independent of modifier keys.
 
     \sa Qt::WA_KeyCompression
 */
@@ -966,7 +1023,7 @@ QKeyEvent::~QKeyEvent()
 
     \sa QApplication::keyboardModifiers()
 */
-//###### We must check with XGetModifierMapping
+
 Qt::KeyboardModifiers QKeyEvent::modifiers() const
 {
     if (key() == Qt::Key_Shift)
@@ -977,6 +1034,8 @@ Qt::KeyboardModifiers QKeyEvent::modifiers() const
         return Qt::KeyboardModifiers(QInputEvent::modifiers()^Qt::AltModifier);
     if (key() == Qt::Key_Meta)
         return Qt::KeyboardModifiers(QInputEvent::modifiers()^Qt::MetaModifier);
+    if (key() == Qt::Key_AltGr)
+        return Qt::KeyboardModifiers(QInputEvent::modifiers()^Qt::GroupSwitchModifier);
     return QInputEvent::modifiers();
 }
 
@@ -990,9 +1049,9 @@ Qt::KeyboardModifiers QKeyEvent::modifiers() const
 */
 bool QKeyEvent::matches(QKeySequence::StandardKey matchKey) const
 {
-    uint searchkey = (modifiers() | key()) & ~(Qt::KeypadModifier); //The keypad modifier should not make a difference
+    //The keypad and group switch modifier should not make a difference
+    uint searchkey = (modifiers() | key()) & ~(Qt::KeypadModifier | Qt::GroupSwitchModifier);
     const uint platform = QKeySequencePrivate::currentKeyPlatforms();
-
 
     uint N = QKeySequencePrivate::numberOfKeyBindings;
     int first = 0;
@@ -4212,6 +4271,7 @@ void QTouchEvent::TouchPoint::setFlags(InfoFlags flags)
 QScrollPrepareEvent::QScrollPrepareEvent(const QPointF &startPos)
     : QEvent(QEvent::ScrollPrepare), m_target(0), m_startPos(startPos)
 {
+    Q_UNUSED(m_target);
 }
 
 /*!

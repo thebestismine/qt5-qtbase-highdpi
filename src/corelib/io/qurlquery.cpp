@@ -82,7 +82,7 @@ QT_BEGIN_NAMESPACE
 
   All of the getter methods in QUrlQuery support an optional parameter of type
   QUrl::ComponentFormattingOptions, including query(), which dictate how to
-  encode the data in question. Regardless of the mode, the returned value must
+  encode the data in question. Except for QUrl::FullyDecoded, the returned value must
   still be considered a percent-encoded string, as there are certain values
   which cannot be expressed in decoded form (like control characters, byte
   sequences not decodable to UTF-8). For that reason, the percent character is
@@ -103,6 +103,20 @@ QT_BEGIN_NAMESPACE
   "%2B" sequence to a plus sign nor encode a plus sign. In fact, any "%2B" or
   "+" sequences found in the keys, values, or query string are left exactly
   like written (except for the uppercasing of "%2b" to "%2B").
+
+  \section2 Full decoding
+
+  With QUrl::FullyDecoded formatting, all percent-encoded sequences will be
+  decoded fully and the '%' character is used to represent itself.
+  QUrl::FullyDecoded should be used with care, since it may cause data loss.
+  See the documentation of QUrl::FullyDecoded for information on what data may
+  be lost.
+
+  This formatting mode should be used only when dealing with text presented to
+  the user in contexts where percent-encoding is not desired. Note that
+  QUrlQuery setters and query methods do not support the counterpart
+  QUrl::DecodedMode parsing, so using QUrl::FullyDecoded to obtain a listing of
+  keys may result in keys not found in the object.
 
   \section1 Non-standard delimiters
 
@@ -191,12 +205,9 @@ template<> void QSharedDataPointer<QUrlQueryPrivate>::detach()
 // the getter methods, when called with the default encoding value, will not
 // have to recode anything (except for toString()).
 //
-// The "+" sub-delimiter is always left untouched. We never encode "+" to "%2B"
-// nor do we decode "%2B" to "+", no matter what the user asks.
-//
-// The rest of the delimiters are kept in their decoded forms and that's
-// considered non-ambiguous. That includes the pair and value delimiters
-// themselves.
+// QUrlQuery handling of delimiters is quite simple: we never touch any of
+// them, except for the "#" character and the pair and value delimiters. Those
+// are always kept in their decoded forms.
 //
 // But when recreating the query string, in toString(), we must take care of
 // the special delimiters: the pair and value delimiters, as well as the "#"
@@ -205,12 +216,17 @@ template<> void QSharedDataPointer<QUrlQueryPrivate>::detach()
 #define decode(x) ushort(x)
 #define leave(x)  ushort(0x100 | (x))
 #define encode(x) ushort(0x200 | (x))
-static const ushort prettyDecodedActions[] = { leave('+'), 0 };
 
 inline QString QUrlQueryPrivate::recodeFromUser(const QString &input) const
 {
     // note: duplicated in setQuery()
     QString output;
+    ushort prettyDecodedActions[] = {
+        decode(pairDelimiter.unicode()),
+        decode(valueDelimiter.unicode()),
+        decode('#'),
+        0
+    };
     if (qt_urlRecode(output, input.constData(), input.constData() + input.length(),
                      QUrl::DecodeReserved,
                      prettyDecodedActions))
@@ -233,7 +249,7 @@ inline QString QUrlQueryPrivate::recodeToUser(const QString &input, QUrl::Compon
     if (!(encoding & QUrl::EncodeDelimiters)) {
         QString output;
         if (qt_urlRecode(output, input.constData(), input.constData() + input.length(),
-                         encoding, prettyDecodedActions))
+                         encoding, 0))
             return output;
         return input;
     }
@@ -249,6 +265,13 @@ inline QString QUrlQueryPrivate::recodeToUser(const QString &input, QUrl::Compon
 
 void QUrlQueryPrivate::setQuery(const QString &query)
 {
+    ushort prettyDecodedActions[] = {
+        decode(pairDelimiter.unicode()),
+        decode(valueDelimiter.unicode()),
+        decode('#'),
+        0
+    };
+
     itemList.clear();
     const QChar *pos = query.constData();
     const QChar *const end = pos + query.size();
@@ -461,24 +484,18 @@ QString QUrlQuery::query(QUrl::ComponentFormattingOptions encoding) const
         return QString();
 
     // unlike the component encoding, for the whole query we need to modify a little:
-    //  - the "#" character is ambiguous, so we decode it only in DecodeAllDelimiters mode
+    //  - the "#" character is unambiguous, so we encode it in EncodeDelimiters mode
     //  - the query delimiter pair must always be encoded
-    //  - the non-delimiters vary on DecodeUnambiguousDelimiters
-    // so:
-    //  - full encoding: encode the non-delimiters, the pair, "#", "[" and "]"
-    //  - pretty decode: decode the non-delimiters, "[" and "]"; encode the pair and "#"
-    //  - decode all: decode the non-delimiters, "[", "]", "#"; encode the pair
 
     // start with what's always encoded
     ushort tableActions[] = {
-        leave('+'),                          // 0
-        encode(d->pairDelimiter.unicode()),  // 1
-        encode(d->valueDelimiter.unicode()), // 2
-        decode('#'),                         // 3
+        encode(d->pairDelimiter.unicode()),  // 0
+        encode(d->valueDelimiter.unicode()), // 1
+        0,                                   // 2
         0
     };
     if (encoding & QUrl::EncodeDelimiters) {
-        tableActions[3] = encode('#');
+        tableActions[2] = encode('#');
     }
 
     QString result;

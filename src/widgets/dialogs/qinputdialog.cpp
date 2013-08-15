@@ -49,6 +49,7 @@
 #include "qlabel.h"
 #include "qlayout.h"
 #include "qlineedit.h"
+#include "qplaintextedit.h"
 #include "qlistwidget.h"
 #include "qpushbutton.h"
 #include "qspinbox.h"
@@ -167,6 +168,7 @@ public:
 
     void ensureLayout();
     void ensureLineEdit();
+    void ensurePlainTextEdit();
     void ensureComboBox();
     void ensureListView();
     void ensureIntSpinBox();
@@ -180,11 +182,13 @@ public:
     void ensureLayout() const { const_cast<QInputDialogPrivate *>(this)->ensureLayout(); }
     bool useComboBoxOrListView() const { return comboBox && comboBox->count() > 0; }
     void _q_textChanged(const QString &text);
+    void _q_plainTextEditTextChanged();
     void _q_currentRowChanged(const QModelIndex &newIndex, const QModelIndex &oldIndex);
 
     mutable QLabel *label;
     mutable QDialogButtonBox *buttonBox;
     mutable QLineEdit *lineEdit;
+    mutable QPlainTextEdit *plainTextEdit;
     mutable QSpinBox *intSpinBox;
     mutable QDoubleSpinBox *doubleSpinBox;
     mutable QComboBox *comboBox;
@@ -198,8 +202,8 @@ public:
 };
 
 QInputDialogPrivate::QInputDialogPrivate()
-    : label(0), buttonBox(0), lineEdit(0), intSpinBox(0), doubleSpinBox(0), comboBox(0), listView(0),
-      inputWidget(0), mainLayout(0)
+    : label(0), buttonBox(0), lineEdit(0), plainTextEdit(0), intSpinBox(0), doubleSpinBox(0),
+      comboBox(0), listView(0), inputWidget(0), mainLayout(0)
 {
 }
 
@@ -247,6 +251,21 @@ void QInputDialogPrivate::ensureLineEdit()
         lineEdit->hide();
         QObject::connect(lineEdit, SIGNAL(textChanged(QString)),
                          q, SLOT(_q_textChanged(QString)));
+    }
+}
+
+void QInputDialogPrivate::ensurePlainTextEdit()
+{
+    Q_Q(QInputDialog);
+    if (!plainTextEdit) {
+        plainTextEdit = new QPlainTextEdit(q);
+        plainTextEdit->setLineWrapMode(QPlainTextEdit::NoWrap);
+#ifndef QT_NO_IM
+        qt_widget_private(plainTextEdit)->inheritsInputMethodHints = 1;
+#endif
+        plainTextEdit->hide();
+        QObject::connect(plainTextEdit, SIGNAL(textChanged()),
+                         q, SLOT(_q_plainTextEditTextChanged()));
     }
 }
 
@@ -344,6 +363,8 @@ void QInputDialogPrivate::setInputWidget(QWidget *widget)
     // textValue
     if (widget == lineEdit) {
         lineEdit->setText(textValue);
+    } else if (widget == plainTextEdit) {
+        plainTextEdit->setPlainText(textValue);
     } else if (widget == comboBox) {
         setComboBoxText(textValue);
     } else if (widget == listView) {
@@ -364,6 +385,9 @@ void QInputDialogPrivate::chooseRightTextInputWidget()
         } else {
             widget = comboBox;
         }
+    } else if (opts & QInputDialog::UsePlainTextEditForTextInput) {
+        ensurePlainTextEdit();
+        widget = plainTextEdit;
     } else {
         ensureLineEdit();
         widget = lineEdit;
@@ -417,6 +441,16 @@ void QInputDialogPrivate::_q_textChanged(const QString &text)
     }
 }
 
+void QInputDialogPrivate::_q_plainTextEditTextChanged()
+{
+    Q_Q(QInputDialog);
+    QString text = plainTextEdit->toPlainText();
+    if (textValue != text) {
+        textValue = text;
+        emit q->textValueChanged(text);
+    }
+}
+
 void QInputDialogPrivate::_q_currentRowChanged(const QModelIndex &newIndex,
                                                const QModelIndex & /* oldIndex */)
 {
@@ -434,13 +468,13 @@ void QInputDialogPrivate::_q_currentRowChanged(const QModelIndex &newIndex,
     The input value can be a string, a number or an item from a list. A label
     must be set to tell the user what they should enter.
 
-    Four static convenience functions are provided: getText(), getInt(),
-    getDouble(), and getItem(). All the functions can be used in a similar way,
+    Five static convenience functions are provided: getText(), getMultiLineText(),
+    getInt(), getDouble(), and getItem(). All the functions can be used in a similar way,
     for example:
 
     \snippet dialogs/standarddialogs/dialog.cpp 3
 
-    The \c ok variable is set to true if the user clicks \uicontrol OK; otherwise it
+    The \c ok variable is set to true if the user clicks \uicontrol OK; otherwise, it
     is set to false.
 
     \image inputdialogs.png Input Dialogs
@@ -492,7 +526,7 @@ QInputDialog::~QInputDialog()
 
     \brief the mode used for input
 
-    This property help determines which widget is used for entering input into
+    This property helps determine which widget is used for entering input into
     the dialog.
 */
 void QInputDialog::setInputMode(InputMode mode)
@@ -545,7 +579,7 @@ QInputDialog::InputMode QInputDialog::inputMode() const
 
     \property QInputDialog::labelText
 
-    \brief the text to for the label to describe what needs to be input
+    \brief the label's text which describes what needs to be input
 */
 void QInputDialog::setLabelText(const QString &text)
 {
@@ -572,9 +606,11 @@ QString QInputDialog::labelText() const
     This enum specifies various options that affect the look and feel
     of an input dialog.
 
-    \value NoButtons Don't display \uicontrol{OK} and \uicontrol{Cancel} buttons. (Useful for "live dialogs".)
+    \value NoButtons Don't display \uicontrol{OK} and \uicontrol{Cancel} buttons (useful for "live dialogs").
     \value UseListViewForComboBoxItems Use a QListView rather than a non-editable QComboBox for
                                        displaying the items set with setComboBoxItems().
+    \value UsePlainTextEditForTextInput Use a QPlainTextEdit for multiline text input. This value was
+                                       introduced in 5.2.
 
     \sa options, setOption(), testOption()
 */
@@ -628,6 +664,8 @@ void QInputDialog::setOptions(InputDialogOptions options)
         d->buttonBox->setVisible(!(options & NoButtons));
     if ((changed & UseListViewForComboBoxItems) && inputMode() == TextInput)
         d->chooseRightTextInputWidget();
+    if ((changed & UsePlainTextEditForTextInput) && inputMode() == TextInput)
+        d->chooseRightTextInputWidget();
 }
 
 QInputDialog::InputDialogOptions QInputDialog::options() const
@@ -653,6 +691,8 @@ void QInputDialog::setTextValue(const QString &text)
     setInputMode(TextInput);
     if (d->inputWidget == d->lineEdit) {
         d->lineEdit->setText(text);
+    } else if (d->inputWidget == d->plainTextEdit) {
+        d->plainTextEdit->setPlainText(text);
     } else if (d->inputWidget == d->comboBox) {
         d->setComboBoxText(text);
     } else {
@@ -698,7 +738,7 @@ QLineEdit::EchoMode QInputDialog::textEchoMode() const
 
     \property QInputDialog::comboBoxEditable
 
-    \brief whether or not the combo box is used in the input dialog is editable
+    \brief whether or not the combo box used in the input dialog is editable
 */
 void QInputDialog::setComboBoxEditable(bool editable)
 {
@@ -724,7 +764,7 @@ bool QInputDialog::isComboBoxEditable() const
 
     \property QInputDialog::comboBoxItems
 
-    \brief the items used in the combobox for the input dialog
+    \brief the items used in the combo box for the input dialog
 */
 void QInputDialog::setComboBoxItems(const QStringList &items)
 {
@@ -956,7 +996,7 @@ void QInputDialog::setDoubleRange(double min, double max)
 
     \property QInputDialog::doubleDecimals
 
-    \brief sets the percision of the double spinbox in decimals
+    \brief sets the precision of the double spinbox in decimals
 
     \sa QDoubleSpinBox::setDecimals()
 */
@@ -1075,6 +1115,8 @@ void QInputDialog::setVisible(bool visible)
         d->inputWidget->setFocus();
         if (d->inputWidget == d->lineEdit) {
             d->lineEdit->selectAll();
+        } else if (d->inputWidget == d->plainTextEdit) {
+            d->plainTextEdit->selectAll();
         } else if (d->inputWidget == d->intSpinBox) {
             d->intSpinBox->selectAll();
         } else if (d->inputWidget == d->doubleSpinBox) {
@@ -1144,7 +1186,7 @@ void QInputDialog::done(int result)
     want to do this, you should create the dialog yourself using one of the
     QInputDialog constructors.
 
-    \sa getInt(), getDouble(), getItem()
+    \sa getInt(), getDouble(), getItem(), getMultiLineText()
 */
 
 QString QInputDialog::getText(QWidget *parent, const QString &title, const QString &label,
@@ -1156,6 +1198,58 @@ QString QInputDialog::getText(QWidget *parent, const QString &title, const QStri
     dialog.setLabelText(label);
     dialog.setTextValue(text);
     dialog.setTextEchoMode(mode);
+    dialog.setInputMethodHints(inputMethodHints);
+
+    int ret = dialog.exec();
+    if (ok)
+        *ok = !!ret;
+    if (ret) {
+        return dialog.textValue();
+    } else {
+        return QString();
+    }
+}
+
+/*!
+    \since 5.2
+
+    Static convenience function to get a multiline string from the user.
+
+    \a title is the text which is displayed in the title bar of the dialog.
+    \a label is the text which is shown to the user (it should say what should
+    be entered).
+    \a text is the default text which is placed in the plain text edit.
+    \a inputMethodHints is the input method hints that will be used in the
+    edit widget if an input method is active.
+
+    If \a ok is nonnull \e *\a ok will be set to true if the user pressed
+    \uicontrol OK and to false if the user pressed \uicontrol Cancel. The dialog's parent
+    is \a parent. The dialog will be modal and uses the specified widget
+    \a flags.
+
+    If the dialog is accepted, this function returns the text in the dialog's
+    plain text edit. If the dialog is rejected, a null QString is returned.
+
+    Use this static function like this:
+
+    \snippet dialogs/standarddialogs/dialog.cpp 4
+
+    \warning Do not delete \a parent during the execution of the dialog. If you
+    want to do this, you should create the dialog yourself using one of the
+    QInputDialog constructors.
+
+    \sa getInt(), getDouble(), getItem(), getText()
+*/
+
+QString QInputDialog::getMultiLineText(QWidget *parent, const QString &title, const QString &label,
+                                       const QString &text, bool *ok, Qt::WindowFlags flags,
+                                       Qt::InputMethodHints inputMethodHints)
+{
+    QInputDialog dialog(parent, flags);
+    dialog.setOptions(QInputDialog::UsePlainTextEditForTextInput);
+    dialog.setWindowTitle(title);
+    dialog.setLabelText(label);
+    dialog.setTextValue(text);
     dialog.setInputMethodHints(inputMethodHints);
 
     int ret = dialog.exec();
@@ -1196,7 +1290,7 @@ QString QInputDialog::getText(QWidget *parent, const QString &title, const QStri
     want to do this, you should create the dialog yourself using one of the
     QInputDialog constructors.
 
-    \sa getText(), getDouble(), getItem()
+    \sa getText(), getDouble(), getItem(), getMultiLineText()
 */
 
 int QInputDialog::getInt(QWidget *parent, const QString &title, const QString &label, int value,
@@ -1248,7 +1342,7 @@ int QInputDialog::getInt(QWidget *parent, const QString &title, const QString &l
     want to do this, you should create the dialog yourself using one of the
     QInputDialog constructors.
 
-    \sa getText(), getDouble(), getItem()
+    \sa getText(), getDouble(), getItem(), getMultiLineText()
 */
 
 /*!
@@ -1277,7 +1371,7 @@ int QInputDialog::getInt(QWidget *parent, const QString &title, const QString &l
     want to do this, you should create the dialog yourself using one of the
     QInputDialog constructors.
 
-    \sa getText(), getInt(), getItem()
+    \sa getText(), getInt(), getItem(), getMultiLineText()
 */
 
 double QInputDialog::getDouble(QWidget *parent, const QString &title, const QString &label,
@@ -1308,12 +1402,12 @@ double QInputDialog::getDouble(QWidget *parent, const QString &title, const QStr
     \a title is the text which is displayed in the title bar of the dialog.
     \a label is the text which is shown to the user (it should say what should
     be entered).
-    \a items is the string list which is inserted into the combobox.
+    \a items is the string list which is inserted into the combo box.
     \a current is the number  of the item which should be the current item.
     \a inputMethodHints is the input method hints that will be used if the
-    combobox is editable and an input method is active.
+    combo box is editable and an input method is active.
 
-    If \a editable is true the user can enter their own text; otherwise the
+    If \a editable is true the user can enter their own text; otherwise, the
     user may only select one of the existing items.
 
     If \a ok is nonnull \e *\a ok will be set to true if the user pressed
@@ -1321,7 +1415,7 @@ double QInputDialog::getDouble(QWidget *parent, const QString &title, const QStr
     is \a parent. The dialog will be modal and uses the widget \a flags.
 
     This function returns the text of the current item, or if \a editable is
-    true, the current text of the combobox.
+    true, the current text of the combo box.
 
     Use this static function like this:
 
@@ -1331,7 +1425,7 @@ double QInputDialog::getDouble(QWidget *parent, const QString &title, const QStr
     want to do this, you should create the dialog yourself using one of the
     QInputDialog constructors.
 
-    \sa getText(), getInt(), getDouble()
+    \sa getText(), getInt(), getDouble(), getMultiLineText()
 */
 
 QString QInputDialog::getItem(QWidget *parent, const QString &title, const QString &label,

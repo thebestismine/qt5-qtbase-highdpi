@@ -160,6 +160,7 @@ private slots:
     void maxVisibleItems();
     void task_QTBUG_10491_currentIndexAndModelColumn();
     void highlightedSignal();
+    void itemData();
 };
 
 class MyAbstractItemDelegate : public QAbstractItemDelegate
@@ -2044,10 +2045,11 @@ void tst_QComboBox::itemListPosition()
     //we test QFontComboBox because it has the specific behaviour to set a fixed size
     //to the list view
     QWidget topLevel;
-    topLevel.resize(200, 200);
-    topLevel.move(100, 100);
+    QHBoxLayout *layout = new QHBoxLayout(&topLevel);
+
     QFontComboBox combo(&topLevel);
 
+    layout->addWidget(&combo);
     //the code to get the available screen space is copied from QComboBox code
     const int scrNumber = QApplication::desktop()->screenNumber(&combo);
 
@@ -2058,11 +2060,12 @@ void tst_QComboBox::itemListPosition()
                          QApplication::desktop()->screenGeometry(scrNumber) :
                          QApplication::desktop()->availableGeometry(scrNumber);
 
-    combo.move(screen.width()-combo.sizeHint().width(), 0); //puts the combo to the top-right corner
+    topLevel.move(screen.width() - topLevel.sizeHint().width() - 10, 0); //puts the combo to the top-right corner
 
     topLevel.show();
+
     //wait because the window manager can move the window if there is a right panel
-    QTRY_VERIFY(combo.isVisible());
+    QVERIFY(QTest::qWaitForWindowExposed(&topLevel));
     combo.showPopup();
     QTRY_VERIFY(combo.view());
     QTRY_VERIFY(combo.view()->isVisible());
@@ -2751,6 +2754,151 @@ void tst_QComboBox::highlightedSignal()
     QVERIFY(initialItemSelectionModel != comboBox.view()->selectionModel());
 
     QCOMPARE(spy.size(), 1);
+}
+
+void tst_QComboBox::itemData()
+{
+    QComboBox comboBox;
+    const int itemCount = 10;
+
+    // ensure that the currentText(), the DisplayRole and the EditRole
+    // stay in sync when using QComboBox's default model
+    for (int i = 0; i < itemCount; ++i) {
+        QString itemText = QString("item text %1").arg(i);
+        comboBox.addItem(itemText);
+    }
+
+    for (int i = 0; i < itemCount; ++i) {
+        QString itemText = QString("item text %1").arg(i);
+        QCOMPARE(comboBox.itemText(i), itemText);
+        QCOMPARE(comboBox.itemData(i, Qt::DisplayRole).toString(), itemText);
+        QCOMPARE(comboBox.itemData(i, Qt::EditRole).toString(), itemText);
+
+        comboBox.setCurrentIndex(i);
+        QCOMPARE(comboBox.currentIndex(), i);
+        QCOMPARE(comboBox.currentText(), itemText);
+        QCOMPARE(comboBox.currentData(Qt::DisplayRole).toString(), itemText);
+        QCOMPARE(comboBox.currentData(Qt::EditRole).toString(), itemText);
+    }
+
+    for (int i = 0; i < itemCount; ++i) {
+        // now change by using setItemText
+        QString itemText = QString("setItemText %1").arg(i);
+        comboBox.setItemText(i, itemText);
+    }
+
+    for (int i = 0; i < itemCount; ++i) {
+        QString itemText = QString("setItemText %1").arg(i);
+        QCOMPARE(comboBox.itemText(i), itemText);
+        QCOMPARE(comboBox.itemData(i, Qt::DisplayRole).toString(), itemText);
+        QCOMPARE(comboBox.itemData(i, Qt::EditRole).toString(), itemText);
+
+        comboBox.setCurrentIndex(i);
+        QCOMPARE(comboBox.currentIndex(), i);
+        QCOMPARE(comboBox.currentText(), itemText);
+        QCOMPARE(comboBox.currentData(Qt::DisplayRole).toString(), itemText);
+        QCOMPARE(comboBox.currentData(Qt::EditRole).toString(), itemText);
+    }
+
+    for (int i = 0; i < itemCount; ++i) {
+        // now change by changing the DisplayRole's data
+        QString itemText = QString("setItemData(DisplayRole) %1").arg(i);
+        comboBox.setItemData(i, QVariant(itemText), Qt::DisplayRole);
+    }
+
+    for (int i = 0; i < itemCount; ++i) {
+        QString itemText = QString("setItemData(DisplayRole) %1").arg(i);
+        QCOMPARE(comboBox.itemText(i), itemText);
+        QCOMPARE(comboBox.itemData(i, Qt::DisplayRole).toString(), itemText);
+        QCOMPARE(comboBox.itemData(i, Qt::EditRole).toString(), itemText);
+
+        comboBox.setCurrentIndex(i);
+        QCOMPARE(comboBox.currentIndex(), i);
+        QCOMPARE(comboBox.currentText(), itemText);
+        QCOMPARE(comboBox.currentData(Qt::DisplayRole).toString(), itemText);
+        QCOMPARE(comboBox.currentData(Qt::EditRole).toString(), itemText);
+    }
+
+    for (int i = 0; i < itemCount; ++i) {
+        // now change by changing the EditRole's data
+        QString itemText = QString("setItemData(EditRole) %1").arg(i);
+        comboBox.setItemData(i, QVariant(itemText), Qt::EditRole);
+    }
+
+    for (int i = 0; i < itemCount; ++i) {
+        QString itemText = QString("setItemData(EditRole) %1").arg(i);
+        QCOMPARE(comboBox.itemText(i), itemText);
+        QCOMPARE(comboBox.itemData(i, Qt::DisplayRole).toString(), itemText);
+        QCOMPARE(comboBox.itemData(i, Qt::EditRole).toString(), itemText);
+
+        comboBox.setCurrentIndex(i);
+        QCOMPARE(comboBox.currentIndex(), i);
+        QCOMPARE(comboBox.currentText(), itemText);
+        QCOMPARE(comboBox.currentData(Qt::DisplayRole).toString(), itemText);
+        QCOMPARE(comboBox.currentData(Qt::EditRole).toString(), itemText);
+    }
+
+    comboBox.clear();
+
+
+    // set additional user data in the addItem call
+    for (int i = 0; i < itemCount; ++i) {
+        QString itemText = QString("item text %1").arg(i);
+        QString itemDataText = QString("item data %1").arg(i);
+        comboBox.addItem(itemText, QVariant(itemDataText));
+    }
+
+    for (int i = 0; i < itemCount; ++i) {
+        QString itemText = QString("item text %1").arg(i);
+        QString itemDataText = QString("item data %1").arg(i);
+        QCOMPARE(comboBox.itemData(i, Qt::DisplayRole).toString(), itemText);
+        QCOMPARE(comboBox.itemData(i, Qt::EditRole).toString(), itemText);
+        QCOMPARE(comboBox.itemData(i).toString(), itemDataText);
+
+        comboBox.setCurrentIndex(i);
+        QCOMPARE(comboBox.currentIndex(), i);
+        QCOMPARE(comboBox.currentData(Qt::DisplayRole).toString(), itemText);
+        QCOMPARE(comboBox.currentData(Qt::EditRole).toString(), itemText);
+        QCOMPARE(comboBox.currentData().toString(), itemDataText);
+
+    }
+
+    comboBox.clear();
+
+
+    // additional roles, setItemData
+    // UserRole + 0 -> string
+    // UserRole + 1 -> double
+    // UserRole + 2 -> icon
+    QString qtlogoPath = QFINDTESTDATA("qtlogo.png");
+    QIcon icon = QIcon(QPixmap(qtlogoPath));
+    for (int i = 0; i < itemCount; ++i) {
+        QString itemText = QString("item text %1").arg(i);
+        QString itemDataText = QString("item data %1").arg(i);
+        double d = i;
+        comboBox.addItem(itemText);
+        comboBox.setItemData(i, QVariant(itemDataText), Qt::UserRole);
+        comboBox.setItemData(i, QVariant(d), Qt::UserRole + 1);
+        comboBox.setItemData(i, QVariant::fromValue(icon), Qt::UserRole + 2);
+    }
+
+    for (int i = 0; i < itemCount; ++i) {
+        QString itemText = QString("item text %1").arg(i);
+        QString itemDataText = QString("item data %1").arg(i);
+        double d = i;
+        QCOMPARE(comboBox.itemData(i, Qt::DisplayRole).toString(), itemText);
+        QCOMPARE(comboBox.itemData(i, Qt::EditRole).toString(), itemText);
+        QCOMPARE(comboBox.itemData(i, Qt::UserRole).toString(), itemDataText);
+        QCOMPARE(comboBox.itemData(i, Qt::UserRole + 1).toDouble(), d);
+        QCOMPARE(comboBox.itemData(i, Qt::UserRole + 2).value<QIcon>(), icon);
+
+        comboBox.setCurrentIndex(i);
+        QCOMPARE(comboBox.currentData(Qt::DisplayRole).toString(), itemText);
+        QCOMPARE(comboBox.currentData(Qt::EditRole).toString(), itemText);
+        QCOMPARE(comboBox.currentData(Qt::UserRole).toString(), itemDataText);
+        QCOMPARE(comboBox.currentData(Qt::UserRole + 1).toDouble(), d);
+        QCOMPARE(comboBox.currentData(Qt::UserRole + 2).value<QIcon>(), icon);
+    }
 }
 
 QTEST_MAIN(tst_QComboBox)

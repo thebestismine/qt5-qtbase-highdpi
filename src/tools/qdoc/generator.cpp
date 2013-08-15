@@ -1,7 +1,7 @@
 /****************************************************************************
 **
 ** Copyright (C) 2013 Digia Plc and/or its subsidiary(-ies).
-** Contact: http://www.qt-project.org/
+** Contact: http://www.qt-project.org/legal
 **
 ** This file is part of the tools applications of the Qt Toolkit.
 **
@@ -97,7 +97,9 @@ QStringList Generator::styleDirs;
 QStringList Generator::styleFiles;
 bool Generator::debugging_ = false;
 bool Generator::noLinkErrors_ = false;
+bool Generator::redirectDocumentationToDevNull_ = false;
 Generator::Passes Generator::qdocPass_ = Both;
+bool Generator::useOutputSubdirs_ = true;
 
 void Generator::setDebugSegfaultFlag(bool b)
 {
@@ -263,18 +265,23 @@ void Generator::writeOutFileNames()
 void Generator::beginSubPage(const InnerNode* node, const QString& fileName)
 {
     QString path = outputDir() + QLatin1Char('/');
-    if (!node->outputSubdirectory().isEmpty())
+    if (Generator::useOutputSubdirs() && !node->outputSubdirectory().isEmpty())
         path += node->outputSubdirectory() + QLatin1Char('/');
     path += fileName;
-    Generator::debugSegfault("Writing: " + path);
-    outFileNames.insert(fileName,fileName);
-    QFile* outFile = new QFile(path);
+
+    QFile* outFile = new QFile(redirectDocumentationToDevNull_ ? QStringLiteral("/dev/null") : path);
+    if (outFile->exists())
+        node->location().error(tr("HTML file already exists; overwriting %1").arg(outFile->fileName()));
     if (!outFile->open(QFile::WriteOnly))
         node->location().fatal(tr("Cannot open output file '%1'").arg(outFile->fileName()));
+    Generator::debugSegfault("Writing: " + path);
+    outFileNames.insert(fileName,fileName);
     QTextStream* out = new QTextStream(outFile);
 
+#ifndef QT_NO_TEXTCODEC
     if (outputCodec)
         out->setCodec(outputCodec);
+#endif
     outStreamStack.push(out);
     const_cast<InnerNode*>(node)->setOutputFileName(fileName);
 }
@@ -297,14 +304,22 @@ QString Generator::fileBase(const Node *node) const
         node = node->relates();
     else if (!node->isInnerNode())
         node = node->parent();
-    if (node->subType() == Node::QmlPropertyGroup) {
+    if (node->type() == Node::QmlPropertyGroup) {
         node = node->parent();
     }
 
-    QString base = node->doc().baseName();
-    if (!base.isEmpty())
-        return base;
+    if (node->type() == Node::Document && node->subType() == Node::Collision) {
+        const NameCollisionNode* ncn = static_cast<const NameCollisionNode*>(node);
+        if (ncn->currentChild())
+            return fileBase(ncn->currentChild());
+    }
 
+    if (node->hasBaseName()) {
+        //qDebug() << "RETURNING:" << node->baseName();
+        return node->baseName();
+    }
+
+    QString base;
     const Node *p = node;
 
     forever {
@@ -373,6 +388,8 @@ QString Generator::fileBase(const Node *node) const
     }
     while (res.endsWith(QLatin1Char('-')))
         res.chop(1);
+    Node* n = const_cast<Node*>(node);
+    n->setBaseName(res);
     return res;
 }
 
@@ -405,7 +422,7 @@ QMap<QString, QString>& Generator::formattingRightMap()
 /*!
   Returns the full document location.
  */
-QString Generator::fullDocumentLocation(const Node *node, bool subdir)
+QString Generator::fullDocumentLocation(const Node *node, bool useSubdir)
 {
     if (!node)
         return QString();
@@ -417,11 +434,11 @@ QString Generator::fullDocumentLocation(const Node *node, bool subdir)
     QString fdl;
 
     /*
-      If the output is being sent to subdirectories of the
-      output directory, and if the subdir parameter is set,
-      prepend the subdirectory name + '/' to the result.
+      If the useSubdir parameter is set, then the output is
+      being sent to subdirectories of the output directory.
+      Prepend the subdirectory name + '/' to the result.
      */
-    if (subdir) {
+    if (useSubdir) {
         fdl = node->outputSubdirectory();
         if (!fdl.isEmpty())
             fdl.append(QLatin1Char('/'));
@@ -465,7 +482,7 @@ QString Generator::fullDocumentLocation(const Node *node, bool subdir)
         parentName = fullDocumentLocation(node->relates());
     }
     else if ((parentNode = node->parent())) {
-        if (parentNode->subType() == Node::QmlPropertyGroup) {
+        if (parentNode->type() == Node::QmlPropertyGroup) {
             parentNode = parentNode->parent();
             parentName = fullDocumentLocation(parentNode);
         }
@@ -654,7 +671,7 @@ void Generator::generateBody(const Node *node, CodeMarker *marker)
         }
     }
     if (node->doc().isEmpty()) {
-        if (!quiet && !node->isReimp()) { // ### might be unnecessary
+        if (!node->isWrapper() && !quiet && !node->isReimp()) { // ### might be unnecessary
             node->location().warning(tr("No documentation for '%1'").arg(node->plainFullName()));
         }
     }
@@ -931,6 +948,8 @@ void Generator::generateInnerNode(InnerNode* node)
 {
     if (!node->url().isNull())
         return;
+    if (node->isIndexNode())
+        return;
 
     if (node->type() == Node::Document) {
         DocNode* docNode = static_cast<DocNode*>(node);
@@ -938,13 +957,13 @@ void Generator::generateInnerNode(InnerNode* node)
             return;
         if (docNode->subType() == Node::Image)
             return;
-        if (docNode->subType() == Node::QmlPropertyGroup)
-            return;
         if (docNode->subType() == Node::Page) {
             if (node->count() > 0)
                 qDebug("PAGE %s HAS CHILDREN", qPrintable(docNode->title()));
         }
     }
+    else if (node->type() == Node::QmlPropertyGroup)
+        return;
 
     /*
       Obtain a code marker for the source file.
@@ -1097,7 +1116,10 @@ void Generator::generateSince(const Node *node, CodeMarker *marker)
             if (project.isEmpty())
                 text << "version";
             else
-                text << project;
+                text << Atom(Atom::Link, project)
+                     << Atom(Atom::FormattingLeft, ATOM_FORMATTING_LINK)
+                     << Atom(Atom::String, project)
+                     << Atom(Atom::FormattingRight, ATOM_FORMATTING_LINK);
             text << " " << since[0];
         } else {
             // Reconstruct the <project> <version> string.
@@ -1472,7 +1494,12 @@ QString Generator::indent(int level, const QString& markedCode)
 
 void Generator::initialize(const Config &config)
 {
+
+    if (config.getBool(QString("HTML.nosubdirs")))
+        resetUseOutputSubdirs();
+
     outputFormats = config.getOutputFormats();
+    redirectDocumentationToDevNull_ = config.getBool(CONFIG_REDIRECTDOCUMENTATIONTODEVNULL);
     if (!outputFormats.isEmpty()) {
         outDir_ = config.getOutputDir();
         if (outDir_.isEmpty()) {
@@ -1485,7 +1512,7 @@ void Generator::initialize(const Config &config)
 
         QDir dirInfo;
         if (dirInfo.exists(outDir_)) {
-            if (!runGenerateOnly()) {
+            if (!runGenerateOnly() && Generator::useOutputSubdirs()) {
                 if (!Config::removeDirContents(outDir_))
                     config.lastLocation().error(tr("Cannot empty output directory '%1'").arg(outDir_));
             }
@@ -1905,8 +1932,6 @@ QString Generator::typeString(const Node *node)
         switch (node->subType()) {
         case Node::QmlClass:
             return "type";
-        case Node::QmlPropertyGroup:
-            return "property group";
         case Node::QmlBasicType:
             return "type";
         default:
@@ -1921,6 +1946,16 @@ QString Generator::typeString(const Node *node)
         return "function";
     case Node::Property:
         return "property";
+    case Node::QmlPropertyGroup:
+        return "property group";
+    case Node::QmlProperty:
+        return "QML property";
+    case Node::QmlSignal:
+        return "QML signal";
+    case Node::QmlSignalHandler:
+        return "QML signal handler";
+    case Node::QmlMethod:
+        return "QML method";
     default:
         return "documentation";
     }

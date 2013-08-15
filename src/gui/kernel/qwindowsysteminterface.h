@@ -61,6 +61,7 @@
 #include <QtGui/QTouchEvent>
 #include <QtCore/QEventLoop>
 #include <QtGui/QVector2D>
+#include <QtGui/QWheelEvent>
 
 QT_BEGIN_NAMESPACE
 
@@ -103,8 +104,8 @@ public:
                                        quint32 nativeModifiers,
                                        const QString& text = QString(), bool autorep = false,
                                        ushort count = 1);
-    static void handleWheelEvent(QWindow *w, const QPointF & local, const QPointF & global, QPoint pixelDelta, QPoint angleDelta, Qt::KeyboardModifiers mods = Qt::NoModifier);
-    static void handleWheelEvent(QWindow *w, ulong timestamp, const QPointF & local, const QPointF & global, QPoint pixelDelta, QPoint angleDelta, Qt::KeyboardModifiers mods = Qt::NoModifier);
+    static void handleWheelEvent(QWindow *w, const QPointF & local, const QPointF & global, QPoint pixelDelta, QPoint angleDelta, Qt::KeyboardModifiers mods = Qt::NoModifier, QWheelEvent::Phase phase = QWheelEvent::Changed);
+    static void handleWheelEvent(QWindow *w, ulong timestamp, const QPointF & local, const QPointF & global, QPoint pixelDelta, QPoint angleDelta, Qt::KeyboardModifiers mods = Qt::NoModifier, QWheelEvent::Phase phase = QWheelEvent::Changed);
 
     // Wheel event compatibility functions. Will be removed: do not use.
     static void handleWheelEvent(QWindow *w, const QPointF & local, const QPointF & global, int d, Qt::Orientation o, Qt::KeyboardModifiers mods = Qt::NoModifier);
@@ -131,13 +132,14 @@ public:
     static void handleTouchCancelEvent(QWindow *w, ulong timestamp, QTouchDevice *device, Qt::KeyboardModifiers mods = Qt::NoModifier);
 
     static void handleGeometryChange(QWindow *w, const QRect &newRect);
-    static void handleCloseEvent(QWindow *w);
+    static void handleCloseEvent(QWindow *w, bool *accepted = 0);
     static void handleEnterEvent(QWindow *w, const QPointF &local = QPointF(), const QPointF& global = QPointF());
     static void handleLeaveEvent(QWindow *w);
     static void handleEnterLeaveEvent(QWindow *enter, QWindow *leave, const QPointF &local = QPointF(), const QPointF& global = QPointF());
     static void handleWindowActivated(QWindow *w, Qt::FocusReason r = Qt::OtherFocusReason);
 
     static void handleWindowStateChanged(QWindow *w, Qt::WindowState newState);
+    static void handleWindowScreenChanged(QWindow *w, QScreen *newScreen);
 
     static void handleApplicationStateChanged(Qt::ApplicationState newState);
 
@@ -181,6 +183,9 @@ public:
     static void handleContextMenuEvent(QWindow *w, bool mouseTriggered,
                                        const QPoint &pos, const QPoint &globalPos,
                                        Qt::KeyboardModifiers modifiers);
+#endif
+#ifndef QT_NO_WHATSTHIS
+    static void handleEnterWhatsThisEvent();
 #endif
 
     // For event dispatcher implementations

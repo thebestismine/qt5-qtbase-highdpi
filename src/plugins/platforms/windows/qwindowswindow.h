@@ -124,16 +124,19 @@ public:
         WithinSetParent = 0x2,
         FrameDirty = 0x4,            //! Frame outdated by setStyle, recalculate in next query.
         OpenGLSurface = 0x10,
-        OpenGLDoubleBuffered = 0x20,
-        OpenGlPixelFormatInitialized = 0x40,
-        BlockedByModal = 0x80,
-        SizeGripOperation = 0x100,
-        FrameStrutEventsEnabled = 0x200,
-        SynchronousGeometryChangeEvent = 0x400,
-        WithinSetStyle = 0x800,
-        WithinDestroy = 0x1000,
-        TouchRegistered = 0x2000,
-        AlertState = 0x4000
+        OpenGL_ES2 = 0x20,
+        OpenGLDoubleBuffered = 0x40,
+        OpenGlPixelFormatInitialized = 0x80,
+        BlockedByModal = 0x100,
+        SizeGripOperation = 0x200,
+        FrameStrutEventsEnabled = 0x400,
+        SynchronousGeometryChangeEvent = 0x800,
+        WithinSetStyle = 0x1000,
+        WithinDestroy = 0x2000,
+        TouchRegistered = 0x4000,
+        AlertState = 0x8000,
+        Exposed = 0x10000,
+        WithinCreate = 0x20000
     };
 
     struct WindowData
@@ -161,7 +164,7 @@ public:
 
     virtual void setVisible(bool visible);
     bool isVisible() const;
-    virtual bool isExposed() const { return m_windowState != Qt::WindowMinimized && isVisible(); }
+    virtual bool isExposed() const { return testFlag(Exposed); }
     virtual bool isActive() const;
     virtual bool isEmbedded(const QPlatformWindow *parentWindow) const;
     virtual QPoint mapToGlobal(const QPoint &pos) const;
@@ -217,7 +220,6 @@ public:
 
     void handleMoved();
     void handleResized(int wParam);
-    void handleShown();
     void handleHidden();
 
     static inline HWND handleOf(const QWindow *w);
@@ -272,12 +274,14 @@ private:
     inline bool isFullScreen_sys() const;
     inline void setWindowState_sys(Qt::WindowState newState);
     inline void setParent_sys(const QPlatformWindow *parent) const;
+    inline void updateTransientParent() const;
     void destroyWindow();
     void registerDropSite();
     void unregisterDropSite();
     void handleGeometryChange();
     void handleWindowStateChange(Qt::WindowState state);
     inline void destroyIcon();
+    void fireExpose(const QRegion &region, bool force=false);
 
     mutable WindowData m_data;
     mutable unsigned m_flags;

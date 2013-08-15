@@ -49,13 +49,13 @@
 #include <qevent.h>
 #include <qfontmetrics.h>
 #include <qwindow.h>
+#include <qscreen.h>
 #include <qmainwindow.h>
 #include <qrubberband.h>
 #include <qstylepainter.h>
 #include <qtoolbutton.h>
 #include <qdebug.h>
 
-#include <qpa/qplatformwindow.h>
 #include <private/qwidgetresizehandler_p.h>
 
 #include "qdockwidget_p.h"
@@ -874,7 +874,7 @@ bool QDockWidgetPrivate::mouseMoveEvent(QMouseEvent *event)
         QPoint pos = event->globalPos() - state->pressPos;
         q->move(pos);
 
-        if (!state->ctrlDrag)
+        if (state && !state->ctrlDrag)
             mwlayout->hover(state->widgetItem, event->globalPos());
 
         ret = true;
@@ -1000,14 +1000,6 @@ void QDockWidgetPrivate::plug(const QRect &rect)
     setWindowState(false, false, rect);
 }
 
-static void setFrameStrutEventsEnabled(const QWidget *w, bool enabled)
-{
-    if (const QWindow *window = w->windowHandle())
-        if (QPlatformWindow *platformWindow = window->handle())
-            if (platformWindow->frameStrutEventsEnabled() != enabled)
-                platformWindow->setFrameStrutEventsEnabled(enabled);
-}
-
 void QDockWidgetPrivate::setWindowState(bool floating, bool unplug, const QRect &rect)
 {
     Q_Q(QDockWidget);
@@ -1059,9 +1051,6 @@ void QDockWidgetPrivate::setWindowState(bool floating, bool unplug, const QRect 
                 emit q->dockLocationChanged(mwlayout->dockWidgetArea(q));
         }
     }
-
-    if (floating && nativeDeco)
-        setFrameStrutEventsEnabled(q, true);
 
     resizer->setActive(QWidgetResizeHandler::Resize, !unplug && floating && !nativeDeco);
 }
@@ -1271,6 +1260,9 @@ void QDockWidget::setFloating(bool floating)
         d->endDrag(true);
 
     QRect r = d->undockedGeometry;
+    // Keep position when undocking for the first time.
+    if (floating && isVisible() && !r.isValid())
+        r = QRect(mapToGlobal(QPoint(0, 0)), size());
 
     d->setWindowState(floating, false, floating ? r : QRect());
 
@@ -1396,11 +1388,17 @@ bool QDockWidget::event(QEvent *event)
         d->toggleViewAction->setChecked(false);
         emit visibilityChanged(false);
         break;
-    case QEvent::Show:
-        if (static_cast<QDockWidgetLayout *>(QDockWidget::layout())->nativeWindowDeco(isFloating()))
-            setFrameStrutEventsEnabled(this, true);
+    case QEvent::Show: {
         d->toggleViewAction->setChecked(true);
-        emit visibilityChanged(geometry().right() >= 0 && geometry().bottom() >= 0);
+        QPoint parentTopLeft(0, 0);
+        if (isWindow()) {
+            if (const QWindow *window = windowHandle())
+                parentTopLeft = window->screen()->availableVirtualGeometry().topLeft();
+            else
+                parentTopLeft = QGuiApplication::primaryScreen()->availableVirtualGeometry().topLeft();
+        }
+        emit visibilityChanged(geometry().right() >= parentTopLeft.x() && geometry().bottom() >= parentTopLeft.y());
+}
         break;
 #endif
     case QEvent::ApplicationLayoutDirectionChange:

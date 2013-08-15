@@ -154,6 +154,7 @@ public:
         ComboLineEditFont,
         SmallFont,
         MiniFont,
+        FixedFont,
         NFonts
     };
 
@@ -253,6 +254,11 @@ public:
         AnimateToolBoxUiEffect = 0x40
     };
 
+    enum IconOption {
+        DontUseCustomDirectoryIcons = 0x01
+    };
+    Q_DECLARE_FLAGS(IconOptions, IconOption)
+
     explicit QPlatformTheme();
     virtual ~QPlatformTheme();
 
@@ -274,7 +280,8 @@ public:
     virtual QVariant themeHint(ThemeHint hint) const;
 
     virtual QPixmap standardPixmap(StandardPixmap sp, const QSizeF &size) const;
-    virtual QPixmap fileIconPixmap(const QFileInfo &fileInfo, const QSizeF &size) const;
+    virtual QPixmap fileIconPixmap(const QFileInfo &fileInfo, const QSizeF &size,
+                                   QPlatformTheme::IconOptions iconOptions = 0) const;
 
     virtual QIconEngine *createIconEngine(const QString &iconName) const;
 

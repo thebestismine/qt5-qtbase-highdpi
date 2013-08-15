@@ -238,7 +238,10 @@ private:
     void defaultConstruct(T *from, T *to);
     void copyConstruct(const T *srcFrom, const T *srcTo, T *dstFrom);
     void destruct(T *from, T *to);
-
+    bool isValidIterator(const iterator &i) const
+    {
+        return (i <= d->end()) && (d->begin() <= i);
+    }
     class AlignmentDummy { Data header; T array[1]; };
 };
 
@@ -398,7 +401,8 @@ QVector<T> &QVector<T>::operator=(const QVector<T> &v)
 template <typename T>
 QVector<T>::QVector(int asize)
 {
-    if (Q_LIKELY(asize)) {
+    Q_ASSERT_X(asize >= 0, "QVector::QVector", "Size must be greater than or equal to 0.");
+    if (Q_LIKELY(asize > 0)) {
         d = Data::allocate(asize);
         d->size = asize;
         defaultConstruct(d->begin(), d->end());
@@ -410,7 +414,8 @@ QVector<T>::QVector(int asize)
 template <typename T>
 QVector<T>::QVector(int asize, const T &t)
 {
-    if (asize) {
+    Q_ASSERT_X(asize >= 0, "QVector::QVector", "Size must be greater than or equal to 0.");
+    if (asize > 0) {
         d = Data::allocate(asize);
         d->size = asize;
         T* i = d->end();
@@ -576,6 +581,8 @@ inline void QVector<T>::removeLast()
 template <typename T>
 typename QVector<T>::iterator QVector<T>::insert(iterator before, size_type n, const T &t)
 {
+    Q_ASSERT_X(isValidIterator(before),  "QVector::insert", "The specified iterator argument 'before' is invalid");
+
     int offset = std::distance(d->begin(), before);
     if (n != 0) {
         const T copy(t);
@@ -609,6 +616,9 @@ typename QVector<T>::iterator QVector<T>::insert(iterator before, size_type n, c
 template <typename T>
 typename QVector<T>::iterator QVector<T>::erase(iterator abegin, iterator aend)
 {
+    Q_ASSERT_X(isValidIterator(abegin), "QVector::erase", "The specified iterator argument 'abegin' is invalid");
+    Q_ASSERT_X(isValidIterator(aend), "QVector::erase", "The specified iterator argument 'aend' is invalid");
+
     const int itemsToErase = aend - abegin;
 
     if (!itemsToErase)

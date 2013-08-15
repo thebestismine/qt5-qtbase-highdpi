@@ -159,23 +159,6 @@ public slots:
     }
 };
 
-#ifndef QT_NO_EXCEPTIONS
-class QEventLoopTestException { };
-
-class ExceptionThrower : public QObject
-{
-    Q_OBJECT
-public:
-    ExceptionThrower() : QObject() { }
-public slots:
-    void throwException()
-    {
-        QEventLoopTestException e;
-        throw e;
-    }
-};
-#endif
-
 class tst_QEventLoop : public QObject
 {
     Q_OBJECT
@@ -183,9 +166,6 @@ private slots:
     // This test *must* run first. See the definition for why.
     void processEvents();
     void exec();
-#if !defined(QT_NO_EXCEPTIONS) && !defined(Q_OS_WINCE_WM)
-    void throwInExec();
-#endif
     void reexec();
     void execAfterExit();
     void wakeUp();
@@ -205,11 +185,11 @@ protected:
 
 void tst_QEventLoop::processEvents()
 {
-    QSignalSpy spy1(QAbstractEventDispatcher::instance(), SIGNAL(aboutToBlock()));
-    QSignalSpy spy2(QAbstractEventDispatcher::instance(), SIGNAL(awake()));
+    QSignalSpy aboutToBlockSpy(QAbstractEventDispatcher::instance(), SIGNAL(aboutToBlock()));
+    QSignalSpy awakeSpy(QAbstractEventDispatcher::instance(), SIGNAL(awake()));
 
-    QVERIFY(spy1.isValid());
-    QVERIFY(spy2.isValid());
+    QVERIFY(aboutToBlockSpy.isValid());
+    QVERIFY(awakeSpy.isValid());
 
     QEventLoop eventLoop;
 
@@ -218,8 +198,8 @@ void tst_QEventLoop::processEvents()
     // process posted events, QEventLoop::processEvents() should return
     // true
     QVERIFY(eventLoop.processEvents());
-    QCOMPARE(spy1.count(), 0);
-    QCOMPARE(spy2.count(), 1);
+    QCOMPARE(aboutToBlockSpy.count(), 0);
+    QCOMPARE(awakeSpy.count(), 1);
 
     // allow any session manager to complete its handshake, so that
     // there are no pending events left.
@@ -232,28 +212,28 @@ void tst_QEventLoop::processEvents()
 
     // no events to process, QEventLoop::processEvents() should return
     // false
-    spy1.clear();
-    spy2.clear();
+    aboutToBlockSpy.clear();
+    awakeSpy.clear();
     QVERIFY(!eventLoop.processEvents());
-    QCOMPARE(spy1.count(), 0);
-    QCOMPARE(spy2.count(), 1);
+    QCOMPARE(aboutToBlockSpy.count(), 0);
+    QCOMPARE(awakeSpy.count(), 1);
 
     // make sure the test doesn't block forever
     int timerId = startTimer(100);
 
     // wait for more events to process, QEventLoop::processEvents()
     // should return true
-    spy1.clear();
-    spy2.clear();
+    aboutToBlockSpy.clear();
+    awakeSpy.clear();
     QVERIFY(eventLoop.processEvents(QEventLoop::WaitForMoreEvents));
 
     // Verify that the eventloop has blocked and woken up. Some eventloops
     // may block and wake up multiple times.
-    QVERIFY(spy1.count() > 0);
-    QVERIFY(spy2.count() > 0);
+    QVERIFY(aboutToBlockSpy.count() > 0);
+    QVERIFY(awakeSpy.count() > 0);
     // We should get one awake for each aboutToBlock, plus one awake when
     // processEvents is entered.
-    QVERIFY(spy2.count() >= spy1.count());
+    QVERIFY(awakeSpy.count() >= aboutToBlockSpy.count());
 
     killTimer(timerId);
 }
@@ -321,53 +301,6 @@ void tst_QEventLoop::exec()
         QCOMPARE(executor.returnCode, -1);
     }
 }
-
-#if !defined(QT_NO_EXCEPTIONS) && !defined(Q_OS_WINCE_WM)
-// Exceptions need to be enabled for this test
-// Q_OS_WINCE_WM case: this platform doesn't support propagating exceptions through the event loop
-// Windows Mobile cannot handle cross library exceptions
-// qobject.cpp will try to rethrow the exception after handling
-// which causes gwes.exe to crash
-void tst_QEventLoop::throwInExec()
-{
-// exceptions compiled in, runtime tests follow.
-#if defined(Q_OS_LINUX)
-    // C++ exceptions can't be passed through glib callbacks.  Skip the test if
-    // we're using the glib event loop.
-    QByteArray dispatcher = QAbstractEventDispatcher::instance()->metaObject()->className();
-    if (dispatcher.contains("Glib")) {
-        QSKIP(
-            qPrintable(QString(
-                "Throwing exceptions in exec() won't work if %1 event dispatcher is used.\n"
-                "Try running with QT_NO_GLIB=1 in environment."
-            ).arg(QString::fromLatin1(dispatcher)))
-        );
-    }
-#endif
-
-    {
-        // QEventLoop::exec() is exception safe
-        QEventLoop eventLoop;
-        int caughtExceptions = 0;
-
-        try {
-            ExceptionThrower exceptionThrower;
-            QTimer::singleShot(EXEC_TIMEOUT, &exceptionThrower, SLOT(throwException()));
-            (void) eventLoop.exec();
-        } catch (...) {
-            ++caughtExceptions;
-        }
-        try {
-            ExceptionThrower exceptionThrower;
-            QTimer::singleShot(EXEC_TIMEOUT, &exceptionThrower, SLOT(throwException()));
-            (void) eventLoop.exec();
-        } catch (...) {
-            ++caughtExceptions;
-        }
-        QCOMPARE(caughtExceptions, 2);
-    }
-}
-#endif
 
 void tst_QEventLoop::reexec()
 {

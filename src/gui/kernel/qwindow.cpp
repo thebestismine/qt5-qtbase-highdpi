@@ -346,6 +346,25 @@ void QWindowPrivate::updateVisibility()
         emit q->visibilityChanged(visibility);
 }
 
+void QWindowPrivate::setScreen(QScreen *newScreen, bool recreate)
+{
+    Q_Q(QWindow);
+    if (newScreen != q->screen()) {
+        const bool shouldRecreate = recreate && platformWindow != 0;
+        if (shouldRecreate)
+            q->destroy();
+        if (screen)
+            q->disconnect(screen, SIGNAL(destroyed(QObject*)), q, SLOT(screenDestroyed(QObject*)));
+        screen = newScreen;
+        if (newScreen) {
+            q->connect(screen, SIGNAL(destroyed(QObject*)), q, SLOT(screenDestroyed(QObject*)));
+            if (shouldRecreate)
+                q->create();
+        }
+        emit q->screenChanged(newScreen);
+    }
+}
+
 /*!
     Sets the \a surfaceType of the window.
 
@@ -853,6 +872,10 @@ QRegion QWindow::mask() const
 void QWindow::requestActivate()
 {
     Q_D(QWindow);
+    if (flags() & Qt::WindowDoesNotAcceptFocus) {
+        qWarning() << "requestActivate() called for " << this << " which has Qt::WindowDoesNotAcceptFocus set.";
+        return;
+    }
     if (d->platformWindow)
         d->platformWindow->requestActivateWindow();
 }
@@ -873,6 +896,14 @@ bool QWindow::isExposed() const
     Q_D(const QWindow);
     return d->exposed;
 }
+
+/*!
+    \property QWindow::active
+    \brief the active status of the window
+    \since 5.1
+
+    \sa requestActivate()
+*/
 
 /*!
     Returns true if the window should appear active from a style perspective.
@@ -907,7 +938,6 @@ bool QWindow::isActive() const
 /*!
     \property QWindow::contentOrientation
     \brief the orientation of the window's contents
-    \since 5.1
 
     This is a hint to the window manager in case it needs to display
     additional content like popups, dialogs, status bars, or similar
@@ -1164,7 +1194,6 @@ void QWindow::setHeight(int arg)
 /*!
     \property QWindow::minimumWidth
     \brief the minimum width of the window's geometry
-    \since 5.1
 */
 void QWindow::setMinimumWidth(int w)
 {
@@ -1174,7 +1203,6 @@ void QWindow::setMinimumWidth(int w)
 /*!
     \property QWindow::minimumHeight
     \brief the minimum height of the window's geometry
-    \since 5.1
 */
 void QWindow::setMinimumHeight(int h)
 {
@@ -1207,7 +1235,6 @@ void QWindow::setMaximumSize(const QSize &size)
 /*!
     \property QWindow::maximumWidth
     \brief the maximum width of the window's geometry
-    \since 5.1
 */
 void QWindow::setMaximumWidth(int w)
 {
@@ -1217,7 +1244,6 @@ void QWindow::setMaximumWidth(int w)
 /*!
     \property QWindow::maximumHeight
     \brief the maximum height of the window's geometry
-    \since 5.1
 */
 void QWindow::setMaximumHeight(int h)
 {
@@ -1377,6 +1403,7 @@ void QWindow::setFramePosition(const QPoint &point)
     if (d->platformWindow) {
         d->platformWindow->setGeometry(qhidpiPointToPixel(QRect(point, size())));
     } else {
+        d->positionAutomatic = false;
         d->geometry.moveTopLeft(point);
     }
 }
@@ -1561,20 +1588,7 @@ void QWindow::setScreen(QScreen *newScreen)
     Q_D(QWindow);
     if (!newScreen)
         newScreen = QGuiApplication::primaryScreen();
-    if (newScreen != screen()) {
-        const bool wasCreated = d->platformWindow != 0;
-        if (wasCreated)
-            destroy();
-        if (d->screen)
-            disconnect(d->screen, SIGNAL(destroyed(QObject*)), this, SLOT(screenDestroyed(QObject*)));
-        d->screen = newScreen;
-        if (newScreen) {
-            connect(d->screen, SIGNAL(destroyed(QObject*)), this, SLOT(screenDestroyed(QObject*)));
-            if (wasCreated)
-                create();
-        }
-        emit screenChanged(newScreen);
-    }
+    d->setScreen(newScreen, true /* recreate */);
 }
 
 /*!
@@ -1904,9 +1918,11 @@ bool QWindow::event(QEvent *ev)
     case QEvent::Close: {
         Q_D(QWindow);
         bool wasVisible = isVisible();
-        destroy();
-        if (wasVisible)
-            d->maybeQuitOnLastWindowClosed();
+        if (ev->isAccepted()) {
+            destroy();
+            if (wasVisible)
+                d->maybeQuitOnLastWindowClosed();
+        }
         break; }
 
     case QEvent::Expose:

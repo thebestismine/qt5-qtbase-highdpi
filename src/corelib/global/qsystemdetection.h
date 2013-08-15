@@ -49,9 +49,10 @@
 /*
    The operating system, must be one of: (Q_OS_x)
 
-     DARWIN   - Darwin OS (synonym for Q_OS_MAC)
-     MAC      - Mac OS X or iOS (iPhoneOS)
-     IOS      - iOS (treated as a variant of Mac OS)
+     DARWIN   - Any Darwin system
+     MAC      - OS X and iOS
+     OSX      - OS X
+     IOS      - iOS
      MSDOS    - MS-DOS and Windows
      OS2      - OS/2
      OS2EMX   - XFree86 on OS/2 (not PM)
@@ -166,7 +167,6 @@
 
 #if defined(Q_OS_DARWIN)
 #  define Q_OS_MAC
-#  define Q_OS_MACX /* Q_OS_MACX is only for compatibility.*/
 #  if defined(Q_OS_DARWIN64)
 #     define Q_OS_MAC64
 #  elif defined(Q_OS_DARWIN32)
@@ -175,6 +175,9 @@
 #  include <TargetConditionals.h>
 #  if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
 #     define Q_OS_IOS
+#  elif defined(TARGET_OS_MAC) && TARGET_OS_MAC
+#     define Q_OS_OSX
+#     define Q_OS_MACX // compatibility synonym
 #  endif
 #endif
 
@@ -205,11 +208,17 @@
 #  if !defined(__MAC_10_8)
 #       define __MAC_10_8 1080
 #  endif
+#  if !defined(__MAC_10_9)
+#       define __MAC_10_9 1090
+#  endif
 #  if !defined(MAC_OS_X_VERSION_10_7)
 #       define MAC_OS_X_VERSION_10_7 1070
 #  endif
 #  if !defined(MAC_OS_X_VERSION_10_8)
 #       define MAC_OS_X_VERSION_10_8 1080
+#  endif
+#  if !defined(MAC_OS_X_VERSION_10_9)
+#       define MAC_OS_X_VERSION_10_9 1090
 #  endif
 #
 #  if !defined(__IPHONE_4_3)
@@ -227,9 +236,12 @@
 #  if !defined(__IPHONE_6_1)
 #       define __IPHONE_6_1 60100
 #  endif
+#  if !defined(__IPHONE_7_0)
+#       define __IPHONE_7_0 70000
+#  endif
 #
 #  if (__MAC_OS_X_VERSION_MAX_ALLOWED > __MAC_10_8)
-#    warning "This version of Mac OS X is unsupported"
+#    warning "This version of OS X is unsupported"
 #  endif
 #endif
 

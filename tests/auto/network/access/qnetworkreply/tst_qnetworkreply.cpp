@@ -367,6 +367,8 @@ private Q_SLOTS:
 #ifdef QT_BUILD_INTERNAL
     void sslSessionSharing_data();
     void sslSessionSharing();
+    void sslSessionSharingFromPersistentSession_data();
+    void sslSessionSharingFromPersistentSession();
 #endif
 #endif
 
@@ -5920,7 +5922,7 @@ void tst_QNetworkReply::sslSessionSharing()
     warmupRequest.setAttribute(QNetworkRequest::User, sessionSharingEnabled); // so we can read it from the slot
     if (! sessionSharingEnabled) {
         QSslConfiguration configuration(QSslConfiguration::defaultConfiguration());
-        configuration.setSslOption(QSsl::SslOptionDisableSessionTickets, true);
+        configuration.setSslOption(QSsl::SslOptionDisableSessionSharing, true);
         warmupRequest.setSslConfiguration(configuration);
     }
     QNetworkReply *reply = manager.get(warmupRequest);
@@ -5964,6 +5966,63 @@ void tst_QNetworkReply::sslSessionSharingHelperSlot()
         count = 0; // reset for next row
         sslSessionSharingWasUsed = false; // reset for next row
     }
+}
+
+void tst_QNetworkReply::sslSessionSharingFromPersistentSession_data()
+{
+    QTest::addColumn<bool>("sessionPersistenceEnabled");
+    QTest::newRow("enabled") << true;
+    QTest::newRow("disabled") << false;
+}
+
+void tst_QNetworkReply::sslSessionSharingFromPersistentSession()
+{
+    QString urlString("https://" + QtNetworkSettings::serverName());
+
+    // warm up SSL session cache to get a working session
+    QNetworkRequest warmupRequest(urlString);
+    QFETCH(bool, sessionPersistenceEnabled);
+    if (sessionPersistenceEnabled) {
+        QSslConfiguration warmupConfiguration(QSslConfiguration::defaultConfiguration());
+        warmupConfiguration.setSslOption(QSsl::SslOptionDisableSessionPersistence, false);
+        warmupRequest.setSslConfiguration(warmupConfiguration);
+    }
+    QNetworkReply *warmupReply = manager.get(warmupRequest);
+    warmupReply->ignoreSslErrors();
+    connect(warmupReply, SIGNAL(finished()), &QTestEventLoop::instance(), SLOT(exitLoop()));
+    QTestEventLoop::instance().enterLoop(20);
+    QVERIFY(!QTestEventLoop::instance().timeout());
+    QCOMPARE(warmupReply->error(), QNetworkReply::NoError);
+    QByteArray sslSession = warmupReply->sslConfiguration().session();
+    QCOMPARE(!sslSession.isEmpty(), sessionPersistenceEnabled);
+
+    // test server sends a life time hint of 0, which is not common
+    // practice; however it is good enough because the default is -1
+    int expectedSessionTicketLifeTimeHint = sessionPersistenceEnabled ? 0 : -1;
+    QCOMPARE(warmupReply->sslConfiguration().sessionTicketLifeTimeHint(),
+             expectedSessionTicketLifeTimeHint);
+
+    warmupReply->deleteLater();
+
+    // now send another request with a new QNAM and the persisted session,
+    // to verify it can be resumed without any internal state
+    QNetworkRequest request(warmupRequest);
+    if (sessionPersistenceEnabled) {
+        QSslConfiguration configuration = request.sslConfiguration();
+        configuration.setSession(sslSession);
+        request.setSslConfiguration(configuration);
+    }
+    QNetworkAccessManager newManager;
+    QNetworkReply *reply = newManager.get(request);
+    reply->ignoreSslErrors();
+    connect(reply, SIGNAL(finished()), &QTestEventLoop::instance(), SLOT(exitLoop()));
+    QTestEventLoop::instance().enterLoop(20);
+    QVERIFY(!QTestEventLoop::instance().timeout());
+    QCOMPARE(reply->error(), QNetworkReply::NoError);
+
+    bool sslSessionSharingWasUsedInReply = QSslConfigurationPrivate::peerSessionWasShared(
+                reply->sslConfiguration());
+    QCOMPARE(sessionPersistenceEnabled, sslSessionSharingWasUsedInReply);
 }
 
 #endif // QT_BUILD_INTERNAL
@@ -7478,6 +7537,10 @@ void tst_QNetworkReply::backgroundRequestInterruption()
         QNetworkSessionPrivate::setUsagePolicies(*const_cast<QNetworkSession *>(session.data()), original);
 
     QVERIFY(reply->isFinished());
+#ifdef Q_OS_MACX
+    if (QSysInfo::MacintoshVersion == QSysInfo::MV_10_8)
+        QEXPECT_FAIL("ftp, bg, nobg", "See QTBUG-32435", Abort);
+#endif
     QCOMPARE(reply->error(), error);
 #endif
 }

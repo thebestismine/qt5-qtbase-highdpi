@@ -44,6 +44,7 @@
 #include "qxcbcursor.h"
 #include "qxcbimage.h"
 #include "qnamespace.h"
+#include "qxcbxsettings.h"
 
 #include <stdio.h>
 
@@ -69,6 +70,7 @@ QXcbScreen::QXcbScreen(QXcbConnection *connection, xcb_screen_t *scr,
     , m_refreshRate(60)
     , m_forcedDpi(-1)
     , m_hintStyle(QFontEngine::HintStyle(-1))
+    , m_xSettings(0)
 {
     if (connection->hasXRandr())
         xcb_randr_select_input(xcb_connection(), screen()->root, true);
@@ -111,6 +113,7 @@ QXcbScreen::QXcbScreen(QXcbConnection *connection, xcb_screen_t *scr,
         XCB_EVENT_MASK_ENTER_WINDOW
         | XCB_EVENT_MASK_LEAVE_WINDOW
         | XCB_EVENT_MASK_PROPERTY_CHANGE
+        | XCB_EVENT_MASK_STRUCTURE_NOTIFY // for the "MANAGER" atom (system tray notification).
     };
 
     xcb_change_window_attributes(xcb_connection(), screen()->root, mask, values);
@@ -232,6 +235,40 @@ QWindow *QXcbScreen::topLevelAt(const QPoint &p) const
     } while (parent != child);
 
     return 0;
+}
+
+void QXcbScreen::windowShown(QXcbWindow *window)
+{
+    // Freedesktop.org Startup Notification
+    if (!connection()->startupId().isEmpty() && window->window()->isTopLevel()) {
+        sendStartupMessage(QByteArrayLiteral("remove: ID=") + connection()->startupId());
+        connection()->clearStartupId();
+    }
+}
+
+void QXcbScreen::sendStartupMessage(const QByteArray &message) const
+{
+    xcb_window_t rootWindow = root();
+
+    xcb_client_message_event_t ev;
+    ev.response_type = XCB_CLIENT_MESSAGE;
+    ev.format = 8;
+    ev.type = connection()->atom(QXcbAtom::_NET_STARTUP_INFO_BEGIN);
+    ev.window = rootWindow;
+    int sent = 0;
+    int length = message.length() + 1; // include NUL byte
+    const char *data = message.constData();
+    do {
+        if (sent == 20)
+            ev.type = connection()->atom(QXcbAtom::_NET_STARTUP_INFO);
+
+        const int start = sent;
+        const int numBytes = qMin(length - start, 20);
+        memcpy(ev.data.data8, data + start, numBytes);
+        xcb_send_event(connection()->xcb_connection(), false, rootWindow, XCB_EVENT_MASK_PROPERTY_CHANGE, (const char *) &ev);
+
+        sent += numBytes;
+    } while (sent < length);
 }
 
 const xcb_visualtype_t *QXcbScreen::visualForId(xcb_visualid_t visualid) const
@@ -550,4 +587,12 @@ void QXcbScreen::readXResources()
     }
 }
 
+QXcbXSettings *QXcbScreen::xSettings() const
+{
+    if (!m_xSettings) {
+        QXcbScreen *self = const_cast<QXcbScreen *>(this);
+        self->m_xSettings = new QXcbXSettings(self);
+    }
+    return m_xSettings;
+}
 QT_END_NAMESPACE

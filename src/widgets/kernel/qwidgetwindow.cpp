@@ -446,7 +446,7 @@ void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
     if (!widget)
         widget = m_widget;
 
-    if (event->type() == QEvent::MouseButtonPress && !qt_button_down)
+    if (event->type() == QEvent::MouseButtonPress)
         qt_button_down = widget;
 
     QWidget *receiver = QApplicationPrivate::pickMouseReceiver(m_widget, event->windowPos().toPoint(), &mapped, event->type(), event->buttons(),
@@ -476,6 +476,10 @@ void QWidgetWindow::handleTouchEvent(QTouchEvent *event)
     if (event->type() == QEvent::TouchCancel) {
         QApplicationPrivate::translateTouchCancel(event->device(), event->timestamp());
         event->accept();
+    } else if (qApp->d_func()->inPopupMode()) {
+        // Ignore touch events for popups. This will cause QGuiApplication to synthesise mouse
+        // events instead, which QWidgetWindow::handleMouseEvent will forward correctly:
+        event->ignore();
     } else {
         event->setAccepted(QApplicationPrivate::translateRawTouchEvent(m_widget, event->device(), event->touchPoints(), event->timestamp()));
     }
@@ -486,14 +490,12 @@ void QWidgetWindow::handleKeyEvent(QKeyEvent *event)
     if (QApplicationPrivate::instance()->modalState() && !qt_try_modal(m_widget, event->type()))
         return;
 
-    QObject *receiver = 0;
-    if (QApplicationPrivate::inPopupMode()) {
+    QObject *receiver = QWidget::keyboardGrabber();
+    if (!receiver && QApplicationPrivate::inPopupMode()) {
         QWidget *popup = QApplication::activePopupWidget();
         QWidget *popupFocusWidget = popup->focusWidget();
         receiver = popupFocusWidget ? popupFocusWidget : popup;
     }
-    if (!receiver)
-        receiver = QWidget::keyboardGrabber();
     if (!receiver)
         receiver = focusObject();
     QGuiApplication::sendSpontaneousEvent(receiver, event);
@@ -556,7 +558,7 @@ void QWidgetWindow::handleWheelEvent(QWheelEvent *event)
 
     QPoint mapped = widget->mapFrom(m_widget, event->pos());
 
-    QWheelEvent translated(mapped, event->globalPos(), event->pixelDelta(), event->angleDelta(), event->delta(), event->orientation(), event->buttons(), event->modifiers());
+    QWheelEvent translated(mapped, event->globalPos(), event->pixelDelta(), event->angleDelta(), event->delta(), event->orientation(), event->buttons(), event->modifiers(), event->phase());
     QGuiApplication::sendSpontaneousEvent(widget, &translated);
 }
 

@@ -434,6 +434,9 @@ void tst_QEasingCurve::setCustomType()
     QCOMPARE(curve.valueForProgress(0.15), 0.1);
     QCOMPARE(curve.valueForProgress(0.20), 0.2);
     QCOMPARE(curve.valueForProgress(0.25), 0.2);
+#if defined(UBUNTU_ONEIRIC) && defined(__i386__)
+    QEXPECT_FAIL("", "QTBUG-32432: Fails on Ubuntu 11.10 32 bit configurations", Abort);
+#endif
     QCOMPARE(curve.valueForProgress(0.30), 0.3);
     QCOMPARE(curve.valueForProgress(0.35), 0.3);
     QCOMPARE(curve.valueForProgress(0.999999), 0.9);
@@ -727,14 +730,16 @@ double static inline _fast_cbrt(double d)
 
 void tst_QEasingCurve::testCbrtDouble()
 {
-    const qreal errorBound = 0.0001;
+    const double errorBound = 0.0001;
 
     for (int i = 0; i < 100000; i++) {
         double d = double(i) / 1000.0;
         double t = _fast_cbrt(d);
 
         const double t_cubic = t * t * t;
-        t = t * (t_cubic + d + d) / (t_cubic + t_cubic + d);
+        const double f = t_cubic + t_cubic + d;
+        if (f != 0.0)
+            t = t * (t_cubic + d + d) / f;
 
         double expected = pow(d, 1.0/3.0);
 
@@ -751,14 +756,16 @@ void tst_QEasingCurve::testCbrtDouble()
 
 void tst_QEasingCurve::testCbrtFloat()
 {
-    const qreal errorBound = 0.0005;
+    const float errorBound = 0.0005;
 
-    for (int i = 1; i < 100000; i++) {
+    for (int i = 0; i < 100000; i++) {
         float f = float(i) / 1000.0f;
         float t = _fast_cbrt(f);
 
         const float t_cubic = t * t * t;
-        t = t * (t_cubic + f + f) / (t_cubic + t_cubic + f);
+        const float fac = t_cubic + t_cubic + f;
+        if (fac != 0.0f)
+            t = t * (t_cubic + f + f) / fac;
 
         float expected = pow(f, float(1.0/3.0));
 

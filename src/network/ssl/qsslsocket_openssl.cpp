@@ -78,9 +78,9 @@
 
 QT_BEGIN_NAMESPACE
 
-#if defined(Q_OS_MAC) && !defined(Q_OS_IOS)
+#if defined(Q_OS_MACX)
 #define kSecTrustSettingsDomainSystem 2 // so we do not need to include the header file
-    PtrSecCertificateGetData QSslSocketPrivate::ptrSecCertificateGetData = 0;
+    PtrSecCertificateCopyData QSslSocketPrivate::ptrSecCertificateCopyData = 0;
     PtrSecTrustSettingsCopyCertificates QSslSocketPrivate::ptrSecTrustSettingsCopyCertificates = 0;
     PtrSecTrustCopyAnchorCertificates QSslSocketPrivate::ptrSecTrustCopyAnchorCertificates = 0;
 #elif defined(Q_OS_WIN)
@@ -489,11 +489,11 @@ void QSslSocketPrivate::ensureCiphersAndCertsLoaded()
 
 #ifndef QT_NO_LIBRARY
     //load symbols needed to receive certificates from system store
-#if defined(Q_OS_MAC) && !defined(Q_OS_IOS)
+#if defined(Q_OS_MACX)
     QLibrary securityLib("/System/Library/Frameworks/Security.framework/Versions/Current/Security");
     if (securityLib.load()) {
-        ptrSecCertificateGetData = (PtrSecCertificateGetData) securityLib.resolve("SecCertificateGetData");
-        if (!ptrSecCertificateGetData)
+        ptrSecCertificateCopyData = (PtrSecCertificateCopyData) securityLib.resolve("SecCertificateCopyData");
+        if (!ptrSecCertificateCopyData)
             qWarning("could not resolve symbols in security library"); // should never happen
 
         ptrSecTrustSettingsCopyCertificates = (PtrSecTrustSettingsCopyCertificates) securityLib.resolve("SecTrustSettingsCopyCertificates");
@@ -623,16 +623,15 @@ QList<QSslCertificate> QSslSocketPrivate::systemCaCertificates()
     timer.start();
 #endif
     QList<QSslCertificate> systemCerts;
-#if defined(Q_OS_MAC) && !defined(Q_OS_IOS)
+#if defined(Q_OS_MACX)
     CFArrayRef cfCerts;
     OSStatus status = 1;
 
-    OSStatus SecCertificateGetData (
-       SecCertificateRef certificate,
-       CSSM_DATA_PTR data
+    CFDataRef SecCertificateCopyData (
+       SecCertificateRef certificate
     );
 
-    if (ptrSecCertificateGetData) {
+    if (ptrSecCertificateCopyData) {
         if (ptrSecTrustSettingsCopyCertificates)
             status = ptrSecTrustSettingsCopyCertificates(kSecTrustSettingsDomainSystem, &cfCerts);
         else if (ptrSecTrustCopyAnchorCertificates)
@@ -641,15 +640,16 @@ QList<QSslCertificate> QSslSocketPrivate::systemCaCertificates()
             CFIndex size = CFArrayGetCount(cfCerts);
             for (CFIndex i = 0; i < size; ++i) {
                 SecCertificateRef cfCert = (SecCertificateRef)CFArrayGetValueAtIndex(cfCerts, i);
-                CSSM_DATA data;
-                CSSM_DATA_PTR dataPtr = &data;
-                if (ptrSecCertificateGetData(cfCert, dataPtr)) {
+                CFDataRef data;
+
+                data = ptrSecCertificateCopyData(cfCert);
+
+                if (data == NULL) {
                     qWarning("error retrieving a CA certificate from the system store");
                 } else {
-                    int len = data.Length;
-                    char *rawData = reinterpret_cast<char *>(data.Data);
-                    QByteArray rawCert(rawData, len);
+                    QByteArray rawCert = QByteArray::fromRawData((const char *)CFDataGetBytePtr(data), CFDataGetLength(data));
                     systemCerts.append(QSslCertificate::fromData(rawCert, QSsl::Der));
+                    CFRelease(data);
                 }
             }
             CFRelease(cfCerts);
@@ -934,8 +934,11 @@ void QSslSocketBackendPrivate::transmit()
 #ifdef QSSLSOCKET_DEBUG
                 qDebug() << "QSslSocketBackendPrivate::transmit: remote disconnect";
 #endif
-                plainSocket->disconnectFromHost();
-                break;
+                shutdown = true; // the other side shut down, make sure we do not send shutdown ourselves
+                q->setErrorString(QSslSocket::tr("The TLS/SSL connection has been closed"));
+                q->setSocketError(QAbstractSocket::RemoteHostClosedError);
+                emit q->error(QAbstractSocket::RemoteHostClosedError);
+                return;
             case SSL_ERROR_SYSCALL: // some IO error
             case SSL_ERROR_SSL: // error in the SSL library
                 // we do not know exactly what the error is, nor whether we can recover from it,
@@ -1369,8 +1372,11 @@ void QWindowsCaRootFetcher::start()
 void QSslSocketBackendPrivate::disconnectFromHost()
 {
     if (ssl) {
-        q_SSL_shutdown(ssl);
-        transmit();
+        if (!shutdown) {
+            q_SSL_shutdown(ssl);
+            shutdown = true;
+            transmit();
+        }
     }
     plainSocket->disconnectFromHost();
 }
@@ -1443,9 +1449,17 @@ void QSslSocketBackendPrivate::continueHandshake()
 #endif
 
     // Cache this SSL session inside the QSslContext
-    if (!(configuration.sslOptions & QSsl::SslOptionDisableSessionTickets)) {
-        if (!sslContextPointer->cacheSession(ssl))
+    if (!(configuration.sslOptions & QSsl::SslOptionDisableSessionSharing)) {
+        if (!sslContextPointer->cacheSession(ssl)) {
             sslContextPointer.clear(); // we could not cache the session
+        } else {
+            // Cache the session for permanent usage as well
+            if (!(configuration.sslOptions & QSsl::SslOptionDisableSessionPersistence)) {
+                if (!sslContextPointer->sessionASN1().isEmpty())
+                    configuration.sslSession = sslContextPointer->sessionASN1();
+                configuration.sslSessionTicketLifeTimeHint = sslContextPointer->sessionTicketLifeTimeHint();
+            }
+        }
     }
 
     connectionEncrypted = true;
@@ -1588,7 +1602,7 @@ QList<QSslError> QSslSocketBackendPrivate::verify(QList<QSslCertificate> certifi
 #if OPENSSL_VERSION_NUMBER >= 0x10000000L
             q_sk_push( (_STACK *)intermediates, reinterpret_cast<X509 *>(cert.handle()));
 #else
-            q_sk_push( (STACK *)intermediates, reinterpret_cast<X509 *>(cert.handle()));
+            q_sk_push( (STACK *)intermediates, reinterpret_cast<char *>(cert.handle()));
 #endif
         }
     }

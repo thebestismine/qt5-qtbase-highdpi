@@ -57,6 +57,7 @@
 #include <QtCore/QSharedDataPointer>
 #include <QtCore/QSharedPointer>
 #include <QtCore/QDir>
+#include <QtCore/QUrl>
 #include <QtGui/QRgb>
 
 QT_BEGIN_NAMESPACE
@@ -163,7 +164,11 @@ class Q_GUI_EXPORT QFontDialogOptions
 public:
     enum FontDialogOption {
         NoButtons           = 0x00000001,
-        DontUseNativeDialog = 0x00000002
+        DontUseNativeDialog = 0x00000002,
+        ScalableFonts       = 0x00000004,
+        NonScalableFonts    = 0x00000008,
+        MonospacedFonts     = 0x00000010,
+        ProportionalFonts   = 0x00000020
     };
 
     Q_DECLARE_FLAGS(FontDialogOptions, FontDialogOption)
@@ -217,13 +222,14 @@ public:
 
     enum FileDialogOption
     {
-        ShowDirsOnly          = 0x00000001,
-        DontResolveSymlinks   = 0x00000002,
-        DontConfirmOverwrite  = 0x00000004,
-        DontUseSheet          = 0x00000008,
-        DontUseNativeDialog   = 0x00000010,
-        ReadOnly              = 0x00000020,
-        HideNameFilterDetails = 0x00000040
+        ShowDirsOnly                = 0x00000001,
+        DontResolveSymlinks         = 0x00000002,
+        DontConfirmOverwrite        = 0x00000004,
+        DontUseSheet                = 0x00000008,
+        DontUseNativeDialog         = 0x00000010,
+        ReadOnly                    = 0x00000020,
+        HideNameFilterDetails       = 0x00000040,
+        DontUseCustomDirectoryIcons = 0x00000080
     };
     Q_DECLARE_FLAGS(FileDialogOptions, FileDialogOption)
 
@@ -270,14 +276,14 @@ public:
     QString labelText(DialogLabel label) const;
     bool isLabelExplicitlySet(DialogLabel label);
 
-    QString initialDirectory() const;
-    void setInitialDirectory(const QString &);
+    QUrl initialDirectory() const;
+    void setInitialDirectory(const QUrl &);
 
     QString initiallySelectedNameFilter() const;
     void setInitiallySelectedNameFilter(const QString &);
 
-    QStringList initiallySelectedFiles() const;
-    void setInitiallySelectedFiles(const QStringList &);
+    QList<QUrl> initiallySelectedFiles() const;
+    void setInitiallySelectedFiles(const QList<QUrl> &);
 
 private:
     QSharedDataPointer<QFileDialogOptionsPrivate> d;
@@ -290,13 +296,15 @@ class Q_GUI_EXPORT QPlatformFileDialogHelper : public QPlatformDialogHelper
     Q_OBJECT
 public:
     virtual bool defaultNameFilterDisables() const = 0;
-    virtual void setDirectory(const QString &directory) = 0;
-    virtual QString directory() const = 0;
-    virtual void selectFile(const QString &filename) = 0;
-    virtual QStringList selectedFiles() const = 0;
+    virtual void setDirectory(const QUrl &directory) = 0;
+    virtual QUrl directory() const = 0;
+    virtual void selectFile(const QUrl &filename) = 0;
+    virtual QList<QUrl> selectedFiles() const = 0;
     virtual void setFilter() = 0;
     virtual void selectNameFilter(const QString &filter) = 0;
     virtual QString selectedNameFilter() const = 0;
+
+    virtual bool isSupportedUrl(const QUrl &url) const;
 
     const QSharedPointer<QFileDialogOptions> &options() const;
     void setOptions(const QSharedPointer<QFileDialogOptions> &options);
@@ -305,10 +313,10 @@ public:
     static const char *filterRegExp;
 
 Q_SIGNALS:
-    void fileSelected(const QString &file);
-    void filesSelected(const QStringList &files);
-    void currentChanged(const QString &path);
-    void directoryEntered(const QString &directory);
+    void fileSelected(const QUrl &file);
+    void filesSelected(const QList<QUrl> &files);
+    void currentChanged(const QUrl &path);
+    void directoryEntered(const QUrl &directory);
     void filterSelected(const QString &filter);
 
 private:

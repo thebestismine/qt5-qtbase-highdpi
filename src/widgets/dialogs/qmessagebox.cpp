@@ -133,10 +133,14 @@ public:
 
     bool copy()
     {
+#ifdef QT_NO_CLIPBOARD
+        return false;
+#else
         if (!copyAvailable)
             return false;
         textEdit->copy();
         return true;
+#endif
     }
 
 private slots:
@@ -1388,7 +1392,7 @@ void QMessageBox::keyPressEvent(QKeyEvent *e)
 
 #if !defined(QT_NO_TEXTEDIT)
         if (e == QKeySequence::Copy) {
-            if (d->detailsText->isVisible() && d->detailsText->copy()) {
+            if (d->detailsText && d->detailsText->isVisible() && d->detailsText->copy()) {
                 e->setAccepted(true);
                 return;
             }

@@ -79,6 +79,7 @@ GetOptions('h|help' => \$help
             , 'ant=s' => \$ant_tool
             , 'strip=s' => \$strip_tool
             , 'readelf=s' => \$readelf_tool
+            , 'testcase=s' => \$testcase
             ) or pod2usage(2);
 pod2usage(1) if $help;
 pod2usage(-verbose => 2) if $man;
@@ -232,6 +233,7 @@ if ($deploy_qt)
         print ("cp -L $_ $temp_dir/lib\n");
         system("cp -L $_ $temp_dir/lib");
     }
+    system("cp -L $android_ndk_dir/sources/cxx-stl/gnu-libstdc++/4.7/libs/armeabi-v7a/libgnustl_shared.so $temp_dir/lib");
     system("cp -a plugins $temp_dir");
     system("cp -a imports $temp_dir");
     system("cp -a qml $temp_dir");
@@ -252,7 +254,14 @@ print "Building $tests_dir \n";
 system("make distclean") if ($make_clean);
 system("$qmake_path CONFIG-=QTDIR_build -r") == 0 or die "Can't run qmake\n"; #exec qmake
 system("make -j$jobs") == 0 or warn "Can't build all tests\n"; #exec make
-my $testsFiles=`find . -name libtst_*.so`; # only tests
+
+my $testsFiles = "";
+if ($testcase) {
+    $testsFiles=`find . -name libtst_$testcase.so`; # only tests
+} else {
+    $testsFiles=`find . -name libtst_*.so`; # only tests
+}
+
 foreach (split("\n",$testsFiles))
 {
     chomp; #remove white spaces

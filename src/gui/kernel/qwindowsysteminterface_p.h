@@ -90,8 +90,10 @@ public:
         TabletLeaveProximity = UserInputEvent | 0x16,
         PlatformPanel = UserInputEvent | 0x17,
         ContextMenu = UserInputEvent | 0x18,
+        EnterWhatsThisMode = UserInputEvent | 0x19,
         ApplicationStateChanged = 0x19,
-        FlushEvents = 0x20
+        FlushEvents = 0x20,
+        WindowScreenChanged = 0x21
     };
 
     class WindowSystemEvent {
@@ -105,9 +107,11 @@ public:
 
     class CloseEvent : public WindowSystemEvent {
     public:
-        explicit CloseEvent(QWindow *w)
-            : WindowSystemEvent(Close), window(w) { }
+        explicit CloseEvent(QWindow *w, bool *a = 0)
+            : WindowSystemEvent(Close), window(w), accepted(a)
+            { }
         QPointer<QWindow> window;
+        bool *accepted;
     };
 
     class GeometryChangeEvent : public WindowSystemEvent {
@@ -154,6 +158,16 @@ public:
 
         QPointer<QWindow> window;
         Qt::WindowState newState;
+    };
+
+    class WindowScreenChangedEvent : public WindowSystemEvent {
+    public:
+        WindowScreenChangedEvent(QWindow *w, QScreen *s)
+            : WindowSystemEvent(WindowScreenChanged), window(w), screen(s)
+        { }
+
+        QPointer<QWindow> window;
+        QPointer<QScreen> screen;
     };
 
     class ApplicationStateChangedEvent : public WindowSystemEvent {
@@ -204,14 +218,15 @@ public:
     class WheelEvent : public InputEvent {
     public:
         WheelEvent(QWindow *w, ulong time, const QPointF & local, const QPointF & global, QPoint pixelD, QPoint angleD, int qt4D, Qt::Orientation qt4O,
-                   Qt::KeyboardModifiers mods)
-            : InputEvent(w, time, Wheel, mods), pixelDelta(pixelD), angleDelta(angleD), qt4Delta(qt4D), qt4Orientation(qt4O), localPos(local), globalPos(global) { }
+                   Qt::KeyboardModifiers mods, QWheelEvent::Phase phase = QWheelEvent::Changed)
+            : InputEvent(w, time, Wheel, mods), pixelDelta(pixelD), angleDelta(angleD), qt4Delta(qt4D), qt4Orientation(qt4O), localPos(local), globalPos(global), phase(phase) { }
         QPoint pixelDelta;
         QPoint angleDelta;
         int qt4Delta;
         Qt::Orientation qt4Orientation;
         QPointF localPos;
         QPointF globalPos;
+        QWheelEvent::Phase phase;
     };
 
     class KeyEvent : public InputEvent {
@@ -428,7 +443,7 @@ public:
             }
         }
     private:
-        Q_DISABLE_COPY(WindowSystemEventList);
+        Q_DISABLE_COPY(WindowSystemEventList)
     };
 
     static WindowSystemEventList windowSystemEventQueue;

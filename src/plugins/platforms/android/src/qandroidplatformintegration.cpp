@@ -66,6 +66,7 @@
 #endif
 
 #include "qandroidplatformtheme.h"
+#include "qandroidsystemlocale.h"
 
 QT_BEGIN_NAMESPACE
 
@@ -108,6 +109,8 @@ QAndroidPlatformIntegration::QAndroidPlatformIntegration(const QStringList &para
     m_androidFDB = new QAndroidPlatformFontDatabase();
     m_androidPlatformServices = new QAndroidPlatformServices();
     m_androidPlatformClipboard = new QAndroidPlatformClipboard();
+
+    m_androidSystemLocale = new QAndroidSystemLocale;
 }
 
 bool QAndroidPlatformIntegration::hasCapability(Capability cap) const
@@ -115,6 +118,7 @@ bool QAndroidPlatformIntegration::hasCapability(Capability cap) const
     switch (cap) {
         case ThreadedPixmaps: return true;
         case NonFullScreenWindows: return false;
+        case NativeWidgets: return false;
         default:
 #ifndef ANDROID_PLUGIN_OPENGL
         return QPlatformIntegration::hasCapability(cap);
@@ -183,7 +187,7 @@ QAndroidPlatformIntegration::~QAndroidPlatformIntegration()
 {
     delete m_androidPlatformNativeInterface;
     delete m_androidFDB;
-    delete m_touchDevice;
+    delete m_androidSystemLocale;
     QtAndroid::setAndroidPlatformIntegration(NULL);
 }
 QPlatformFontDatabase *QAndroidPlatformIntegration::fontDatabase() const
@@ -215,6 +219,16 @@ QPlatformNativeInterface *QAndroidPlatformIntegration::nativeInterface() const
 QPlatformServices *QAndroidPlatformIntegration::services() const
 {
     return m_androidPlatformServices;
+}
+
+QVariant QAndroidPlatformIntegration::styleHint(StyleHint hint) const
+{
+    switch (hint) {
+    case ShowIsFullScreen:
+        return true;
+    default:
+        return QPlatformIntegration::styleHint(hint);
+    }
 }
 
 static const QLatin1String androidThemeName("android");

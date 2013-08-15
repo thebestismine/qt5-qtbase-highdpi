@@ -9,6 +9,7 @@ lance \
 network_remote_stresstest \
 network_stresstest \
 qcursor \
+qdesktopservices \
 qdesktopwidget \
 qgraphicsitem \
 qgraphicsitemgroup \
@@ -19,25 +20,29 @@ qlayout \
 qlocale \
 qnetworkaccessmanager/qget \
 qnetworkconfigurationmanager \
+qnetworkconfiguration \
 qnetworkreply \
 qpainfo \
 qscreen \
 qssloptions \
 qtabletevent \
+qtexteditlist \
 qtbug-8933 \
 qtouchevent \
 qwidget_zorder \
 repaint \
 socketengine \
 textrendering \
-widgets/itemviews/delegate \
+widgets \
 windowflags \
 windowgeometry \
 windowmodality \
 widgetgrab \
 xembed-raster \
 xembed-widgets \
-dialogs
+dialogs \
+windowtransparency \
+unc
 
 !contains(QT_CONFIG, openssl):!contains(QT_CONFIG, openssl-linked):SUBDIRS -= qssloptions
 
@@ -48,4 +53,4 @@ win32 {
 }
 
 lessThan(QT_MAJOR_VERSION, 5): SUBDIRS -= bearerex lance qnetworkaccessmanager/qget qnetworkreply \
-qpainfo qscreen  socketengine xembed-raster xembed-widgets
+qpainfo qscreen  socketengine xembed-raster xembed-widgets windowtransparency

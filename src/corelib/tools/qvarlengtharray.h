@@ -192,11 +192,18 @@ private:
         qint64 q_for_alignment_1;
         double q_for_alignment_2;
     };
+
+    bool isValidIterator(const const_iterator &i) const
+    {
+        return (i <= constEnd()) && (constBegin() <= i);
+    }
 };
 
 template <class T, int Prealloc>
 Q_INLINE_TEMPLATE QVarLengthArray<T, Prealloc>::QVarLengthArray(int asize)
     : s(asize) {
+    Q_STATIC_ASSERT_X(Prealloc > 0, "QVarLengthArray Prealloc must be greater than 0.");
+    Q_ASSERT_X(s >= 0, "QVarLengthArray::QVarLengthArray()", "Size must be greater than or equal to 0.");
     if (s > Prealloc) {
         ptr = reinterpret_cast<T *>(malloc(s * sizeof(T)));
         Q_CHECK_PTR(ptr);
@@ -353,6 +360,8 @@ inline void QVarLengthArray<T, Prealloc>::replace(int i, const T &t)
 template <class T, int Prealloc>
 Q_OUTOFLINE_TEMPLATE typename QVarLengthArray<T, Prealloc>::iterator QVarLengthArray<T, Prealloc>::insert(const_iterator before, size_type n, const T &t)
 {
+    Q_ASSERT_X(isValidIterator(before), "QVarLengthArray::insert", "The specified const_iterator argument 'before' is invalid");
+
     int offset = int(before - ptr);
     if (n != 0) {
         resize(s + n);
@@ -380,6 +389,9 @@ Q_OUTOFLINE_TEMPLATE typename QVarLengthArray<T, Prealloc>::iterator QVarLengthA
 template <class T, int Prealloc>
 Q_OUTOFLINE_TEMPLATE typename QVarLengthArray<T, Prealloc>::iterator QVarLengthArray<T, Prealloc>::erase(const_iterator abegin, const_iterator aend)
 {
+    Q_ASSERT_X(isValidIterator(abegin), "QVarLengthArray::insert", "The specified const_iterator argument 'abegin' is invalid");
+    Q_ASSERT_X(isValidIterator(aend), "QVarLengthArray::insert", "The specified const_iterator argument 'aend' is invalid");
+
     int f = int(abegin - ptr);
     int l = int(aend - ptr);
     int n = l - f;

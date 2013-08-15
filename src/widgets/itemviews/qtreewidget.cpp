@@ -623,7 +623,13 @@ void QTreeModel::ensureSorted(int column, Qt::SortOrder order,
 
     for (int i = 0; i < count; ++i) {
         int oldRow = sorting.at(i).second;
+
+        int tmpitepos = lit - lst.begin();
         QTreeWidgetItem *item = lst.takeAt(oldRow);
+        if (tmpitepos > lst.size())
+            --tmpitepos;
+        lit = lst.begin() + tmpitepos;
+
         lit = sortedInsertionIterator(lit, lst.end(), order, item);
         int newRow = qMax(lit - lst.begin(), 0);
 
@@ -1677,8 +1683,8 @@ void QTreeWidgetItemPrivate::propagateDisabled(QTreeWidgetItem *item)
     the item can be checked, edited, and selected.
 
     The default value for flags is
-    Qt::ItemIsSelectable | Qt::ItemIsUserCheckable | Qt::ItemIsEnabled | Qt::ItemIsDragEnabled.
-    If the item was constructed with a parent, flags will in addition contain Qt::ItemIsDropEnabled.
+    Qt::ItemIsSelectable | Qt::ItemIsUserCheckable | Qt::ItemIsEnabled |
+    Qt::ItemIsDragEnabled | Qt::ItemIsDropEnabled.
 
     \sa setFlags()
 */

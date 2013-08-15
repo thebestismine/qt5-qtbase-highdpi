@@ -138,6 +138,10 @@ public:
     Q_DECLARE_FLAGS(KeyboardModifiers, KeyboardModifier)
 
     //shorter names for shortcuts
+    // The use of all-caps identifiers has the potential for clashing with
+    // user-defined or third-party macros. More so when the identifiers are not
+    // "namespace"-prefixed. This is considered bad practice and is why
+    // KeypadModifier was not added to the Modifier enum.
     enum Modifier {
         META          = Qt::MetaModifier,
         SHIFT         = Qt::ShiftModifier,
@@ -289,7 +293,8 @@ public:
         WindowType_Mask = 0x000000ff,
         MSWindowsFixedSizeDialogHint = 0x00000100,
         MSWindowsOwnDC = 0x00000200,
-        X11BypassWindowManagerHint = 0x00000400,
+        BypassWindowManagerHint = 0x00000400,
+        X11BypassWindowManagerHint = BypassWindowManagerHint,
         FramelessWindowHint = 0x00000800,
         WindowTitleHint = 0x00001000,
         WindowSystemMenuHint = 0x00002000,
@@ -975,6 +980,16 @@ public:
         Key_TouchpadOn = 0x01000111,
         Key_TouchpadOff = 0x01000112,
 
+        Key_MicMute = 0x01000113,
+
+        Key_Red = 0x01000114,
+        Key_Green = 0x01000115,
+        Key_Yellow = 0x01000116,
+        Key_Blue = 0x01000117,
+
+        Key_ChannelUp = 0x01000118,
+        Key_ChannelDown = 0x01000119,
+
         Key_MediaLast = 0x0100ffff,
 
         // Keypad navigation keys
@@ -1166,7 +1181,8 @@ public:
         SystemLocaleShortDate,
         SystemLocaleLongDate,
         DefaultLocaleShortDate,
-        DefaultLocaleLongDate
+        DefaultLocaleLongDate,
+        RFC2822Date        // RFC 2822 (+ 850 and 1036 during parsing)
     };
 
     enum TimeSpec {

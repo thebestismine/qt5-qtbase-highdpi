@@ -55,7 +55,9 @@
 
 - (void)windowDidResize:(NSNotification *)notification;
 - (void)windowDidMove:(NSNotification *)notification;
-- (void)windowWillClose:(NSNotification *)notification;
+- (void)windowWillMove:(NSNotification *)notification;
+- (BOOL)windowShouldClose:(NSNotification *)notification;
+- (BOOL)windowShouldZoom:(NSWindow *)window toFrame:(NSRect)newFrame;
 
 @end
 

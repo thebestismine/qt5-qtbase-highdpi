@@ -142,6 +142,9 @@ private slots:
     void toDouble_data();
     void toDouble();
 
+    void toFloat_data();
+    void toFloat();
+
     void toPointF_data();
     void toPointF();
 
@@ -239,6 +242,9 @@ private slots:
     void saveNewBuiltinWithOldStream();
 
     void implicitConstruction();
+
+    void iterateContainerElements();
+    void pairElements();
 private:
     void dataStream_data(QDataStream::Version version);
     void loadQVariantFromDataStream(QDataStream::Version version);
@@ -456,6 +462,9 @@ void tst_QVariant::canConvert_data()
     var = QVariant::fromValue<signed char>(-1);
     QTest::newRow("SChar")
         << var << N << N << Y << N << Y << N << N << N << N << Y << N << N << Y << N << N << N << Y << N << N << N << N << N << N << N << N << N << Y << N << N << Y << Y;
+    var = QVariant::fromValue<QJsonValue>(QJsonValue(QStringLiteral("hello")));
+    QTest::newRow("JsonValue")
+        << var << N << N << Y << N << N << N << N << N << N << Y << N << N << Y << N << N << N << Y << N << N << N << N << N << N << N << N << N << Y << N << N << Y << Y;
 
 #undef N
 #undef Y
@@ -511,6 +520,7 @@ void tst_QVariant::toInt_data()
     bytearray[2] = '0';
     bytearray[3] = '0';
     QTest::newRow( "QByteArray2" ) << QVariant( bytearray ) << 4500 << true;
+    QTest::newRow("QJsonValue") << QVariant(QJsonValue(321)) << 321 << true;
 }
 
 void tst_QVariant::toInt()
@@ -557,6 +567,7 @@ void tst_QVariant::toUInt_data()
     bytearray[2] = '2';
     bytearray[3] = '1';
     QTest::newRow( "QByteArray" ) << QVariant( bytearray ) << (uint)4321 << true;
+    QTest::newRow("QJsonValue") << QVariant(QJsonValue(321)) << (uint)321 << true;
 }
 
 void tst_QVariant::toUInt()
@@ -742,6 +753,8 @@ void tst_QVariant::toBool_data()
     QTest::newRow( "ulonglong1" ) << QVariant( (qulonglong)1 ) << true;
     QTest::newRow( "QChar" ) << QVariant(QChar('a')) << true;
     QTest::newRow( "Null_QChar" ) << QVariant(QChar(0)) << false;
+    QTest::newRow("QJsonValue(true)") << QVariant(QJsonValue(true)) << true;
+    QTest::newRow("QJsonValue(false)") << QVariant(QJsonValue(false)) << false;
 }
 
 void tst_QVariant::toBool()
@@ -805,6 +818,7 @@ void tst_QVariant::toDouble_data()
     bytearray[2] = '.';
     bytearray[3] = '1';
     QTest::newRow( "bytearray" ) << QVariant( bytearray ) << 32.1 << true;
+    QTest::newRow("QJsonValue") << QVariant(QJsonValue(32.1)) << 32.1 << true;
 }
 
 void tst_QVariant::toDouble()
@@ -818,6 +832,34 @@ void tst_QVariant::toDouble()
     double d = value.toDouble( &ok );
     QCOMPARE( d, result );
     QVERIFY( ok == valueOK );
+}
+
+void tst_QVariant::toFloat_data()
+{
+    QTest::addColumn<QVariant>("value");
+    QTest::addColumn<float>("result");
+    QTest::addColumn<bool>("valueOK");
+
+    QByteArray bytearray(4, ' ');
+    bytearray[0] = '3';
+    bytearray[1] = '2';
+    bytearray[2] = '.';
+    bytearray[3] = '1';
+    QTest::newRow("QByteArray") << QVariant(bytearray) << float(32.1) << true;
+    QTest::newRow("QJsonValue") << QVariant(QJsonValue(32.1)) << float(32.1) << true;
+}
+
+void tst_QVariant::toFloat()
+{
+    QFETCH(QVariant, value );
+    QFETCH(float, result);
+    QFETCH(bool, valueOK);
+    QVERIFY(value.isValid());
+    QVERIFY(value.canConvert(QMetaType::Float));
+    bool ok;
+    float d = value.toFloat(&ok);
+    QCOMPARE(d, result);
+    QVERIFY(ok == valueOK);
 }
 
 void tst_QVariant::toLongLong_data()
@@ -843,6 +885,7 @@ void tst_QVariant::toLongLong_data()
     bytearray[2] = '0';
     bytearray[3] = '0';
     QTest::newRow( "QByteArray" ) << QVariant( bytearray ) << (qlonglong) 3200 << true;
+    QTest::newRow("QJsonValue") << QVariant(QJsonValue(321)) << (qlonglong)321 << true;
 }
 
 void tst_QVariant::toLongLong()
@@ -887,6 +930,7 @@ void tst_QVariant::toULongLong_data()
     bytearray[2] = '0';
     bytearray[3] = '1';
     QTest::newRow( "QByteArray" ) << QVariant( bytearray ) << (qulonglong) 3201 << true;
+    QTest::newRow("QJsonValue") << QVariant(QJsonValue(321)) << (qulonglong)321 << true;
 }
 
 void tst_QVariant::toULongLong()
@@ -949,10 +993,11 @@ void tst_QVariant::toString_data()
     QTest::newRow( "float" ) << QVariant( 123.456f ) << QString( "123.456" );
     QTest::newRow( "bool" ) << QVariant( true ) << QString( "true" );
     QTest::newRow( "qdate" ) << QVariant( QDate( 2002, 1, 1 ) ) << QString( "2002-01-01" );
-    QTest::newRow( "qtime" ) << QVariant( QTime( 12, 34, 56 ) ) << QString( "12:34:56" );
-    QTest::newRow( "qdatetime" ) << QVariant( QDateTime( QDate( 2002, 1, 1 ), QTime( 12, 34, 56 ) ) ) << QString( "2002-01-01T12:34:56" );
+    QTest::newRow( "qtime" ) << QVariant( QTime( 12, 34, 56 ) ) << QString( "12:34:56.000" );
+    QTest::newRow( "qdatetime" ) << QVariant( QDateTime( QDate( 2002, 1, 1 ), QTime( 12, 34, 56 ) ) ) << QString( "2002-01-01T12:34:56.000" );
     QTest::newRow( "llong" ) << QVariant( (qlonglong)Q_INT64_C(123456789012) ) <<
         QString( "123456789012" );
+    QTest::newRow("QJsonValue") << QVariant(QJsonValue(QString("hello"))) << QString("hello");
 }
 
 void tst_QVariant::toString()
@@ -3348,6 +3393,313 @@ void tst_QVariant::saveNewBuiltinWithOldStream()
     QCOMPARE(int(data.constData()[1]), 0);
     QCOMPARE(int(data.constData()[2]), 0);
     QCOMPARE(int(data.constData()[3]), 0);
+}
+
+template<typename Container, typename Value_Type = typename Container::value_type>
+struct ContainerAPI
+{
+    static void insert(Container &container, typename Container::value_type value)
+    {
+        container.push_back(value);
+    }
+
+    static bool compare(const QVariant &variant, typename Container::value_type value)
+    {
+        return variant.value<typename Container::value_type>() == value;
+    }
+    static bool compare(QVariant variant, const QVariant &value)
+    {
+        return variant == value;
+    }
+};
+
+template<typename Container>
+struct ContainerAPI<Container, QVariant>
+{
+    static void insert(Container &container, int value)
+    {
+        container.push_back(QVariant::fromValue(value));
+    }
+
+    static bool compare(QVariant variant, const QVariant &value)
+    {
+        return variant == value;
+    }
+};
+
+template<typename Container>
+struct ContainerAPI<Container, QString>
+{
+    static void insert(Container &container, int value)
+    {
+        container.push_back(QString::number(value));
+    }
+
+    static bool compare(const QVariant &variant, QString value)
+    {
+        return variant.value<QString>() == value;
+    }
+    static bool compare(QVariant variant, const QVariant &value)
+    {
+        return variant == value;
+    }
+};
+
+// We have no built-in defines to check the stdlib features.
+// #define TEST_FORWARD_LIST
+
+#ifdef TEST_FORWARD_LIST
+#include <forward_list>
+Q_DECLARE_METATYPE(std::forward_list<int>)
+Q_DECLARE_METATYPE(std::forward_list<QVariant>)
+Q_DECLARE_METATYPE(std::forward_list<QString>)
+
+template<typename Value_Type>
+struct ContainerAPI<std::forward_list<Value_Type> >
+{
+    static void insert(std::forward_list<Value_Type> &container, Value_Type value)
+    {
+        container.push_front(value);
+    }
+    static bool compare(const QVariant &variant, Value_Type value)
+    {
+        return variant.value<Value_Type>() == value;
+    }
+    static bool compare(QVariant variant, const QVariant &value)
+    {
+        return variant == value;
+    }
+};
+
+template<>
+struct ContainerAPI<std::forward_list<QVariant> >
+{
+    static void insert(std::forward_list<QVariant> &container, int value)
+    {
+        container.push_front(QVariant::fromValue(value));
+    }
+
+    static bool compare(QVariant variant, const QVariant &value)
+    {
+        return variant == value;
+    }
+};
+
+template<>
+struct ContainerAPI<std::forward_list<QString> >
+{
+    static void insert(std::forward_list<QString> &container, int value)
+    {
+        container.push_front(QString::number(value));
+    }
+    static bool compare(const QVariant &variant, QString value)
+    {
+        return variant.value<QString>() == value;
+    }
+    static bool compare(QVariant variant, const QVariant &value)
+    {
+        return variant == value;
+    }
+};
+#endif
+
+template<typename Container>
+struct KeyGetter
+{
+    static const typename Container::key_type & get(const typename Container::const_iterator &it)
+    {
+        return it.key();
+    }
+    static const typename Container::mapped_type & value(const typename Container::const_iterator &it)
+    {
+        return it.value();
+    }
+};
+
+template<typename T, typename U>
+struct KeyGetter<std::map<T, U> >
+{
+    static const T & get(const typename std::map<T, U>::const_iterator &it)
+    {
+        return it->first;
+    }
+    static const U & value(const typename std::map<T, U>::const_iterator &it)
+    {
+        return it->second;
+    }
+};
+
+
+// We have no built-in defines to check the stdlib features.
+// #define TEST_UNORDERED_MAP
+
+#ifdef TEST_UNORDERED_MAP
+#include <unordered_map>
+typedef std::unordered_map<int, bool> StdUnorderedMap_int_bool;
+Q_DECLARE_METATYPE(StdUnorderedMap_int_bool)
+
+template<typename T, typename U>
+struct KeyGetter<std::unordered_map<T, U> >
+{
+    static const T & get(const typename std::unordered_map<T, U>::const_iterator &it)
+    {
+        return it->first;
+    }
+    static const U & value(const typename std::unordered_map<T, U>::const_iterator &it)
+    {
+        return it->second;
+    }
+};
+#endif
+
+void tst_QVariant::iterateContainerElements()
+{
+#ifdef Q_COMPILER_RANGE_FOR
+
+#define TEST_RANGE_FOR(CONTAINER, VALUE_TYPE) \
+        numSeen = 0; \
+        containerIter = intList.begin(); \
+        for (QVariant v : listIter) { \
+            QVERIFY(ContainerAPI<CONTAINER<VALUE_TYPE > >::compare(v, *containerIter)); \
+            QVERIFY(ContainerAPI<CONTAINER<VALUE_TYPE > >::compare(v, varList.at(numSeen))); \
+            ++containerIter; \
+            ++numSeen; \
+        } \
+        QCOMPARE(numSeen, (int)std::distance(intList.begin(), intList.end()));
+
+#else
+
+#define TEST_RANGE_FOR(CONTAINER, VALUE_TYPE)
+
+#endif
+
+#define TEST_SEQUENTIAL_ITERATION(CONTAINER, VALUE_TYPE) \
+    { \
+        int numSeen = 0; \
+        CONTAINER<VALUE_TYPE > intList; \
+        ContainerAPI<CONTAINER<VALUE_TYPE > >::insert(intList, 1); \
+        ContainerAPI<CONTAINER<VALUE_TYPE > >::insert(intList, 2); \
+        ContainerAPI<CONTAINER<VALUE_TYPE > >::insert(intList, 3); \
+        \
+        QVariant listVariant = QVariant::fromValue(intList); \
+        QVERIFY(listVariant.canConvert<QVariantList>()); \
+        QVariantList varList = listVariant.value<QVariantList>(); \
+        QCOMPARE(varList.size(), (int)std::distance(intList.begin(), intList.end())); \
+        QSequentialIterable listIter = listVariant.value<QSequentialIterable>(); \
+        QCOMPARE(varList.size(), listIter.size()); \
+        \
+        CONTAINER<VALUE_TYPE >::iterator containerIter = intList.begin(); \
+        const CONTAINER<VALUE_TYPE >::iterator containerEnd = intList.end(); \
+        for (int i = 0; i < listIter.size(); ++i, ++containerIter, ++numSeen) \
+        { \
+            QVERIFY(ContainerAPI<CONTAINER<VALUE_TYPE > >::compare(listIter.at(i), *containerIter)); \
+            QVERIFY(ContainerAPI<CONTAINER<VALUE_TYPE > >::compare(listIter.at(i), varList.at(i))); \
+        } \
+        QCOMPARE(numSeen, (int)std::distance(intList.begin(), intList.end())); \
+        QCOMPARE(containerIter, containerEnd); \
+        \
+        containerIter = intList.begin(); \
+        numSeen = 0; \
+        Q_FOREACH (const QVariant &v, listIter) { \
+            QVERIFY(ContainerAPI<CONTAINER<VALUE_TYPE > >::compare(v, *containerIter)); \
+            QVERIFY(ContainerAPI<CONTAINER<VALUE_TYPE > >::compare(v, varList.at(numSeen))); \
+            ++containerIter; \
+            ++numSeen; \
+        } \
+        QCOMPARE(numSeen, (int)std::distance(intList.begin(), intList.end())); \
+        TEST_RANGE_FOR(CONTAINER, VALUE_TYPE) \
+    }
+
+    TEST_SEQUENTIAL_ITERATION(QVector, int)
+    TEST_SEQUENTIAL_ITERATION(QVector, QVariant)
+    TEST_SEQUENTIAL_ITERATION(QVector, QString)
+    TEST_SEQUENTIAL_ITERATION(QQueue, int)
+    TEST_SEQUENTIAL_ITERATION(QQueue, QVariant)
+    TEST_SEQUENTIAL_ITERATION(QQueue, QString)
+    TEST_SEQUENTIAL_ITERATION(QList, int)
+    TEST_SEQUENTIAL_ITERATION(QList, QVariant)
+    TEST_SEQUENTIAL_ITERATION(QList, QString)
+    TEST_SEQUENTIAL_ITERATION(QStack, int)
+    TEST_SEQUENTIAL_ITERATION(QStack, QVariant)
+    TEST_SEQUENTIAL_ITERATION(QStack, QString)
+    TEST_SEQUENTIAL_ITERATION(std::vector, int)
+    TEST_SEQUENTIAL_ITERATION(std::vector, QVariant)
+    TEST_SEQUENTIAL_ITERATION(std::vector, QString)
+    TEST_SEQUENTIAL_ITERATION(std::list, int)
+    TEST_SEQUENTIAL_ITERATION(std::list, QVariant)
+    TEST_SEQUENTIAL_ITERATION(std::list, QString)
+
+#ifdef TEST_FORWARD_LIST
+    qRegisterSequentialConverter<std::forward_list<int> >();
+    qRegisterSequentialConverter<std::forward_list<QVariant> >();
+    qRegisterSequentialConverter<std::forward_list<QString> >();
+    TEST_SEQUENTIAL_ITERATION(std::forward_list, int)
+    TEST_SEQUENTIAL_ITERATION(std::forward_list, QVariant)
+    TEST_SEQUENTIAL_ITERATION(std::forward_list, QString)
+#endif
+
+#define TEST_ASSOCIATIVE_ITERATION(CONTAINER, KEY_TYPE, MAPPED_TYPE) \
+    { \
+        int numSeen = 0; \
+        CONTAINER<KEY_TYPE, MAPPED_TYPE> mapping; \
+        mapping[5] = true; \
+        mapping[15] = false; \
+        \
+        QVariant mappingVariant = QVariant::fromValue(mapping); \
+        QVariantMap varMap = mappingVariant.value<QVariantMap>(); \
+        QVariantMap varHash = mappingVariant.value<QVariantMap>(); \
+        QAssociativeIterable mappingIter = mappingVariant.value<QAssociativeIterable>(); \
+        \
+        CONTAINER<KEY_TYPE, MAPPED_TYPE>::const_iterator containerIter = mapping.begin(); \
+        const CONTAINER<KEY_TYPE, MAPPED_TYPE>::const_iterator containerEnd = mapping.end(); \
+        for ( ; containerIter != containerEnd; ++containerIter, ++numSeen) \
+        { \
+            MAPPED_TYPE expected = KeyGetter<CONTAINER<KEY_TYPE, MAPPED_TYPE> >::value(containerIter); \
+            KEY_TYPE key = KeyGetter<CONTAINER<KEY_TYPE, MAPPED_TYPE> >::get(containerIter); \
+            MAPPED_TYPE actual = mappingIter.value(key).value<MAPPED_TYPE >(); \
+            QCOMPARE(varMap.value(QString::number(key)).value<MAPPED_TYPE>(), expected); \
+            QCOMPARE(varHash.value(QString::number(key)).value<MAPPED_TYPE>(), expected); \
+            QCOMPARE(actual, expected); \
+        } \
+        QCOMPARE(numSeen, (int)std::distance(mapping.begin(), mapping.end())); \
+        QCOMPARE(containerIter, containerEnd); \
+        \
+    }
+
+    TEST_ASSOCIATIVE_ITERATION(QHash, int, bool)
+    TEST_ASSOCIATIVE_ITERATION(QMap, int, bool)
+    TEST_ASSOCIATIVE_ITERATION(std::map, int, bool)
+#ifdef TEST_UNORDERED_MAP
+    qRegisterAssociativeConverter<StdUnorderedMap_int_bool>();
+    TEST_ASSOCIATIVE_ITERATION(std::unordered_map, int, bool)
+#endif
+}
+
+void tst_QVariant::pairElements()
+{
+    typedef QPair<QVariant, QVariant> QVariantPair;
+
+#define TEST_PAIR_ELEMENT_ACCESS(PAIR, T1, T2, VALUE1, VALUE2) \
+    { \
+    PAIR<T1, T2> p(VALUE1, VALUE2); \
+    QVariant v = QVariant::fromValue(p); \
+    \
+    QVERIFY(v.canConvert<QVariantPair>()); \
+    QVariantPair pi = v.value<QVariantPair>(); \
+    QCOMPARE(pi.first, QVariant::fromValue(VALUE1)); \
+    QCOMPARE(pi.second, QVariant::fromValue(VALUE2)); \
+    }
+
+    TEST_PAIR_ELEMENT_ACCESS(QPair, int, int, 4, 5)
+    TEST_PAIR_ELEMENT_ACCESS(std::pair, int, int, 4, 5)
+    TEST_PAIR_ELEMENT_ACCESS(QPair, QString, QString, QStringLiteral("one"), QStringLiteral("two"))
+    TEST_PAIR_ELEMENT_ACCESS(std::pair, QString, QString, QStringLiteral("one"), QStringLiteral("two"))
+    TEST_PAIR_ELEMENT_ACCESS(QPair, QVariant, QVariant, 4, 5)
+    TEST_PAIR_ELEMENT_ACCESS(std::pair, QVariant, QVariant, 4, 5)
+    TEST_PAIR_ELEMENT_ACCESS(QPair, QVariant, int, 41, 15)
+    TEST_PAIR_ELEMENT_ACCESS(std::pair, QVariant, int, 34, 65)
+    TEST_PAIR_ELEMENT_ACCESS(QPair, int, QVariant, 24, 25)
+    TEST_PAIR_ELEMENT_ACCESS(std::pair, int, QVariant, 44, 15)
 }
 
 QTEST_MAIN(tst_QVariant)

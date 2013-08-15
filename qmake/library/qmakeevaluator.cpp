@@ -44,6 +44,7 @@
 
 #include "qmakeglobals.h"
 #include "qmakeparser.h"
+#include "qmakevfs.h"
 #include "ioutils.h"
 
 #include <qbytearray.h>
@@ -174,13 +175,13 @@ const ProKey &QMakeEvaluator::map(const ProKey &var)
 }
 
 
-QMakeEvaluator::QMakeEvaluator(QMakeGlobals *option,
-                               QMakeParser *parser, QMakeHandler *handler)
+QMakeEvaluator::QMakeEvaluator(QMakeGlobals *option, QMakeParser *parser, QMakeVfs *vfs,
+                               QMakeHandler *handler)
   :
 #ifdef PROEVALUATOR_DEBUG
     m_debugLevel(option->debugLevel),
 #endif
-    m_option(option), m_parser(parser), m_handler(handler)
+    m_option(option), m_parser(parser), m_handler(handler), m_vfs(vfs)
 {
     // So that single-threaded apps don't have to call initialize() for now.
     initStatics();
@@ -276,6 +277,8 @@ ProStringList QMakeEvaluator::split_value_list(const QString &vals, const ProFil
         ushort unicode = vals_data[x].unicode();
         if (unicode == quote) {
             quote = 0;
+            hadWord = true;
+            build += QChar(unicode);
             continue;
         }
         switch (unicode) {
@@ -283,7 +286,7 @@ ProStringList QMakeEvaluator::split_value_list(const QString &vals, const ProFil
         case '\'':
             quote = unicode;
             hadWord = true;
-            continue;
+            break;
         case ' ':
         case '\t':
             if (!quote) {
@@ -294,22 +297,23 @@ ProStringList QMakeEvaluator::split_value_list(const QString &vals, const ProFil
                 }
                 continue;
             }
-            build += QChar(unicode);
             break;
         case '\\':
             if (x + 1 != vals_len) {
                 ushort next = vals_data[++x].unicode();
-                if (next == '\'' || next == '"' || next == '\\')
+                if (next == '\'' || next == '"' || next == '\\') {
+                    build += QChar(unicode);
                     unicode = next;
-                else
+                } else {
                     --x;
+                }
             }
             // fallthrough
         default:
             hadWord = true;
-            build += QChar(unicode);
             break;
         }
+        build += QChar(unicode);
     }
     if (hadWord)
         ret << ProString(build).setSource(source);
@@ -933,7 +937,7 @@ void QMakeEvaluator::visitProVariable(
     if (varName == statics.strTEMPLATE)
         setTemplate();
     else if (varName == statics.strQMAKE_PLATFORM)
-        updateFeaturePaths();
+        m_featureRoots = 0;
 #ifdef PROEVALUATOR_FULL
     else if (varName == statics.strREQUIRES)
         checkRequirements(values(varName));
@@ -1037,7 +1041,7 @@ void QMakeEvaluator::loadDefaults()
 # endif
 #elif defined(Q_OS_UNIX)
     struct utsname name;
-    if (!uname(&name)) {
+    if (uname(&name) != -1) {
         vars[ProKey("QMAKE_HOST.os")] << ProString(name.sysname);
         vars[ProKey("QMAKE_HOST.name")] << ProString(QString::fromLocal8Bit(name.nodename));
         vars[ProKey("QMAKE_HOST.version")] << ProString(name.release);
@@ -1061,7 +1065,7 @@ bool QMakeEvaluator::prepareProject(const QString &inDir)
             superdir = m_outputDir;
             forever {
                 QString superfile = superdir + QLatin1String("/.qmake.super");
-                if (IoUtils::exists(superfile)) {
+                if (m_vfs->exists(superfile)) {
                     m_superfile = QDir::cleanPath(superfile);
                     break;
                 }
@@ -1076,10 +1080,10 @@ bool QMakeEvaluator::prepareProject(const QString &inDir)
             QString dir = m_outputDir;
             forever {
                 conffile = sdir + QLatin1String("/.qmake.conf");
-                if (!IoUtils::exists(conffile))
+                if (!m_vfs->exists(conffile))
                     conffile.clear();
                 cachefile = dir + QLatin1String("/.qmake.cache");
-                if (!IoUtils::exists(cachefile))
+                if (!m_vfs->exists(cachefile))
                     cachefile.clear();
                 if (!conffile.isEmpty() || !cachefile.isEmpty()) {
                     if (dir != sdir)
@@ -1157,6 +1161,7 @@ bool QMakeEvaluator::loadSpecInternal()
 #endif
     valuesRef(ProKey("QMAKESPEC")) << ProString(m_qmakespec);
     m_qmakespecName = IoUtils::fileName(m_qmakespec).toString();
+    // This also ensures that m_featureRoots is valid.
     if (evaluateFeatureFile(QLatin1String("spec_post.prf")) != ReturnTrue)
         return false;
     // The MinGW and x-build specs may change the separator; $$shell_{path,quote}() need it
@@ -1170,7 +1175,9 @@ bool QMakeEvaluator::loadSpec()
                 m_hostBuild ? m_option->qmakespec : m_option->xqmakespec);
 
     {
-        QMakeEvaluator evaluator(m_option, m_parser, m_handler);
+        QMakeEvaluator evaluator(m_option, m_parser, m_vfs, m_handler);
+        evaluator.m_sourceRoot = m_sourceRoot;
+        evaluator.m_buildRoot = m_buildRoot;
         if (!m_superfile.isEmpty()) {
             valuesRef(ProKey("_QMAKE_SUPER_CACHE_")) << ProString(m_superfile);
             if (evaluator.evaluateFile(
@@ -1222,7 +1229,7 @@ bool QMakeEvaluator::loadSpec()
     m_qmakespec = QDir::cleanPath(qmakespec);
 
     if (!m_superfile.isEmpty()
-        && evaluateFile(m_superfile, QMakeHandler::EvalConfigFile, LoadProOnly) != ReturnTrue) {
+        && evaluateFile(m_superfile, QMakeHandler::EvalConfigFile, LoadProOnly|LoadHidden) != ReturnTrue) {
         return false;
     }
     if (!loadSpecInternal())
@@ -1242,10 +1249,11 @@ void QMakeEvaluator::setupProject()
 {
     setTemplate();
     ProValueMap &vars = m_valuemapStack.top();
-    vars[ProKey("TARGET")] << ProString(QFileInfo(currentFileName()).baseName());
-    vars[ProKey("_PRO_FILE_")] << ProString(currentFileName());
-    vars[ProKey("_PRO_FILE_PWD_")] << ProString(currentDirectory());
-    vars[ProKey("OUT_PWD")] << ProString(m_outputDir);
+    ProFile *proFile = currentProFile();
+    vars[ProKey("TARGET")] << ProString(QFileInfo(currentFileName()).baseName()).setSource(proFile);
+    vars[ProKey("_PRO_FILE_")] << ProString(currentFileName()).setSource(proFile);
+    vars[ProKey("_PRO_FILE_PWD_")] << ProString(currentDirectory()).setSource(proFile);
+    vars[ProKey("OUT_PWD")] << ProString(m_outputDir).setSource(proFile);
 }
 
 void QMakeEvaluator::evaluateCommand(const QString &cmds, const QString &where)
@@ -1326,7 +1334,7 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::visitProFile(
                 locker.unlock();
 #endif
 
-                QMakeEvaluator *baseEval = new QMakeEvaluator(m_option, m_parser, m_handler);
+                QMakeEvaluator *baseEval = new QMakeEvaluator(m_option, m_parser, m_vfs, m_handler);
                 baseEnv->evaluator = baseEval;
                 baseEval->m_superfile = m_superfile;
                 baseEval->m_conffile = m_conffile;
@@ -1356,11 +1364,9 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::visitProFile(
             loadDefaults();
     }
 
-#ifdef QT_BUILD_QMAKE
     for (ProValueMap::ConstIterator it = m_extraVars.constBegin();
          it != m_extraVars.constEnd(); ++it)
         m_valuemapStack.first().insert(it.key(), it.value());
-#endif
 
     VisitReturn vr;
 
@@ -1375,11 +1381,9 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::visitProFile(
 
         evaluateCommand(m_option->precmds, fL1S("(command line)"));
 
-#ifdef QT_BUILD_QMAKE
         // After user configs, to override them
         if (!m_extraConfigs.isEmpty())
-            evaluateCommand("CONFIG += " + m_extraConfigs.join(' '), fL1S("(extra configs)"));
-#endif
+            evaluateCommand(fL1S("CONFIG += ") + m_extraConfigs.join(QLatin1Char(' ')), fL1S("(extra configs)"));
     }
 
     debugMsg(1, "visiting file %s", qPrintable(pro->fileName()));
@@ -1390,13 +1394,11 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::visitProFile(
     if (flags & LoadPostFiles) {
         evaluateCommand(m_option->postcmds, fL1S("(command line -after)"));
 
-#ifdef QT_BUILD_QMAKE
         // Again, to ensure the project does not mess with us.
         // Specifically, do not allow a project to override debug/release within a
         // debug_and_release build pass - it's too late for that at this point anyway.
         if (!m_extraConfigs.isEmpty())
-            evaluateCommand("CONFIG += " + m_extraConfigs.join(' '), fL1S("(extra configs)"));
-#endif
+            evaluateCommand(fL1S("CONFIG += ") + m_extraConfigs.join(QLatin1Char(' ')), fL1S("(extra configs)"));
 
         if ((vr = evaluateFeatureFile(QLatin1String("default_post.prf"))) == ReturnError)
             goto failed;
@@ -1431,6 +1433,7 @@ void QMakeEvaluator::updateMkspecPaths()
         ret << m_sourceRoot + concat;
 
     ret << m_option->propertyValue(ProKey("QT_HOST_DATA/get")) + concat;
+    ret << m_option->propertyValue(ProKey("QT_HOST_DATA/src")) + concat;
 
     ret.removeDuplicates();
     m_mkspecPaths = ret;
@@ -1452,10 +1455,14 @@ void QMakeEvaluator::updateFeaturePaths()
             m_option->dirlist_sep, QString::SkipEmptyParts);
 
     QStringList feature_bases;
-    if (!m_buildRoot.isEmpty())
+    if (!m_buildRoot.isEmpty()) {
+        feature_bases << m_buildRoot + mkspecs_concat;
         feature_bases << m_buildRoot;
-    if (!m_sourceRoot.isEmpty())
+    }
+    if (!m_sourceRoot.isEmpty()) {
+        feature_bases << m_sourceRoot + mkspecs_concat;
         feature_bases << m_sourceRoot;
+    }
 
     foreach (const QString &item, m_option->getPathListEnv(QLatin1String("QMAKEPATH")))
         feature_bases << (item + mkspecs_concat);
@@ -1479,8 +1486,8 @@ void QMakeEvaluator::updateFeaturePaths()
         }
     }
 
-    feature_bases << (m_option->propertyValue(ProKey("QT_HOST_DATA/get")).toQString(m_mtmp)
-                      + mkspecs_concat);
+    feature_bases << (m_option->propertyValue(ProKey("QT_HOST_DATA/get")) + mkspecs_concat);
+    feature_bases << (m_option->propertyValue(ProKey("QT_HOST_DATA/src")) + mkspecs_concat);
 
     foreach (const QString &fb, feature_bases) {
         foreach (const ProString &sfx, values(ProKey("QMAKE_PLATFORM")))
@@ -1498,7 +1505,7 @@ void QMakeEvaluator::updateFeaturePaths()
     foreach (const QString &root, feature_roots)
         if (IoUtils::exists(root))
             ret << root;
-    m_featureRoots = ret;
+    m_featureRoots = new QMakeFeatureRoots(ret);
 }
 
 ProString QMakeEvaluator::propertyValue(const ProKey &name) const
@@ -1818,7 +1825,7 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateFile(
         m_current = m_locationStack.pop();
         pro->deref();
 #ifdef PROEVALUATOR_FULL
-        if (ok == ReturnTrue) {
+        if (ok == ReturnTrue && !(flags & LoadHidden)) {
             ProStringList &iif = m_valuemapStack.first()[ProKey("QMAKE_INTERNAL_INCLUDED_FILES")];
             ProString ifn(fileName);
             if (!iif.contains(ifn))
@@ -1827,7 +1834,7 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateFile(
 #endif
         return ok;
     } else {
-        if (!(flags & LoadSilent) && !IoUtils::exists(fileName))
+        if (!(flags & LoadSilent) && !m_vfs->exists(fileName))
             evalError(fL1S("WARNING: Include file %1 not found").arg(fileName));
         return ReturnFalse;
     }
@@ -1856,34 +1863,55 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateFeatureFile(
     if (!fn.endsWith(QLatin1String(".prf")))
         fn += QLatin1String(".prf");
 
-    if (m_featureRoots.isEmpty())
+    if (!m_featureRoots)
         updateFeaturePaths();
-    int start_root = 0;
-    QString currFn = currentFileName();
-    if (IoUtils::fileName(currFn) == IoUtils::fileName(fn)) {
-        for (int root = 0; root < m_featureRoots.size(); ++root)
-            if (currFn == m_featureRoots.at(root) + fn) {
-                start_root = root + 1;
-                break;
-            }
-    }
-    for (int root = start_root; root < m_featureRoots.size(); ++root) {
-        QString fname = m_featureRoots.at(root) + fn;
-        if (IoUtils::exists(fname)) {
-            fn = fname;
-            goto cool;
-        }
-    }
-#ifdef QMAKE_BUILTIN_PRFS
-    fn.prepend(QLatin1String(":/qmake/features/"));
-    if (QFileInfo(fn).exists())
-        goto cool;
+#ifdef PROEVALUATOR_THREAD_SAFE
+    m_featureRoots->mutex.lock();
 #endif
-    if (!silent)
-        evalError(fL1S("Cannot find feature %1").arg(fileName));
-    return ReturnFalse;
+    QString currFn = currentFileName();
+    if (IoUtils::fileName(currFn) != IoUtils::fileName(fn))
+        currFn.clear();
+    // Null values cannot regularly exist in the hash, so they indicate that the value still
+    // needs to be determined. Failed lookups are represented via non-null empty strings.
+    QString *fnp = &m_featureRoots->cache[qMakePair(fn, currFn)];
+    if (fnp->isNull()) {
+        int start_root = 0;
+        const QStringList &paths = m_featureRoots->paths;
+        if (!currFn.isEmpty()) {
+            QStringRef currPath = IoUtils::pathName(currFn);
+            for (int root = 0; root < paths.size(); ++root)
+                if (currPath == paths.at(root)) {
+                    start_root = root + 1;
+                    break;
+                }
+        }
+        for (int root = start_root; root < paths.size(); ++root) {
+            QString fname = paths.at(root) + fn;
+            if (IoUtils::exists(fname)) {
+                fn = fname;
+                goto cool;
+            }
+        }
+#ifdef QMAKE_BUILTIN_PRFS
+        fn.prepend(QLatin1String(":/qmake/features/"));
+        if (QFileInfo(fn).exists())
+            goto cool;
+#endif
+        fn = QLatin1String(""); // Indicate failed lookup. See comment above.
 
-  cool:
+      cool:
+        *fnp = fn;
+    } else {
+        fn = *fnp;
+    }
+#ifdef PROEVALUATOR_THREAD_SAFE
+    m_featureRoots->mutex.unlock();
+#endif
+    if (fn.isEmpty()) {
+        if (!silent)
+            evalError(fL1S("Cannot find feature %1").arg(fileName));
+        return ReturnFalse;
+    }
     ProStringList &already = valuesRef(ProKey("QMAKE_INTERNAL_INCLUDED_FEATURES"));
     ProString afn(fn);
     if (already.contains(afn)) {
@@ -1910,7 +1938,7 @@ QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateFeatureFile(
 QMakeEvaluator::VisitReturn QMakeEvaluator::evaluateFileInto(
         const QString &fileName, ProValueMap *values, LoadFlags flags)
 {
-    QMakeEvaluator visitor(m_option, m_parser, m_handler);
+    QMakeEvaluator visitor(m_option, m_parser, m_vfs, m_handler);
     visitor.m_caller = this;
     visitor.m_outputDir = m_outputDir;
     visitor.m_featureRoots = m_featureRoots;

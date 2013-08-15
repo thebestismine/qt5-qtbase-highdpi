@@ -98,6 +98,9 @@ Q_CORE_EXPORT QDebug operator<<(QDebug, const QModelIndex &);
 
 class QPersistentModelIndexData;
 
+// qHash is a friend, but we can't use default arguments for friends (§8.3.6.4)
+uint qHash(const QPersistentModelIndex &index, uint seed = 0);
+
 class Q_CORE_EXPORT QPersistentModelIndex
 {
 public:
@@ -110,6 +113,11 @@ public:
     inline bool operator!=(const QPersistentModelIndex &other) const
     { return !operator==(other); }
     QPersistentModelIndex &operator=(const QPersistentModelIndex &other);
+#ifdef Q_COMPILER_RVALUE_REFS
+    inline QPersistentModelIndex(QPersistentModelIndex &&other) : d(other.d) { other.d = 0; }
+    inline QPersistentModelIndex &operator=(QPersistentModelIndex &&other)
+    { qSwap(d, other.d); return *this; }
+#endif
     inline void swap(QPersistentModelIndex &other) { qSwap(d, other.d); }
     bool operator==(const QModelIndex &other) const;
     bool operator!=(const QModelIndex &other) const;
@@ -128,7 +136,7 @@ public:
     bool isValid() const;
 private:
     QPersistentModelIndexData *d;
-    friend uint qHash(const QPersistentModelIndex &, uint seed = 0);
+    friend uint qHash(const QPersistentModelIndex &, uint seed);
 #ifndef QT_NO_DEBUG_STREAM
     friend Q_CORE_EXPORT QDebug operator<<(QDebug, const QPersistentModelIndex &);
 #endif
@@ -154,7 +162,7 @@ template <class Key, class T> class QMap;
 class Q_CORE_EXPORT QAbstractItemModel : public QObject
 {
     Q_OBJECT
-    Q_ENUMS(LayoutChangeHints)
+    Q_ENUMS(LayoutChangeHint)
 
     friend class QPersistentModelIndexData;
     friend class QAbstractItemViewPrivate;
@@ -405,7 +413,7 @@ inline bool QAbstractItemModel::moveRow(const QModelIndex &sourceParent, int sou
 { return moveRows(sourceParent, sourceRow, 1, destinationParent, destinationChild); }
 inline bool QAbstractItemModel::moveColumn(const QModelIndex &sourceParent, int sourceColumn,
                                            const QModelIndex &destinationParent, int destinationChild)
-{ return moveRows(sourceParent, sourceColumn, 1, destinationParent, destinationChild); }
+{ return moveColumns(sourceParent, sourceColumn, 1, destinationParent, destinationChild); }
 inline QModelIndex QAbstractItemModel::createIndex(int arow, int acolumn, void *adata) const
 { return QModelIndex(arow, acolumn, adata, this); }
 inline QModelIndex QAbstractItemModel::createIndex(int arow, int acolumn, quintptr aid) const

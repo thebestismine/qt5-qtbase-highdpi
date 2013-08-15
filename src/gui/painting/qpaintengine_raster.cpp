@@ -435,6 +435,8 @@ void QRasterPaintEngine::init()
     case QImage::Format_ARGB4444_Premultiplied:
     case QImage::Format_ARGB32_Premultiplied:
     case QImage::Format_ARGB32:
+    case QImage::Format_RGBA8888_Premultiplied:
+    case QImage::Format_RGBA8888:
         gccaps |= PorterDuff;
         break;
     case QImage::Format_RGB32:
@@ -443,6 +445,7 @@ void QRasterPaintEngine::init()
     case QImage::Format_RGB666:
     case QImage::Format_RGB888:
     case QImage::Format_RGB16:
+    case QImage::Format_RGBX8888:
         break;
     default:
         break;
@@ -2264,6 +2267,7 @@ void QRasterPaintEngine::drawImage(const QRectF &r, const QImage &img, const QRe
         case QImage::Format_ARGB6666_Premultiplied:
         case QImage::Format_ARGB8555_Premultiplied:
         case QImage::Format_ARGB4444_Premultiplied:
+        case QImage::Format_RGBA8888_Premultiplied:
             // Combine premultiplied color with the opacity set on the painter.
             d->solid_color_filler.solid.color =
                 ((((color & 0x00ff00ff) * s->intOpacity) >> 8) & 0x00ff00ff)
@@ -3081,7 +3085,8 @@ void QRasterPaintEngine::drawTextItem(const QPointF &p, const QTextItem &textIte
         ti.fontEngine->getGlyphPositions(ti.glyphs, matrix, ti.flags, glyphs, positions);
 
         drawCachedGlyphs(glyphs.size(), glyphs.constData(), positions.constData(), ti.fontEngine);
-    } else if (matrix.type() < QTransform::TxProject) {
+    } else if (matrix.type() < QTransform::TxProject
+               && ti.fontEngine->supportsTransformation(matrix)) {
         bool invertible;
         QTransform invMat = matrix.inverted(&invertible);
         if (!invertible)
@@ -3329,10 +3334,16 @@ bool QRasterPaintEngine::requiresPretransformedGlyphPositions(QFontEngine *fontE
 
 bool QRasterPaintEngine::shouldDrawCachedGlyphs(QFontEngine *fontEngine, const QTransform &m) const
 {
+    // The raster engine does not support projected cached glyph drawing
+    if (m.type() >= QTransform::TxProject)
+        return false;
+
     // The font engine might not support filling the glyph cache
     // with the given transform applied, in which case we need to
-    // fall back to the QPainterPath code-path.
-    if (!fontEngine->supportsTransformation(m))
+    // fall back to the QPainterPath code-path. This does not apply
+    // for engines with internal caching, as we don't use the engine
+    // to fill up our cache in that case.
+    if (!fontEngine->hasInternalCaching() && !fontEngine->supportsTransformation(m))
         return false;
 
     return QPaintEngineEx::shouldDrawCachedGlyphs(fontEngine, m);

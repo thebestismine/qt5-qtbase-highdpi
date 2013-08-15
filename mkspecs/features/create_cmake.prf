@@ -11,11 +11,6 @@
 
 load(cmake_functions)
 
-defineReplace(cmakeRelativePath) {
-    path = $$relative_path($$1, $$2)
-    return($$replace(path, ([^/])$, \\1/))
-}
-
 CMAKE_MODULE_NAME = $$cmakeModuleName($${MODULE})
 
 CMAKE_MODULE_DEPS = $$cmakeModuleList($$sort_depends(QT.$${MODULE}.depends, QT.))
@@ -41,6 +36,8 @@ contains(CMAKE_INCLUDE_DIR, "^\\.\\./.*") {
     CMAKE_INCLUDE_DIR_IS_ABSOLUTE = True
 }
 
+!exists($$first(QT.$${MODULE}.private_includes)): CMAKE_NO_PRIVATE_INCLUDES = true
+
 CMAKE_LIB_DIR = $$cmakeRelativePath($$[QT_INSTALL_LIBS], $$[QT_INSTALL_PREFIX])
 contains(CMAKE_LIB_DIR,"^\\.\\./.*") {
     CMAKE_LIB_DIR = $$[QT_INSTALL_LIBS]/
@@ -58,10 +55,15 @@ contains(CMAKE_BIN_DIR, "^\\.\\./.*") {
     CMAKE_BIN_DIR_IS_ABSOLUTE = True
 }
 
-CMAKE_HOST_DATA_DIR = $$cmakeRelativePath($$[QT_HOST_DATA], $$[QT_INSTALL_PREFIX])
-contains(CMAKE_HOST_DATA_DIR, "^\\.\\./.*") {
-    CMAKE_HOST_DATA_DIR = $$[QT_HOST_DATA]/
-    CMAKE_HOST_DATA_DIR_IS_ABSOLUTE = True
+!isEmpty(DLLDESTDIR):!static:!staticlib {
+    CMAKE_DLL_DIR = $$cmakeRelativePath($$[QT_INSTALL_BINS], $$[QT_INSTALL_PREFIX])
+    contains(CMAKE_DLL_DIR, "^\\.\\./.*") {
+        CMAKE_DLL_DIR = $$[QT_INSTALL_BINS]/
+        CMAKE_DLL_DIR_IS_ABSOLUTE = True
+    }
+} else {
+    CMAKE_DLL_DIR = $$CMAKE_LIB_DIR
+    CMAKE_DLL_DIR_IS_ABSOLUTE = $$CMAKE_LIB_DIR_IS_ABSOLUTE
 }
 
 static|staticlib:CMAKE_STATIC_TYPE = true

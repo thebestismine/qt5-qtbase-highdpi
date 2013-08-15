@@ -33,7 +33,7 @@
     \brief The <QtAlgorithms> header includes the generic, template-based algorithms.
 
     Qt provides a number of global template functions in \c
-    <QtAlgorithms> that work on containers and perform well-know
+    <QtAlgorithms> that work on containers and perform well-known
     algorithms. You can use these algorithms with any \l {container
     class} that provides STL-style iterators, including Qt's QList,
     QLinkedList, QVector, QMap, and QHash classes.
@@ -635,3 +635,34 @@ of \a value in the variable passed as a reference in argument \a n.
 
     \sa {qLess()}{qLess<T>()}
 */
+
+
+/*!
+    \fn uint qPopulationCount(quint8 v)
+    \relates <QtAlgorithms>
+    \since 5.2
+
+    Returns the number of bits set in \a v. This number also called
+    the Hamming Weight of \a v.
+ */
+
+/*!
+    \fn uint qPopulationCount(quint16 v)
+    \relates <QtAlgorithms>
+    \since 5.2
+    \overload
+ */
+
+/*!
+    \fn uint qPopulationCount(quint32 v)
+    \relates <QtAlgorithms>
+    \since 5.2
+    \overload
+ */
+
+/*!
+    \fn uint qPopulationCount(quint64 v)
+    \relates <QtAlgorithms>
+    \since 5.2
+    \overload
+ */
