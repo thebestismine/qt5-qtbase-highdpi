@@ -5616,9 +5616,12 @@ int QImage::metric(PaintDeviceMetric metric) const
         break;
 
     case PdmDevicePixelRatio:
-        return d->devicePixelRatio;
+        // ### research hack - encode fractional device pixel ratios as negative ints.
+        if (qRound(d->devicePixelRatio) != d->devicePixelRatio)
+            return (-d->devicePixelRatio * 1000);
+        else
+            return d->devicePixelRatio;
         break;
-
     default:
         qWarning("QImage::metric(): Unhandled metric type %d", metric);
         break;

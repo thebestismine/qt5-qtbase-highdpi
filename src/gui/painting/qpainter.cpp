@@ -225,23 +225,23 @@ QTransform QPainterPrivate::viewTransform() const
     return QTransform();
 }
 
-int QPainterPrivate::effectiveDevicePixelRatio() const
+qreal QPainterPrivate::effectiveDevicePixelRatio() const
 {
-    // Limited feature introduction for Qt 5.0.0, remove ifdef in a later release.
-#ifdef Q_OS_MAC
     // Special cases for devices that does not support PdmDevicePixelRatio go here:
     if (device->devType() == QInternal::Printer)
         return 1;
 
-    return qMax(1, device->metric(QPaintDevice::PdmDevicePixelRatio));
-#else
-    return 1;
-#endif
+    // ### research hack to investigate fractional device pixel ratios.
+    int encodedDevicePixelRatio = device->metric(QPaintDevice::PdmDevicePixelRatio);
+    if (encodedDevicePixelRatio > 0)
+        return qMax(1, device->metric(QPaintDevice::PdmDevicePixelRatio));
+    else
+        return (qreal(-encodedDevicePixelRatio) / 1000.0f);
 }
 
 QTransform QPainterPrivate::hidpiScaleTransform() const
 {
-    int devicePixelRatio = effectiveDevicePixelRatio();
+    qreal devicePixelRatio = effectiveDevicePixelRatio();
     return QTransform::fromScale(devicePixelRatio, devicePixelRatio);
 }
 

@@ -1816,7 +1816,14 @@ void QWidgetPrivate::setSystemClip(QPaintDevice *paintDevice, const QRegion &reg
     // Transform the system clip region from device-independent pixels to device pixels
     QPaintEngine *paintEngine = paintDevice->paintEngine();
     QTransform scaleTransform;
-    const qreal devicePixelRatio = paintDevice->devicePixelRatio();
+    // ### research hack to investigate fractional device pixel ratios.
+    int encodedDevicePixelRatio = paintDevice->devicePixelRatio();
+    qreal devicePixelRatio = 1;
+    if (encodedDevicePixelRatio > 0)
+        devicePixelRatio = encodedDevicePixelRatio;
+    else
+        devicePixelRatio = (qreal(-encodedDevicePixelRatio) / 1000.0f);
+
     scaleTransform.scale(devicePixelRatio, devicePixelRatio);
     paintEngine->d_func()->systemClip = scaleTransform.map(region);
 }
