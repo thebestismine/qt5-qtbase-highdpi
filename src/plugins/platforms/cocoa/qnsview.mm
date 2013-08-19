@@ -55,7 +55,7 @@
 #include <qpa/qwindowsysteminterface.h>
 #include <QtGui/QTextFormat>
 #include <QtCore/QDebug>
-#include <private/qemulatedhidpi_p.h>
+#include <private/qhighdpiscaling_p.h>
 #include <private/qguiapplication_p.h>
 #include "qcocoabackingstore.h"
 #include "qcocoaglcontext.h"

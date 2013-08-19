@@ -45,7 +45,7 @@
 #include <QScreen>
 #include <QtGui/QIcon>
 #include <QtGui/QRegion>
-#include <QtGui/private/qemulatedhidpi_p.h>
+#include <QtGui/private/qhighdpiscaling_p.h>
 
 #include "qxcbintegration.h"
 #include "qxcbconnection.h"
@@ -261,7 +261,7 @@ void QXcbWindow::create()
     // Parameters to XCreateWindow() are frame corner + inner size.
     // This fits in case position policy is frame inclusive. There is
     // currently no way to implement it for frame-exclusive geometries.
-    QRect rect = qhidpiPointToPixel(window()->geometry());
+    QRect rect = qHighDpiToDevicePixels(window()->geometry());
     QPlatformWindow::setGeometry(rect);
 
     QSize minimumSize = window()->minimumSize();
@@ -269,10 +269,10 @@ void QXcbWindow::create()
         rect.setWidth(qBound(1, rect.width(), XCOORD_MAX));
         rect.setHeight(qBound(1, rect.height(), XCOORD_MAX));
     } else if (minimumSize.width() > 0 || minimumSize.height() > 0) {
-        rect.setSize(qhidpiPointToPixel(minimumSize));
+        rect.setSize(qHighDpiToDevicePixels(minimumSize));
     } else {
-        rect.setWidth(qhidpiPointToPixel(int(defaultWindowWidth)));
-        rect.setHeight(qhidpiPointToPixel(int(defaultWindowHeight)));
+        rect.setWidth(qHighDpiToDevicePixels(int(defaultWindowWidth)));
+        rect.setHeight(qHighDpiToDevicePixels(int(defaultWindowHeight)));
     }
 
     xcb_window_t xcb_parent_id = m_screen->root();
@@ -1326,10 +1326,10 @@ void QXcbWindow::propagateSizeHints()
         xcb_size_hints_set_size(&hints, true, rect.width(), rect.height());
     xcb_size_hints_set_win_gravity(&hints, m_gravity);
 
-    QSize minimumSize = qhidpiPointToPixel(win->minimumSize());
-    QSize maximumSize = qhidpiPointToPixel(win->maximumSize());
-    QSize baseSize = qhidpiPointToPixel(win->baseSize());
-    QSize sizeIncrement = qhidpiPointToPixel(win->sizeIncrement());
+    QSize minimumSize = qHighDpiToDevicePixels(win->minimumSize());
+    QSize maximumSize = qHighDpiToDevicePixels(win->maximumSize());
+    QSize baseSize = qHighDpiToDevicePixels(win->baseSize());
+    QSize sizeIncrement = qHighDpiToDevicePixels(win->sizeIncrement());
 
     if (minimumSize.width() > 0 || minimumSize.height() > 0)
         xcb_size_hints_set_min_size(&hints, minimumSize.width(), minimumSize.height());

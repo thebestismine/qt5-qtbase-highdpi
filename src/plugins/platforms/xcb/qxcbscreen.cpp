@@ -52,7 +52,7 @@
 
 #include <qpa/qwindowsysteminterface.h>
 #include <private/qmath_p.h>
-#include <QtGui/private/qemulatedhidpi_p.h>
+#include <QtGui/private/qhighdpiscaling_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -286,7 +286,7 @@ QImage::Format QXcbScreen::format() const
 
 QDpi QXcbScreen::logicalDpi() const
 {
-    if (qhidpiIsEmulationEnabled())
+    if (qHighDpiIsScaled())
         return QDpi(96, 96); // disregard system font scaling to avoid duplicate scaling.
 
     if (m_forcedDpi > 0)

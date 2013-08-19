@@ -41,7 +41,7 @@
 
 #include "qcocoabackingstore.h"
 #include <QtGui/QPainter>
-#include <QtGui/private/qemulatedhidpi_p.h>
+#include <QtGui/private/qhighdpiscaling_p.h>
 #include "qcocoahelpers.h"
 
 QT_BEGIN_NAMESPACE
