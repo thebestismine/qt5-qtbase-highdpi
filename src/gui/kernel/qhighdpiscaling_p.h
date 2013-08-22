@@ -21,111 +21,111 @@ Q_GUI_EXPORT bool qHighDpiIsScaled();       // Returns true if a scaling factor 
 Q_GUI_EXPORT qreal qHighDpiScaleFactor();   // Returns the scaling factor if set, 1.0 otherwise.
 
 // Coordinate system conversion functions:
-// qHighDpiToDevicePixels               : from logical to physical (screen/backing) pixels
-// qHighDpiToDeviceIndependentPixels    : from physical to logical pixels
-inline QRect qHighDpiToDevicePixels(const QRect &pixelRect)
+// qHighDpiToDeviceIndependentPixels   : from physical(screen/backing) to logical pixels
+// qHighDpiToDevicePixels              : from logical to physical pixels
+inline QRect qHighDpiToDeviceIndependentPixels(const QRect &pixelRect)
 {
     const qreal scaleFactor = qHighDpiScaleFactor();
     return QRect(pixelRect.topLeft() / scaleFactor, pixelRect.size() / scaleFactor);
 }
 
-inline QRect qHighDpiToDeviceIndependentPixels(const QRect &pointRect)
+inline QRect qHighDpiToDevicePixels(const QRect &pointRect)
 {
     const qreal scaleFactor = qHighDpiScaleFactor();
     return QRect(pointRect.topLeft() * scaleFactor, pointRect.size() * scaleFactor);
 }
 
-inline QRectF qHighDpiToDevicePixels(const QRectF &pixelRect)
+inline QRectF qHighDpiToDeviceIndependentPixels(const QRectF &pixelRect)
 {
     const qreal scaleFactor = qHighDpiScaleFactor();
     return QRectF(pixelRect.topLeft() / scaleFactor, pixelRect.size() / scaleFactor);
 }
 
-inline QRectF qHighDpiToDeviceIndependentPixels(const QRectF &pointRect)
+inline QRectF qHighDpiToDevicePixels(const QRectF &pointRect)
 {
    const qreal scaleFactor = qHighDpiScaleFactor();
    return QRectF(pointRect.topLeft() * scaleFactor, pointRect.size() * scaleFactor);
 }
 
-inline QSize qHighDpiToDevicePixels(const QSize &pixelSize)
+inline QSize qHighDpiToDeviceIndependentPixels(const QSize &pixelSize)
 {
     return pixelSize / qHighDpiScaleFactor();
 }
 
-inline QSize qHighDpiToDeviceIndependentPixels(const QSize &pointSize)
+inline QSize qHighDpiToDevicePixels(const QSize &pointSize)
 {
     return pointSize * qHighDpiScaleFactor();
 }
 
-inline QSizeF qHighDpiToDevicePixels(const QSizeF &pixelSize)
+inline QSizeF qHighDpiToDeviceIndependentPixels(const QSizeF &pixelSize)
 {
     return pixelSize / qHighDpiScaleFactor();
 }
 
-inline QSizeF qHighDpiToDeviceIndependentPixels(const QSizeF &pointSize)
+inline QSizeF qHighDpiToDevicePixels(const QSizeF &pointSize)
 {
     return pointSize * qHighDpiScaleFactor();
 }
 
-inline QPoint qHighDpiToDevicePixels(const QPoint &pixelPoint)
+inline QPoint qHighDpiToDeviceIndependentPixels(const QPoint &pixelPoint)
 {
     return pixelPoint / qHighDpiScaleFactor();
 }
 
-inline QPoint qHighDpiToDeviceIndependentPixels(const QPoint &pointPoint)
+inline QPoint qHighDpiToDevicePixels(const QPoint &pointPoint)
 {
     return pointPoint * qHighDpiScaleFactor();
 }
 
-inline QPointF qHighDpiToDevicePixels(const QPointF &pixelPoint)
+inline QPointF qHighDpiToDeviceIndependentPixels(const QPointF &pixelPoint)
 {
     return pixelPoint / qHighDpiScaleFactor();
 }
 
-inline QPointF qHighDpiToDeviceIndependentPixels(const QPointF &pointPoint)
+inline QPointF qHighDpiToDevicePixels(const QPointF &pointPoint)
 {
     return pointPoint * qHighDpiScaleFactor();
 }
 
-inline QMargins qHighDpiToDevicePixels(const QMargins &pixelMargins)
+inline QMargins qHighDpiToDeviceIndependentPixels(const QMargins &pixelMargins)
 {
     const qreal scaleFactor = qHighDpiScaleFactor();
     return QMargins(pixelMargins.left() / scaleFactor, pixelMargins.top() / scaleFactor,
                     pixelMargins.right() / scaleFactor, pixelMargins.bottom() / scaleFactor);
 }
 
-inline QMargins qHighDpiToDeviceIndependentPixels(const QMargins &pointMargins)
+inline QMargins qHighDpiToDevicePixels(const QMargins &pointMargins)
 {
     const qreal scaleFactor = qHighDpiScaleFactor();
     return QMargins(pointMargins.left() * scaleFactor, pointMargins.top() * scaleFactor,
                     pointMargins.right() * scaleFactor, pointMargins.bottom() * scaleFactor);
 }
 
-inline QRegion qHighDpiToDevicePixels(const QRegion &pixelRegion)
+inline QRegion qHighDpiToDeviceIndependentPixels(const QRegion &pixelRegion)
 {
     if (!qHighDpiIsScaled())
         return pixelRegion;
 
     QRegion pointRegion;
     foreach (const QRect &rect, pixelRegion.rects())
-        pointRegion += qHighDpiToDevicePixels(rect);
+        pointRegion += qHighDpiToDeviceIndependentPixels(rect);
     return pointRegion;
 }
 
-inline QRegion qHighDpiToDeviceIndependentPixels(const QRegion &pointRegion)
+inline QRegion qHighDpiToDevicePixels(const QRegion &pointRegion)
 {
     if (!qHighDpiIsScaled())
         return pointRegion;
 
     QRegion pixelRegon;
     foreach (const QRect &rect, pointRegion.rects())
-        pixelRegon += qHighDpiToDeviceIndependentPixels(rect);
+        pixelRegon += qHighDpiToDevicePixels(rect);
     return pixelRegon;
 }
 
 // Any T that has operator/()
 template <typename T>
-T qHighDpiToDevicePixels(const T &pixelValue)
+T qHighDpiToDeviceIndependentPixels(const T &pixelValue)
 {
     if (!qHighDpiIsScaled())
         return pixelValue;
@@ -136,7 +136,7 @@ T qHighDpiToDevicePixels(const T &pixelValue)
 
 // Any T that has operator*()
 template <typename T>
-T qHighDpiToDeviceIndependentPixels(const T &pointValue)
+T qHighDpiToDevicePixels(const T &pointValue)
 {
     if (!qHighDpiIsScaled())
         return pointValue;
@@ -146,7 +146,7 @@ T qHighDpiToDeviceIndependentPixels(const T &pointValue)
 
 // Any QVector<T> where T has operator/()
 template <typename T>
-QVector<T> qHighDpiToDevicePixels(const QVector<T> &pixelValues)
+QVector<T> qHighDpiToDeviceIndependentPixels(const QVector<T> &pixelValues)
 {
     if (!qHighDpiIsScaled())
         return pixelValues;
@@ -159,7 +159,7 @@ QVector<T> qHighDpiToDevicePixels(const QVector<T> &pixelValues)
 
 // Any QVector<T> where T has operator*()
 template <typename T>
-QVector<T> qHighDpiToDeviceIndependentPixels(const QVector<T> &pointValues)
+QVector<T> qHighDpiToDevicePixels(const QVector<T> &pointValues)
 {
     if (!qHighDpiIsScaled())
         return pointValues;
@@ -173,15 +173,15 @@ QVector<T> qHighDpiToDeviceIndependentPixels(const QVector<T> &pointValues)
 
 // Any QPair<T, U> where T and U has operator/()
 template <typename T, typename U>
-QPair<T, U> qHighDpiToDevicePixels(const QPair<T, U> &pixelPair)
+QPair<T, U> qHighDpiToDeviceIndependentPixels(const QPair<T, U> &pixelPair)
 {
-    return qMakePair(qHighDpiToDevicePixels(pixelPair.first), qHighDpiToDevicePixels(pixelPair.second));
+    return qMakePair(qHighDpiToDeviceIndependentPixels(pixelPair.first), qHighDpiToDeviceIndependentPixels(pixelPair.second));
 }
 
 // Any QPair<T, U> where T and U has operator*()
 template <typename T, typename U>
-QPair<T, U> qHighDpiToDeviceIndependentPixels(const QPair<T, U> &pointPair)
+QPair<T, U> qHighDpiToDevicePixels(const QPair<T, U> &pointPair)
 {
-    return qMakePair(qHighDpiToDeviceIndependentPixels(pointPair.first), qHighDpiToDeviceIndependentPixels(pointPair.second));
+    return qMakePair(qHighDpiToDevicePixels(pointPair.first), qHighDpiToDevicePixels(pointPair.second));
 }
 
