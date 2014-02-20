@@ -52,19 +52,27 @@
 
 QT_FORWARD_DECLARE_CLASS(QCocoaWindow)
 
-@interface QNSWindow : NSWindow {
+@interface QNSWindow : NSWindow
+{
     @public QCocoaWindow *m_cocoaPlatformWindow;
 }
+- (id)initWithContentRect:(NSRect)contentRect
+      styleMask:(NSUInteger)windowStyle
+      qPlatformWindow:(QCocoaWindow *)qpw;
 
 - (void)clearPlatformWindow;
-- (BOOL)canBecomeKeyWindow;
 @end
 
-@interface QNSPanel : NSPanel {
+@interface QNSPanel : NSPanel
+{
     @public QCocoaWindow *m_cocoaPlatformWindow;
 }
+
+- (id)initWithContentRect:(NSRect)contentRect
+      styleMask:(NSUInteger)windowStyle
+      qPlatformWindow:(QCocoaWindow *)qpw;
+
 - (void)clearPlatformWindow;
-- (BOOL)canBecomeKeyWindow;
 @end
 
 @class QNSWindowDelegate;
@@ -101,6 +109,10 @@ public:
 
     void setGeometry(const QRect &rect);
     void setCocoaGeometry(const QRect &rect);
+    void clipChildWindows();
+    void clipWindow(const NSRect &clipRect);
+    void show(bool becauseOfAncestor = false);
+    void hide(bool becauseOfAncestor = false);
     void setVisible(bool visible);
     void setWindowFlags(Qt::WindowFlags flags);
     void setWindowState(Qt::WindowState state);
@@ -128,6 +140,8 @@ public:
 
     NSView *contentView() const;
     void setContentView(NSView *contentView);
+    QNSView *qtView() const;
+    NSWindow *nativeWindow() const;
 
     void setEmbeddedInForeignView(bool subwindow);
 
@@ -160,6 +174,7 @@ public:
     void registerTouch(bool enable);
     void setContentBorderThickness(int topThickness, int bottomThickness);
     void applyContentBorderThickness(NSWindow *window);
+    void updateNSToolbar();
 
     qreal devicePixelRatio() const;
     bool isWindowExposable();
@@ -168,16 +183,18 @@ public:
     void updateExposedGeometry();
     QWindow *childWindowAt(QPoint windowPoint);
 protected:
-    // NSWindow handling. The QCocoaWindow/QNSView can either be displayed
-    // in an existing NSWindow or in one created by Qt.
     void recreateWindow(const QPlatformWindow *parentWindow);
     NSWindow *createNSWindow();
     void setNSWindow(NSWindow *window);
     void clearNSWindow(NSWindow *window);
 
+    bool shouldUseNSPanel();
+
     QRect windowGeometry() const;
     QCocoaWindow *parentCocoaWindow() const;
     void syncWindowState(Qt::WindowState newState);
+    void reinsertChildWindow(QCocoaWindow *child);
+    void removeChildWindow(QCocoaWindow *child);
 
 // private:
 public: // for QNSView
@@ -188,10 +205,15 @@ public: // for QNSView
     NSView *m_contentView;
     QNSView *m_qtView;
     NSWindow *m_nsWindow;
+    QCocoaWindow *m_forwardWindow;
 
     // TODO merge to one variable if possible
     bool m_contentViewIsEmbedded; // true if the m_contentView is actually embedded in a "foreign" NSView hiearchy
     bool m_contentViewIsToBeEmbedded; // true if the m_contentView is intended to be embedded in a "foreign" NSView hiearchy
+
+    QCocoaWindow *m_parentCocoaWindow;
+    bool m_isNSWindowChild; // this window is a non-top level QWindow with a NSWindow.
+    QList<QCocoaWindow *> m_childWindows;
 
     QNSWindowDelegate *m_nsWindowDelegate;
     Qt::WindowFlags m_windowFlags;
@@ -213,6 +235,8 @@ public: // for QNSView
     QRect m_exposedGeometry;
     int m_registerTouchCount;
     bool m_resizableTransientParent;
+    bool m_hiddenByClipping;
+    bool m_hiddenByAncestor;
 
     static const int NoAlertRequest;
     NSInteger m_alertRequest;
@@ -221,6 +245,11 @@ public: // for QNSView
     bool m_drawContentBorderGradient;
     int m_topContentBorderThickness;
     int m_bottomContentBorderThickness;
+
+    // used by showFullScreen in fake mode
+    QRect m_normalGeometry;
+    Qt::WindowFlags m_oldWindowFlags;
+    NSApplicationPresentationOptions m_presentationOptions;
 };
 
 QT_END_NAMESPACE

@@ -123,7 +123,8 @@ SOURCES += \
         kernel/qplatformscreenpageflipper.cpp \
         kernel/qplatformsystemtrayicon_qpa.cpp \
         kernel/qhighdpiscaling.cpp \
-        kernel/qplatformsessionmanager.cpp
+        kernel/qplatformsessionmanager.cpp \
+        kernel/qplatformmenu.cpp
 
 contains(QT_CONFIG, opengl)|contains(QT_CONFIG, opengles2) {
     HEADERS += \

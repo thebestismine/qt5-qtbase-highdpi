@@ -1837,9 +1837,9 @@ void QMenuBar::setNativeMenuBar(bool nativeMenuBar)
                 d->platformMenuBar = QGuiApplicationPrivate::platformTheme()->createPlatformMenuBar();
         }
 
-	updateGeometry();
-	if (!d->nativeMenuBar && parentWidget())
-	    setVisible(true);
+        updateGeometry();
+        if (!d->nativeMenuBar && parentWidget())
+            setVisible(true);
     }
 }
 
