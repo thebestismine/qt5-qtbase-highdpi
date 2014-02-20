@@ -1,6 +1,9 @@
 
 #include <QtCore/qglobal.h>
 #include <QtCore/qmargins.h>
+#include <QtCore/qrect.h>
+#include <QtCore/qvector.h>
+#include <QtGui/qregion.h>
 
 // Qt high-dpi scaling for operating systems that do not provide
 // "retina"-type scaling support.
