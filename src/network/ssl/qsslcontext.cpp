@@ -189,9 +189,6 @@ init_context:
             q_SSL_CTX_load_verify_locations(sslContext->ctx, 0, unixDirs.at(a).constData());
     }
 
-    // Register a custom callback to get all verification errors.
-    X509_STORE_set_verify_cb_func(sslContext->ctx->cert_store, q_X509Callback);
-
     if (!sslContext->sslConfiguration.localCertificate().isNull()) {
         // Require a private key as well.
         if (sslContext->sslConfiguration.privateKey().isNull()) {
@@ -260,8 +257,8 @@ init_context:
         q_SSL_CTX_set_verify_depth(sslContext->ctx, sslContext->sslConfiguration.peerVerifyDepth());
 
     // set persisted session if the user set it
-    if (!configuration.session().isEmpty())
-        sslContext->setSessionASN1(configuration.session());
+    if (!configuration.sessionTicket().isEmpty())
+        sslContext->setSessionASN1(configuration.sessionTicket());
 
     return sslContext;
 }

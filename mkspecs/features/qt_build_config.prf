@@ -20,6 +20,14 @@
     debug(1, "Not loading qmodule.pri twice")
 }
 
+PRECOMPILED_DIR = .pch
+OBJECTS_DIR = .obj
+MOC_DIR = .moc
+RCC_DIR = .rcc
+UI_DIR = .uic
+
+QMAKE_DIR_REPLACE_SANE = PRECOMPILED_DIR OBJECTS_DIR MOC_DIR RCC_DIR UI_DIR
+
 # force_independent can be set externally. prefix_build not.
 !exists($$[QT_HOST_DATA]/.qmake.cache): \
     CONFIG += prefix_build force_independent
@@ -47,6 +55,7 @@ CONFIG += \
     create_prl link_prl \
     prepare_docs qt_docs_targets \
     no_private_qt_headers_warning QTDIR_build \
+    no_dll \
     # Qt modules get compiled without exceptions enabled by default.
     # However, testcases should be still built with exceptions.
     exceptions_off testcase_exceptions

@@ -53,6 +53,7 @@
 #include <qpa/qplatformintegration.h>
 #include "QtGui/private/qwindow_p.h"
 #include "QtGui/private/qguiapplication_p.h"
+#include <private/qwindowcontainer_p.h>
 
 #include <qpa/qplatformcursor.h>
 #include <QtGui/QGuiApplication>
@@ -69,7 +70,7 @@ void q_createNativeChildrenAndSetParent(const QWidget *parentWidget)
             const QWidget *childWidget = qobject_cast<const QWidget *>(children.at(i));
             if (childWidget) { // should not be necessary
                 if (childWidget->testAttribute(Qt::WA_NativeWindow)) {
-                    if (!childWidget->windowHandle())
+                    if (!childWidget->internalWinId())
                         childWidget->winId();
                     if (childWidget->windowHandle()) {
                         QWindow *parentWindow = childWidget->nativeParentWidget()->windowHandle();
@@ -110,17 +111,19 @@ void QWidgetPrivate::create_sys(WId window, bool initializeWindow, bool destroyO
 
     win->setFlags(data.window_flags);
     fixPosIncludesFrame();
-    if (q->testAttribute(Qt::WA_Moved))
+    if (q->testAttribute(Qt::WA_Moved)
+        || !QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowManagement))
         win->setGeometry(q->geometry());
     else
         win->resize(q->size());
     win->setScreen(QGuiApplication::screens().value(topData()->screenIndex, 0));
 
-    if (q->testAttribute(Qt::WA_TranslucentBackground)) {
-        QSurfaceFormat format;
+    QSurfaceFormat format = win->requestedFormat();
+    if ((flags & Qt::Window) && win->surfaceType() != QSurface::OpenGLSurface
+            && q->testAttribute(Qt::WA_TranslucentBackground)) {
         format.setAlphaBufferSize(8);
-        win->setFormat(format);
     }
+    win->setFormat(format);
 
     if (QWidget *nativeParent = q->nativeParentWidget()) {
         if (nativeParent->windowHandle()) {
@@ -146,14 +149,19 @@ void QWidgetPrivate::create_sys(WId window, bool initializeWindow, bool destroyO
     QBackingStore *store = q->backingStore();
 
     if (!store) {
-        if (win && q->windowType() != Qt::Desktop)
-            q->setBackingStore(new QBackingStore(win));
-        else
+        if (win && q->windowType() != Qt::Desktop) {
+            if (q->isTopLevel())
+                q->setBackingStore(new QBackingStore(win));
+        } else {
             q->setAttribute(Qt::WA_PaintOnScreen, true);
+        }
     }
 
     setWindowModified_helper();
-    setWinId(win->winId());
+    WId id = win->winId();
+    // See the QPlatformWindow::winId() documentation
+    Q_ASSERT(id != WId(0));
+    setWinId(id);
 
     // Check children and create windows for them if necessary
     q_createNativeChildrenAndSetParent(q);
@@ -263,8 +271,11 @@ void QWidgetPrivate::setParent_sys(QWidget *newparent, Qt::WindowFlags f)
     bool explicitlyHidden = q->testAttribute(Qt::WA_WState_Hidden) && q->testAttribute(Qt::WA_WState_ExplicitShowHide);
 
     // Reparenting toplevel to child
-    if (wasCreated && !(f & Qt::Window) && (oldFlags & Qt::Window) && !q->testAttribute(Qt::WA_NativeWindow))
+    if (wasCreated && !(f & Qt::Window) && (oldFlags & Qt::Window) && !q->testAttribute(Qt::WA_NativeWindow)) {
+        if (extra && extra->hasWindowContainer)
+            QWindowContainer::toplevelAboutToBeDestroyed(q);
         q->destroy();
+    }
 
     adjustFlags(f, q);
     data.window_flags = f;
@@ -527,7 +538,8 @@ void QWidgetPrivate::show_sys()
         }
         const QRect windowRect = window->geometry();
         if (windowRect != geomRect) {
-            if (q->testAttribute(Qt::WA_Moved))
+            if (q->testAttribute(Qt::WA_Moved)
+                || !QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::WindowManagement))
                 window->setGeometry(geomRect);
             else
                 window->resize(geomRect.size());
@@ -756,7 +768,10 @@ void QWidgetPrivate::setGeometry_sys(int x, int y, int w, int h, bool isMove)
             }
         }
 
-        if (isMove) {
+        // generate a move event for QWidgets without window handles. QWidgets with native
+        // window handles already receive a move event from
+        // QGuiApplicationPrivate::processGeometryChangeEvent.
+        if (isMove && (!q->windowHandle() || q->testAttribute(Qt::WA_DontShowOnScreen))) {
             QMoveEvent e(q->pos(), oldPos);
             QApplication::sendEvent(q, &e);
         }
@@ -864,9 +879,15 @@ int QWidget::metric(PaintDeviceMetric m) const
 }
 
 /*!
-    \preliminary
+    If this is a native widget, return the associated QWindow.
+    Otherwise return null.
 
-    Returns the QPlatformWindow this widget will be drawn into.
+    Native widgets include toplevel widgets, QGLWidget, and child widgets
+    on which winId() was called.
+
+    \since 5.0
+
+    \sa winId()
 */
 QWindow *QWidget::windowHandle() const
 {
@@ -900,6 +921,8 @@ void QWidgetPrivate::createTLSysExtra()
             extra->topextra->window->setMinimumSize(QSize(extra->minw, extra->minh));
         if (extra->maxw != QWIDGETSIZE_MAX || extra->maxh != QWIDGETSIZE_MAX)
             extra->topextra->window->setMaximumSize(QSize(extra->maxw, extra->maxh));
+        if (extra->topextra->opacity != 255 && q->isWindow())
+            extra->topextra->window->setOpacity(qreal(extra->topextra->opacity) / qreal(255));
 #ifdef Q_OS_WIN
         // Pass on native parent handle for Widget embedded into Active X.
         const QVariant activeXNativeParentHandle = q->property(activeXNativeParentHandleProperty);

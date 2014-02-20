@@ -67,7 +67,6 @@ OBJECTS = \
     qxmlstream.obj \
     qxmlutils.obj \
     quuid.obj \
-    qcryptographichash.obj \
     registry.obj \
     configure_pch.obj
 
@@ -84,6 +83,8 @@ clean:
 
 $(PCH): $(CONFSRC)\configure_pch.h
 	$(CXX) -c -Yc $(CXXFLAGS_BARE) -Fp$@ -Foconfigure_pch.obj -TP $**
+
+$(OBJECTS): $(PCH)
 
 main.obj: $(CONFSRC)\main.cpp $(CONFSRC)\configureapp.h $(PCH)
 configureapp.obj: $(CONFSRC)\configureapp.cpp $(CONFSRC)\configureapp.h $(CONFSRC)\environment.h $(CONFSRC)\tools.h $(PCH)
@@ -142,7 +143,6 @@ qmalloc.obj: $(CORESRC)\global\qmalloc.cpp $(PCH)
 qxmlstream.obj: $(CORESRC)\xml\qxmlstream.cpp $(PCH)
 qxmlutils.obj: $(CORESRC)\xml\qxmlutils.cpp $(PCH)
 quuid.obj: $(CORESRC)\plugin\quuid.cpp $(PCH)
-qcryptographichash.obj: $(CORESRC)\tools\qcryptographichash.cpp $(PCH)
 
 {$(CONFSRC)}.cpp{}.obj::
 	$(CXX) -c $(CXXFLAGS) $<

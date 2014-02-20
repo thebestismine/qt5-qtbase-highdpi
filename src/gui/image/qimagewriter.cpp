@@ -58,7 +58,7 @@
     object.  Pass either a file name or a device pointer, and the
     image format to QImageWriter's constructor. You can then set
     several options, such as the gamma level (by calling setGamma())
-    and quality (by calling setQuality()). canWrite() returns true if
+    and quality (by calling setQuality()). canWrite() returns \c true if
     QImageWriter can write the image (i.e., the image format is
     supported and the device is open for writing). Call write() to
     write the image to the device.
@@ -122,6 +122,8 @@
 #ifdef QT_BUILTIN_GIF_READER
 #include <private/qgifhandler_p.h>
 #endif
+
+#include <algorithm>
 
 QT_BEGIN_NAMESPACE
 
@@ -243,6 +245,8 @@ class QImageWriterPrivate
 public:
     QImageWriterPrivate(QImageWriter *qq);
 
+    bool canWriteHelper();
+
     // device
     QByteArray format;
     QIODevice *device;
@@ -275,9 +279,31 @@ QImageWriterPrivate::QImageWriterPrivate(QImageWriter *qq)
     compression = 0;
     gamma = 0.0;
     imageWriterError = QImageWriter::UnknownError;
-    errorString = QT_TRANSLATE_NOOP(QImageWriter, QLatin1String("Unknown error"));
+    errorString = QLatin1String(QT_TRANSLATE_NOOP(QImageWriter, "Unknown error"));
 
     q = qq;
+}
+
+bool QImageWriterPrivate::canWriteHelper()
+{
+    if (!device) {
+        imageWriterError = QImageWriter::DeviceError;
+        errorString = QLatin1String(QT_TRANSLATE_NOOP(QImageWriter, "Device is not set"));
+        return false;
+    }
+    if (!device->isOpen())
+        device->open(QIODevice::WriteOnly);
+    if (!device->isWritable()) {
+        imageWriterError = QImageWriter::DeviceError;
+        errorString = QLatin1String(QT_TRANSLATE_NOOP(QImageWriter, "Device not writable"));
+        return false;
+    }
+    if (!handler && (handler = createWriteHandlerHelper(device, format)) == 0) {
+        imageWriterError = QImageWriter::UnsupportedFormatError;
+        errorString = QLatin1String(QT_TRANSLATE_NOOP(QImageWriter, "Unsupported image format"));
+        return false;
+    }
+    return true;
 }
 
 /*!
@@ -552,33 +578,27 @@ void QImageWriter::setText(const QString &key, const QString &text)
 }
 
 /*!
-    Returns true if QImageWriter can write the image; i.e., the image
+    Returns \c true if QImageWriter can write the image; i.e., the image
     format is supported and the assigned device is open for reading.
 
     \sa write(), setDevice(), setFormat()
 */
 bool QImageWriter::canWrite() const
 {
-    if (d->device && !d->handler && (d->handler = createWriteHandlerHelper(d->device, d->format)) == 0) {
-        d->imageWriterError = QImageWriter::UnsupportedFormatError;
-        d->errorString = QT_TRANSLATE_NOOP(QImageWriter,
-                                           QLatin1String("Unsupported image format"));
-        return false;
+    if (QFile *file = qobject_cast<QFile *>(d->device)) {
+        const bool remove = !file->isOpen() && !file->exists();
+        const bool result = d->canWriteHelper();
+        if (!result && remove)
+            file->remove();
+        return result;
     }
-    if (d->device && !d->device->isOpen())
-        d->device->open(QIODevice::WriteOnly);
-    if (!d->device || !d->device->isWritable()) {
-        d->imageWriterError = QImageWriter::DeviceError;
-        d->errorString = QT_TRANSLATE_NOOP(QImageWriter,
-                                           QLatin1String("Device not writable"));
-        return false;
-    }
-    return true;
+
+    return d->canWriteHelper();
 }
 
 /*!
     Writes the image \a image to the assigned device or file
-    name. Returns true on success; otherwise returns false. If the
+    name. Returns \c true on success; otherwise returns \c false. If the
     operation fails, you can call error() to find the type of error
     that occurred, or errorString() to get a human readable
     description of the error.
@@ -629,7 +649,7 @@ QString QImageWriter::errorString() const
 /*!
     \since 4.2
 
-    Returns true if the writer supports \a option; otherwise returns
+    Returns \c true if the writer supports \a option; otherwise returns
     false.
 
     Different image formats support different options. Call this function to
@@ -647,8 +667,7 @@ bool QImageWriter::supportsOption(QImageIOHandler::ImageOption option) const
 {
     if (!d->handler && (d->handler = createWriteHandlerHelper(d->device, d->format)) == 0) {
         d->imageWriterError = QImageWriter::UnsupportedFormatError;
-        d->errorString = QT_TRANSLATE_NOOP(QImageWriter,
-                                           QLatin1String("Unsupported image format"));
+        d->errorString = QLatin1String(QT_TRANSLATE_NOOP(QImageWriter, "Unsupported image format"));
         return false;
     }
 
@@ -755,7 +774,7 @@ QList<QByteArray> QImageWriter::supportedImageFormats()
     for (QSet<QByteArray>::ConstIterator it = formats.constBegin(); it != formats.constEnd(); ++it)
         sortedFormats << *it;
 
-    qSort(sortedFormats);
+    std::sort(sortedFormats.begin(), sortedFormats.end());
     return sortedFormats;
 }
 
@@ -770,7 +789,9 @@ QList<QByteArray> QImageWriter::supportedImageFormats()
 QList<QByteArray> QImageWriter::supportedMimeTypes()
 {
     QSet<QByteArray> mimeTypes;
+#ifndef QT_NO_IMAGEFORMAT_BMP
     mimeTypes << "image/bmp";
+#endif
 #ifndef QT_NO_IMAGEFORMAT_PPM
     mimeTypes << "image/x-portable-bitmap";
     mimeTypes << "image/x-portable-graymap";
@@ -797,7 +818,7 @@ QList<QByteArray> QImageWriter::supportedMimeTypes()
     for (QSet<QByteArray>::ConstIterator it = mimeTypes.constBegin(); it != mimeTypes.constEnd(); ++it)
         sortedMimeTypes << *it;
 
-    qSort(sortedMimeTypes);
+    std::sort(sortedMimeTypes.begin(), sortedMimeTypes.end());
     return sortedMimeTypes;
 }
 

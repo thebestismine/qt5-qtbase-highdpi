@@ -54,7 +54,6 @@
 #include <QtCore/qpair.h>
 #include <QtCore/qsettings.h>
 #include <QtGui/qaccessible.h>
-#include <QtGui/private/qaccessible2_p.h>
 #include <QtGui/qguiapplication.h>
 #include <qpa/qplatformnativeinterface.h>
 #include <QtGui/qwindow.h>
@@ -1028,6 +1027,8 @@ HRESULT STDMETHODCALLTYPE QWindowsMsaaAccessible::get_accState(VARIANT varID, VA
         st |= STATE_SYSTEM_SIZEABLE;
     if (state.traversed)
         st |= STATE_SYSTEM_TRAVERSED;
+    if (state.disabled)
+        st |= STATE_SYSTEM_UNAVAILABLE;
 
     (*pvarState).vt = VT_I4;
     (*pvarState).lVal = st;

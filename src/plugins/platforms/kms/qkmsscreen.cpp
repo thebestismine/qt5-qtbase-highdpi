@@ -70,7 +70,6 @@ QKmsScreen::QKmsScreen(QKmsDevice *device, int connectorId)
       m_connectorId(connectorId),
       m_depth(32),
       m_format(QImage::Format_Invalid),
-      m_refreshTime(16000),
       m_eglWindowSurface(EGL_NO_SURFACE),
       m_modeSet(false)
 {
@@ -131,7 +130,7 @@ void QKmsScreen::initializeScreenMode()
         }
     }
     if (!mode)
-        mode = mode = &builtin_1024x768;
+        mode = &builtin_1024x768;
 
     drmModeEncoder *encoder = drmModeGetEncoder(m_device->fd(), connector->encoders[0]);
     if (encoder == 0)

@@ -142,9 +142,12 @@ void QWindowSystemInterface::handleApplicationStateChanged(Qt::ApplicationState 
     QWindowSystemInterfacePrivate::handleWindowSystemEvent(e);
 }
 
-void QWindowSystemInterface::handleGeometryChange(QWindow *tlw, const QRect &newRect)
+/*!
+  If \a oldRect is null, Qt will use the previously reported geometry instead.
+ */
+void QWindowSystemInterface::handleGeometryChange(QWindow *tlw, const QRect &newRect, const QRect &oldRect)
 {
-    QWindowSystemInterfacePrivate::GeometryChangeEvent *e = new QWindowSystemInterfacePrivate::GeometryChangeEvent(tlw, qHighDpiToDeviceIndependentPixels(newRect));
+    QWindowSystemInterfacePrivate::GeometryChangeEvent *e = new QWindowSystemInterfacePrivate::GeometryChangeEvent(tlw, qHighDpiToDeviceIndependentPixels(newRect), qHighDpiToDeviceIndependentPixels(oldRect));
     QWindowSystemInterfacePrivate::handleWindowSystemEvent(e);
 }
 
@@ -554,22 +557,11 @@ void QWindowSystemInterface::flushWindowSystemEvents()
         QWindowSystemInterfacePrivate::handleWindowSystemEvent(e);
         QWindowSystemInterfacePrivate::eventsFlushed.wait(&QWindowSystemInterfacePrivate::flushEventMutex);
     } else {
-        sendWindowSystemEventsImplementation(QEventLoop::AllEvents);
+        sendWindowSystemEvents(QEventLoop::AllEvents);
     }
 }
 
 bool QWindowSystemInterface::sendWindowSystemEvents(QEventLoop::ProcessEventsFlags flags)
-{
-    QCoreApplication::sendPostedEvents(); // handle gui and posted events
-    return sendWindowSystemEventsImplementation(flags);
-}
-
-void QWindowSystemInterface::setSynchronousWindowsSystemEvents(bool enable)
-{
-    QWindowSystemInterfacePrivate::synchronousWindowsSystemEvents = enable;
-}
-
-bool QWindowSystemInterface::sendWindowSystemEventsImplementation(QEventLoop::ProcessEventsFlags flags)
 {
     int nevents = 0;
 
@@ -586,6 +578,11 @@ bool QWindowSystemInterface::sendWindowSystemEventsImplementation(QEventLoop::Pr
     }
 
     return (nevents > 0);
+}
+
+void QWindowSystemInterface::setSynchronousWindowsSystemEvents(bool enable)
+{
+    QWindowSystemInterfacePrivate::synchronousWindowsSystemEvents = enable;
 }
 
 int QWindowSystemInterface::windowSystemEventsQueued()
@@ -675,6 +672,35 @@ void QWindowSystemInterface::handleTabletLeaveProximityEvent(int device, int poi
     ulong time = QWindowSystemInterfacePrivate::eventTime.elapsed();
     handleTabletLeaveProximityEvent(time, device, pointerType, uid);
 }
+
+#ifndef QT_NO_GESTURES
+void QWindowSystemInterface::handleGestureEvent(QWindow *window, ulong timestamp, Qt::NativeGestureType type,
+                                                QPointF &local, QPointF &global)
+{
+    QWindowSystemInterfacePrivate::GestureEvent *e =
+        new QWindowSystemInterfacePrivate::GestureEvent(window, timestamp, type, local, global);
+       QWindowSystemInterfacePrivate::handleWindowSystemEvent(e);
+}
+
+void QWindowSystemInterface::handleGestureEventWithRealValue(QWindow *window, ulong timestamp, Qt::NativeGestureType type,
+                                                                qreal value, QPointF &local, QPointF &global)
+{
+    QWindowSystemInterfacePrivate::GestureEvent *e =
+        new QWindowSystemInterfacePrivate::GestureEvent(window, timestamp, type, local, global);
+    e->realValue = value;
+    QWindowSystemInterfacePrivate::handleWindowSystemEvent(e);
+}
+
+void QWindowSystemInterface::handleGestureEventWithSequenceIdAndValue(QWindow *window, ulong timestamp, Qt::NativeGestureType type,
+                                                                         ulong sequenceId, quint64 value, QPointF &local, QPointF &global)
+{
+    QWindowSystemInterfacePrivate::GestureEvent *e =
+        new QWindowSystemInterfacePrivate::GestureEvent(window, timestamp, type, local, global);
+    e->sequenceId = sequenceId;
+    e->intValue = value;
+    QWindowSystemInterfacePrivate::handleWindowSystemEvent(e);
+}
+#endif // QT_NO_GESTURES
 
 void QWindowSystemInterface::handlePlatformPanelEvent(QWindow *w)
 {

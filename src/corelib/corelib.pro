@@ -17,12 +17,13 @@ win32-g++*:QMAKE_CXXFLAGS_CXX11 = -std=gnu++0x
 QMAKE_DOCS = $$PWD/doc/qtcore.qdocconf
 
 ANDROID_JAR_DEPENDENCIES = \
-    jar/QtAndroid.jar
+    jar/QtAndroid.jar \
+    jar/QtAndroidAccessibility.jar
 ANDROID_LIB_DEPENDENCIES = \
-    plugins/platforms/android/libqtforandroid.so \
-    libs/libgnustl_shared.so
+    plugins/platforms/android/libqtforandroid.so
 ANDROID_BUNDLED_JAR_DEPENDENCIES = \
-    jar/QtAndroid-bundled.jar
+    jar/QtAndroid-bundled.jar \
+    jar/QtAndroidAccessibility-bundled.jar
 
 load(qt_module)
 
@@ -45,9 +46,9 @@ mac|darwin {
     !ios {
         LIBS_PRIVATE += -framework ApplicationServices
         LIBS_PRIVATE += -framework CoreServices
-        LIBS_PRIVATE += -framework Foundation
     }
     LIBS_PRIVATE += -framework CoreFoundation
+    LIBS_PRIVATE += -framework Foundation
 }
 win32:DEFINES-=QT_NO_CAST_TO_ASCII
 DEFINES += $$MODULE_DEFINES
@@ -78,6 +79,9 @@ cmake_umbrella_config_version_file.input = $$PWD/../../mkspecs/features/data/cma
 cmake_umbrella_config_version_file.output = $$DESTDIR/cmake/Qt5/Qt5ConfigVersion.cmake
 
 load(cmake_functions)
+load(qfeatures)
+
+CMAKE_DISABLED_FEATURES = $$join(QT_DISABLED_FEATURES, "$$escape_expand(\\n)    ")
 
 CMAKE_HOST_DATA_DIR = $$cmakeRelativePath($$[QT_HOST_DATA/src], $$[QT_INSTALL_PREFIX])
 contains(CMAKE_HOST_DATA_DIR, "^\\.\\./.*"):!isEmpty(CMAKE_HOST_DATA_DIR) {
@@ -107,3 +111,17 @@ ctest_qt5_module_files.files += $$ctest_macros_file.output $$cmake_extras_mkspec
 ctest_qt5_module_files.path = $$[QT_INSTALL_LIBS]/cmake/Qt5Core
 
 INSTALLS += ctest_qt5_module_files cmake_qt5_umbrella_module_files
+
+mips_dsp:*-g++* {
+    HEADERS += $$MIPS_DSP_HEADERS
+
+    mips_dsp_corelib_assembler.commands = $$QMAKE_CXX -c
+    mips_dsp_corelib_assembler.commands += $(CXXFLAGS) $(INCPATH) -mips32r2 -mdsp ${QMAKE_FILE_IN} -o ${QMAKE_FILE_OUT}
+    mips_dsp_corelib_assembler.dependency_type = TYPE_C
+    mips_dsp_corelib_assembler.output = ${QMAKE_VAR_OBJECTS_DIR}${QMAKE_FILE_BASE}$${first(QMAKE_EXT_OBJ)}
+    mips_dsp_corelib_assembler.input = MIPS_DSP_ASM
+    mips_dsp_corelib_assembler.variable_out = OBJECTS
+    mips_dsp_corelib_assembler.name = assembling[mips_dsp] ${QMAKE_FILE_IN}
+    silent:mips_dsp_corelib_assembler.commands = @echo assembling[mips_dsp] ${QMAKE_FILE_IN} && $$mips_dsp_corelib_assembler.commands
+    QMAKE_EXTRA_COMPILERS += mips_dsp_corelib_assembler
+}

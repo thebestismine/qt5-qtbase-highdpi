@@ -1416,7 +1416,8 @@ void tst_QNetworkReply::initTestCase()
 void tst_QNetworkReply::cleanupTestCase()
 {
 #if !defined Q_OS_WIN
-    QFile::remove(wronlyFileName);
+    if (!wronlyFileName.isNull())
+        QFile::remove(wronlyFileName);
 #endif
 #ifndef QT_NO_BEARERMANAGEMENT
     if (networkSession && networkSession->isOpen()) {
@@ -4389,6 +4390,10 @@ void tst_QNetworkReply::ioPostToHttpFromSocket_data()
 
 void tst_QNetworkReply::ioPostToHttpFromSocket()
 {
+    if (QTest::currentDataTag() == QByteArray("128k+1+proxyauth")
+            || QTest::currentDataTag() == QByteArray("128k+1+auth+proxyauth"))
+        QSKIP("Squid cannot handle authentication with POST data >= 64K (QTBUG-33180)");
+
     QFETCH(QByteArray, data);
     QFETCH(QUrl, url);
     QFETCH(QNetworkProxy, proxy);
@@ -6037,14 +6042,16 @@ void tst_QNetworkReply::sslSessionSharingFromPersistentSession()
     QTestEventLoop::instance().enterLoop(20);
     QVERIFY(!QTestEventLoop::instance().timeout());
     QCOMPARE(warmupReply->error(), QNetworkReply::NoError);
-    QByteArray sslSession = warmupReply->sslConfiguration().session();
+    QByteArray sslSession = warmupReply->sslConfiguration().sessionTicket();
     QCOMPARE(!sslSession.isEmpty(), sessionPersistenceEnabled);
 
-    // test server sends a life time hint of 0, which is not common
-    // practice; however it is good enough because the default is -1
-    int expectedSessionTicketLifeTimeHint = sessionPersistenceEnabled ? 0 : -1;
-    QCOMPARE(warmupReply->sslConfiguration().sessionTicketLifeTimeHint(),
-             expectedSessionTicketLifeTimeHint);
+    // test server sends a life time hint of 0 (old server) or 300 (new server),
+    // without session ticket we get -1
+    QList<int> expectedSessionTicketLifeTimeHint = sessionPersistenceEnabled
+            ? QList<int>() << 0 << 300 : QList<int>() << -1;
+    QVERIFY2(expectedSessionTicketLifeTimeHint.contains(
+                 warmupReply->sslConfiguration().sessionTicketLifeTimeHint()),
+             "server did not send expected session life time hint");
 
     warmupReply->deleteLater();
 
@@ -6053,7 +6060,7 @@ void tst_QNetworkReply::sslSessionSharingFromPersistentSession()
     QNetworkRequest request(warmupRequest);
     if (sessionPersistenceEnabled) {
         QSslConfiguration configuration = request.sslConfiguration();
-        configuration.setSession(sslSession);
+        configuration.setSessionTicket(sslSession);
         request.setSslConfiguration(configuration);
     }
     QNetworkAccessManager newManager;
@@ -6589,9 +6596,8 @@ void tst_QNetworkReply::authenticationCacheAfterCancel()
         QTestEventLoop::instance().enterLoop(10);
         QVERIFY(!QTestEventLoop::instance().timeout());
 
-        QEXPECT_FAIL("http+socksauth", "QTBUG-23136 - danted accepts bad authentication but blocks the connection", Continue);
-        QEXPECT_FAIL("https+socksauth", "QTBUG-23136 - danted accepts bad authentication but blocks the connection", Continue);
-
+        if (reply->error() == QNetworkReply::HostNotFoundError)
+            QSKIP("skip because of quirk in the old test server");
         QCOMPARE(reply->error(), QNetworkReply::ProxyAuthenticationRequiredError);
         QCOMPARE(authSpy.count(), 0);
         QVERIFY(proxyAuthSpy.count() > 0);
@@ -7581,7 +7587,7 @@ void tst_QNetworkReply::backgroundRequestInterruption()
         QNetworkSessionPrivate::setUsagePolicies(*const_cast<QNetworkSession *>(session.data()), original);
 
     QVERIFY(reply->isFinished());
-#ifdef Q_OS_MACX
+#ifdef Q_OS_OSX
     if (QSysInfo::MacintoshVersion == QSysInfo::MV_10_8)
         QEXPECT_FAIL("ftp, bg, nobg", "See QTBUG-32435", Abort);
 #endif

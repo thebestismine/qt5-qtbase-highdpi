@@ -838,7 +838,10 @@ QSize QCommonStylePrivate::viewItemSize(const QStyleOptionViewItem *option, int 
                 break;
             case QStyleOptionViewItem::Top:
             case QStyleOptionViewItem::Bottom:
-                bounds.setWidth(wrapText ? option->decorationSize.width() : QFIXED_MAX);
+                if (wrapText)
+                    bounds.setWidth(bounds.isValid() ? bounds.width() - 2 * textMargin : option->decorationSize.width());
+                else
+                    bounds.setWidth(QFIXED_MAX);
                 break;
             default:
                 break;
@@ -1330,7 +1333,6 @@ void QCommonStyle::drawControl(ControlElement element, const QStyleOption *opt,
         break;
 #ifndef QT_NO_MENU
     case CE_MenuScroller: {
-        p->fillRect(opt->rect, opt->palette.background());
         QStyleOption arrowOpt = *opt;
         arrowOpt.state |= State_Enabled;
         proxy()->drawPrimitive(((opt->state & State_DownArrow) ? PE_IndicatorArrowDown : PE_IndicatorArrowUp),
@@ -1527,7 +1529,10 @@ void QCommonStyle::drawControl(ControlElement element, const QStyleOption *opt,
 
                 QRect aligned = alignedRect(header->direction, QFlag(header->iconAlignment), pixmap.size() / pixmap.devicePixelRatio(), rect);
                 QRect inter = aligned.intersected(rect);
-                p->drawPixmap(inter.x(), inter.y(), pixmap, inter.x() - aligned.x(), inter.y() - aligned.y(), inter.width(), inter.height());
+                p->drawPixmap(inter.x(), inter.y(), pixmap,
+                              inter.x() - aligned.x(), inter.y() - aligned.y(),
+                              aligned.width() * pixmap.devicePixelRatio(),
+                              pixmap.height() * pixmap.devicePixelRatio());
 
                 if (header->direction == Qt::LeftToRight)
                     rect.setLeft(rect.left() + pixw + 2);
@@ -1593,7 +1598,7 @@ void QCommonStyle::drawControl(ControlElement element, const QStyleOption *opt,
 
                     if (toolbutton->toolButtonStyle == Qt::ToolButtonTextUnderIcon) {
                         pr.setHeight(pmSize.height() + 6);
-                        tr.adjust(0, pr.height() - 1, 0, -2);
+                        tr.adjust(0, pr.height() - 1, 0, -1);
                         pr.translate(shiftX, shiftY);
                         if (!hasArrow) {
                             proxy()->drawItemPixmap(p, pr, Qt::AlignCenter, pm);
@@ -4249,7 +4254,7 @@ QRect QCommonStyle::subControlRect(ComplexControl cc, const QStyleOptionComplex 
                     if (sc == SC_GroupBoxCheckBox) {
                         int indicatorHeight = proxy()->pixelMetric(PM_IndicatorHeight, opt, widget);
                         left = ltr ? totalRect.left() : (totalRect.right() - indicatorWidth);
-                        int top = totalRect.top() + (fontMetrics.height() - indicatorHeight) / 2;
+                        int top = totalRect.top() + qMax(0, fontMetrics.height() - indicatorHeight) / 2;
                         totalRect.setRect(left, top, indicatorWidth, indicatorHeight);
                     // Adjust for label
                     } else {
@@ -5123,6 +5128,9 @@ int QCommonStyle::styleHint(StyleHint sh, const QStyleOption *opt, const QWidget
             {
             ret = true;
         }
+        break;
+    case SH_Splitter_OpaqueResize:
+        ret = true;
         break;
     default:
         ret = 0;

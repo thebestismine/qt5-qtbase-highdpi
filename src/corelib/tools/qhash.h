@@ -513,15 +513,10 @@ private:
     bool isValidIterator(const iterator &it) const
     {
 #if defined(QT_DEBUG) && !defined(Q_HASH_NO_ITERATOR_DEBUG)
-        union {
-            QHashData *iteratorHashData;
-            QHashData::Node *node;
-        };
-        node = it.i;
+        QHashData::Node *node = it.i;
         while (node->next)
             node = node->next;
-
-        return (iteratorHashData == d);
+        return (static_cast<void *>(node) == d);
 #else
         Q_UNUSED(it);
         return true;
@@ -850,10 +845,26 @@ Q_OUTOFLINE_TEMPLATE T QHash<Key, T>::take(const Key &akey)
 template <class Key, class T>
 Q_OUTOFLINE_TEMPLATE typename QHash<Key, T>::iterator QHash<Key, T>::erase(iterator it)
 {
-    Q_ASSERT_X(isValidIterator(it), "QHash::erase", "The specified const_iterator argument 'it' is invalid");
+    Q_ASSERT_X(isValidIterator(it), "QHash::erase", "The specified iterator argument 'it' is invalid");
 
     if (it == iterator(e))
         return it;
+
+    if (d->ref.isShared()) {
+        int bucketNum = (it.i->h % d->numBuckets);
+        iterator bucketIterator(*(d->buckets + bucketNum));
+        int stepsFromBucketStartToIte = 0;
+        while (bucketIterator != it) {
+            ++stepsFromBucketStartToIte;
+            ++bucketIterator;
+        }
+        detach();
+        it = iterator(*(d->buckets + bucketNum));
+        while (stepsFromBucketStartToIte > 0) {
+            --stepsFromBucketStartToIte;
+            ++it;
+        }
+    }
 
     iterator ret = it;
     ++ret;

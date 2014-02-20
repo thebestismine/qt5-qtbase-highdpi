@@ -53,6 +53,8 @@
 #include <QtWidgets/QWidget>
 #endif
 
+#include <algorithm>
+
 QT_BEGIN_NAMESPACE
 
 //
@@ -320,19 +322,19 @@ QChar qt_mac_qtKey2CocoaKey(Qt::Key key)
         mustInit = false;
         for (int i=0; i<NumEntries; ++i)
             rev_entries[i] = entries[i];
-        qSort(rev_entries.begin(), rev_entries.end(), qtKey2CocoaKeySortLessThan);
+        std::sort(rev_entries.begin(), rev_entries.end(), qtKey2CocoaKeySortLessThan);
     }
     const QVector<KeyPair>::iterator i
-            = qBinaryFind(rev_entries.begin(), rev_entries.end(), key);
-    if (i == rev_entries.end())
+            = std::lower_bound(rev_entries.begin(), rev_entries.end(), key);
+    if ((i == rev_entries.end()) || (key < *i))
         return QChar();
     return i->cocoaKey;
 }
 
 Qt::Key qt_mac_cocoaKey2QtKey(QChar keyCode)
 {
-    const KeyPair *i = qBinaryFind(entries, end, keyCode);
-    if (i == end)
+    const KeyPair *i = std::lower_bound(entries, end, keyCode);
+    if ((i == end) || (keyCode < *i))
         return Qt::Key(keyCode.toUpper().unicode());
     return i->qtKey;
 }
@@ -597,7 +599,17 @@ NSRect qt_mac_flipRect(const QRect &rect, QWindow *window)
 {
     QPlatformScreen *onScreen = QPlatformScreen::platformScreenForWindow(window);
     int flippedY = onScreen->geometry().height() - (rect.y() + rect.height());
-
+    QList<QScreen *> screens = QGuiApplication::screens();
+    if (screens.size() > 1) {
+        int height = 0;
+        foreach (QScreen *scr, screens)
+            height = qMax(height, scr->size().height());
+        int difference = height - onScreen->geometry().height();
+        if (difference > 0)
+            flippedY += difference;
+        else
+            flippedY -= difference;
+    }
     // In case of automatic positioning, try to put as much of the window onscreen as possible.
     if (window->isTopLevel() && qt_window_private(const_cast<QWindow*>(window))->positionAutomatic && flippedY < 0)
         flippedY = onScreen->geometry().height() - onScreen->availableGeometry().height() - onScreen->availableGeometry().y();

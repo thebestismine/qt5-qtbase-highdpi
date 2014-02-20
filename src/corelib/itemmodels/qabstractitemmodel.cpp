@@ -107,6 +107,23 @@ void QPersistentModelIndexData::destroy(QPersistentModelIndexData *data)
   \sa {Model/View Programming}, QModelIndex, QAbstractItemModel
 */
 
+/*!
+    \fn QPersistentModelIndex::QPersistentModelIndex(QPersistentModelIndex &&other)
+
+    Move-constructs a QPersistentModelIndex instance, making it point at the same
+    object that \a other was pointing to.
+
+    \since 5.2
+*/
+
+/*!
+    \fn QPersistentModelIndex &QPersistentModelIndex::operator=(QPersistentModelIndex &&other)
+
+    Move-assigns \a other to this QPersistentModelIndex instance.
+
+    \since 5.2
+*/
+
 
 /*!
   \fn QPersistentModelIndex::QPersistentModelIndex()
@@ -1303,12 +1320,12 @@ void QAbstractItemModel::resetInternalData()
 */
 
 /*!
-    \fn bool QAbstractItemModel::moveRow(const QModelIndex &sourceParent, int sourceColumn, const QModelIndex &destinationParent, int destinationChild)
+    \fn bool QAbstractItemModel::moveRow(const QModelIndex &sourceParent, int sourceRow, const QModelIndex &destinationParent, int destinationChild)
 
-    On models that support this, moves \a sourceColumn from \a sourceParent to \a destinationChild under
+    On models that support this, moves \a sourceRow from \a sourceParent to \a destinationChild under
     \a destinationParent.
 
-    Returns \c{true} if the columns were successfully moved; otherwise returns
+    Returns \c{true} if the rows were successfully moved; otherwise returns
     \c{false}.
 
     \sa moveRows(), moveColumn()
@@ -2132,7 +2149,7 @@ void QAbstractItemModel::fetchMore(const QModelIndex &)
 
     The default implementation always returns \c{false}.
 
-    If canFetchMore() returns true, the fetchMore() function should
+    If canFetchMore() returns \c true, the fetchMore() function should
     be called. This is the behavior of QAbstractItemView, for example.
 
     \sa fetchMore()
@@ -2317,6 +2334,31 @@ void QAbstractItemModel::doSetRoleNames(const QHash<int,QByteArray> &roleNames)
 
     Returns the model's role names.
 
+    The default role names set by Qt are:
+
+    \table
+    \header
+    \li Qt Role
+    \li QML Role Name
+    \row
+    \li Qt::DisplayRole
+    \li display
+    \row
+    \li Qt::DecorationRole
+    \li decoration
+    \row
+    \li Qt::EditRole
+    \li edit
+    \row
+    \li Qt::ToolTipRole
+    \li toolTip
+    \row
+    \li Qt::StatusTipRole
+    \li statusTip
+    \row
+    \li Qt::WhatsThisRole
+    \li whatsThis
+    \endtable
 */
 QHash<int,QByteArray> QAbstractItemModel::roleNames() const
 {
@@ -3360,6 +3402,9 @@ Qt::ItemFlags QAbstractTableModel::flags(const QModelIndex &index) const
     When subclassing QAbstractListModel, you must provide implementations
     of the rowCount() and data() functions. Well behaved models also provide
     a headerData() implementation.
+
+    If your model is used within QML and requires roles other than the
+    default ones provided by the roleNames() function, you must override it.
 
     For editable list models, you must also provide an implementation of
     setData(), implement the flags() function so that it returns a value

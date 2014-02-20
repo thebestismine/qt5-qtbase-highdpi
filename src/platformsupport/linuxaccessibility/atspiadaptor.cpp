@@ -1391,13 +1391,6 @@ bool AtSpiAdaptor::accessibleInterface(QAccessibleInterface *interface, const QS
         if (interface->tableInterface()) {
             setSpiStateBit(&spiState, ATSPI_STATE_MANAGES_DESCENDANTS);
         }
-// FIXME: figure out if this is a top level window and set its active state accordingly
-//        if (interface->object() && interface->object()->isWidgetType()) {
-//            QWidget *w = qobject_cast<QWidget*>(interface->object());
-//            if (w->topLevelWidget() && w->isActiveWindow()) {
-//                setSpiStateBit(&spiState, ATSPI_STATE_ACTIVE);
-//            }
-//        }
         QAccessible::Role role = interface->role();
         if (role == QAccessible::TreeItem ||
             role == QAccessible::ListItem) {
@@ -1729,6 +1722,7 @@ QSpiActionArray AtSpiAdaptor::getActions(QAccessibleActionInterface *actionInter
         QSpiAction action;
         QStringList keyBindings;
 
+        action.name = actionName;
         action.description = actionInterface->localizedActionDescription(actionName);
 
         keyBindings = actionInterface->keyBindingsForAction(actionName);
@@ -2230,18 +2224,26 @@ bool AtSpiAdaptor::tableInterface(QAccessibleInterface *interface, const QString
         int index = message.arguments().at(0).toInt();
         bool success = false;
 
-        int row, col, rowExtents, colExtents;
-        bool isSelected;
+        int row = -1;
+        int col = -1;
+        int rowExtents = -1;
+        int colExtents = -1;
+        bool isSelected = false;
 
         int cols = interface->tableInterface()->columnCount();
-        row = index/cols;
-        col = index%cols;
-        QAccessibleTableCellInterface *cell = interface->tableInterface()->cellAt(row, col)->tableCellInterface();
-        if (cell) {
-            cell->rowColumnExtents(&row, &col, &rowExtents, &colExtents, &isSelected);
-            success = true;
+        if (cols > 0) {
+            row = index / cols;
+            col = index % cols;
+            QAccessibleTableCellInterface *cell = interface->tableInterface()->cellAt(row, col)->tableCellInterface();
+            if (cell) {
+                row = cell->rowIndex();
+                col = cell->columnIndex();
+                rowExtents = cell->rowExtent();
+                colExtents = cell->columnExtent();
+                isSelected = cell->isSelected();
+                success = true;
+            }
         }
-
         QVariantList list;
         list << success << row << col << rowExtents << colExtents << isSelected;
         connection.send(message.createReply(list));

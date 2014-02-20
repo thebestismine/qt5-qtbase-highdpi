@@ -59,6 +59,7 @@
 #include <QtCore/qmutex.h>
 #include <QtCore/private/qthread_p.h>
 #include <QtCore/qdir.h>
+#include <QtCore/qnumeric.h>
 #include <QtDebug>
 #ifndef QT_NO_ACCESSIBILITY
 #include "qaccessible.h"
@@ -110,7 +111,7 @@ Q_GUI_EXPORT bool qt_is_gui_used = true;
 Qt::MouseButtons QGuiApplicationPrivate::mouse_buttons = Qt::NoButton;
 Qt::KeyboardModifiers QGuiApplicationPrivate::modifier_buttons = Qt::NoModifier;
 
-QPointF QGuiApplicationPrivate::lastCursorPosition(0.0, 0.0);
+QPointF QGuiApplicationPrivate::lastCursorPosition(qInf(), qInf());
 
 bool QGuiApplicationPrivate::tabletState = false;
 QWindow *QGuiApplicationPrivate::tabletPressTarget = 0;
@@ -645,7 +646,7 @@ void QGuiApplicationPrivate::hideModalWindow(QWindow *window)
 }
 
 /*
-    Returns true if \a window is blocked by a modal window. If \a
+    Returns \c true if \a window is blocked by a modal window. If \a
     blockingWindow is non-zero, *blockingWindow will be set to the blocking
     window (or to zero if \a window is not blocked).
 */
@@ -907,12 +908,12 @@ static void init_platform(const QString &pluginArgument, const QString &platform
                         keys.join(QStringLiteral(", ")));
         }
         fatalMessage += QStringLiteral("Reinstalling the application may fix this problem.");
-#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE)
+#if defined(Q_OS_WIN) && !defined(Q_OS_WINCE) && !defined(Q_OS_WINRT)
         // Windows: Display message box unless it is a console application
         // or debug build showing an assert box.
         if (!QLibraryInfo::isDebugBuild() && !GetConsoleWindow())
             MessageBox(0, (LPCTSTR)fatalMessage.utf16(), (LPCTSTR)(QCoreApplication::applicationName().utf16()), MB_OK | MB_ICONERROR);
-#endif // Q_OS_WIN && !Q_OS_WINCE
+#endif // Q_OS_WIN && !Q_OS_WINCE && !Q_OS_WINRT
         qFatal("%s", qPrintable(fatalMessage));
         return;
     }
@@ -1029,27 +1030,31 @@ void QGuiApplicationPrivate::createPlatformIntegration()
 
 }
 
+/*!
+    Called from QCoreApplication::init()
+
+    Responsible for creating an event dispatcher when QCoreApplication
+    decides that it needs one (because a custom one has not been set).
+*/
 void QGuiApplicationPrivate::createEventDispatcher()
+{
+    Q_ASSERT(!eventDispatcher);
+
+    if (platform_integration == 0)
+        createPlatformIntegration();
+
+    // The platform integration should not mess with the event dispatcher
+    Q_ASSERT(!eventDispatcher);
+
+    eventDispatcher = platform_integration->createEventDispatcher();
+}
+
+void QGuiApplicationPrivate::eventDispatcherReady()
 {
     if (platform_integration == 0)
         createPlatformIntegration();
 
-    if (!eventDispatcher) {
-        QAbstractEventDispatcher *eventDispatcher = platform_integration->guiThreadEventDispatcher();
-        setEventDispatcher(eventDispatcher);
-    }
-}
-
-void QGuiApplicationPrivate::setEventDispatcher(QAbstractEventDispatcher *eventDispatcher)
-{
-    Q_Q(QGuiApplication);
-
-    if (!QCoreApplicationPrivate::eventDispatcher) {
-        QCoreApplicationPrivate::eventDispatcher = eventDispatcher;
-        QCoreApplicationPrivate::eventDispatcher->setParent(q);
-        threadData->eventDispatcher = eventDispatcher;
-    }
-
+    platform_integration->initialize();
 }
 
 #if defined(QT_DEBUG) && defined(Q_OS_LINUX)
@@ -1068,7 +1073,10 @@ void QGuiApplicationPrivate::init()
     bool doGrabUnderDebugger = false;
     QList<QByteArray> pluginList;
     // Get command line params
-
+#ifndef QT_NO_SESSIONMANAGER
+    QString session_id;
+    QString session_key;
+#endif
     int j = argc ? 1 : 0;
     for (int i=1; i<argc; i++) {
         if (argv[i] && *argv[i] != '-') {
@@ -1159,9 +1167,9 @@ void QGuiApplicationPrivate::init()
     init_plugins(pluginList);
     QWindowSystemInterface::flushWindowSystemEvents();
 
+#ifndef QT_NO_SESSIONMANAGER
     Q_Q(QGuiApplication);
 
-#ifndef QT_NO_SESSIONMANAGER
     // connect to the session manager
     session_manager = new QSessionManager(q, session_id, session_key);
 #endif
@@ -1418,7 +1426,7 @@ void QGuiApplicationPrivate::processWindowSystemEvent(QWindowSystemInterfacePriv
         QGuiApplicationPrivate::processWindowScreenChangedEvent(static_cast<QWindowSystemInterfacePrivate::WindowScreenChangedEvent *>(e));
         break;
     case QWindowSystemInterfacePrivate::ApplicationStateChanged:
-            QGuiApplicationPrivate::processApplicationStateChangedEvent(static_cast<QWindowSystemInterfacePrivate::ApplicationStateChangedEvent *>(e));
+        QGuiApplicationPrivate::setApplicationState(static_cast<QWindowSystemInterfacePrivate::ApplicationStateChangedEvent *>(e)->newState);
         break;
     case QWindowSystemInterfacePrivate::FlushEvents:
         QWindowSystemInterface::deferredFlushWindowSystemEvents();
@@ -1466,6 +1474,12 @@ void QGuiApplicationPrivate::processWindowSystemEvent(QWindowSystemInterfacePriv
         QGuiApplicationPrivate::processTabletLeaveProximityEvent(
                     static_cast<QWindowSystemInterfacePrivate::TabletLeaveProximityEvent *>(e));
         break;
+#ifndef QT_NO_GESTURES
+    case QWindowSystemInterfacePrivate::Gesture:
+        QGuiApplicationPrivate::processGestureEvent(
+                    static_cast<QWindowSystemInterfacePrivate::GestureEvent *>(e));
+        break;
+#endif
     case QWindowSystemInterfacePrivate::PlatformPanel:
         QGuiApplicationPrivate::processPlatformPanelEvent(
                     static_cast<QWindowSystemInterfacePrivate::PlatformPanelEvent *>(e));
@@ -1482,6 +1496,7 @@ void QGuiApplicationPrivate::processWindowSystemEvent(QWindowSystemInterfacePriv
 #endif
     case QWindowSystemInterfacePrivate::EnterWhatsThisMode:
         QGuiApplication::postEvent(QGuiApplication::instance(), new QEvent(QEvent::EnterWhatsThisMode));
+        break;
     default:
         qWarning() << "Unknown user input event type:" << e->type;
         break;
@@ -1555,18 +1570,21 @@ void QGuiApplicationPrivate::processMouseEvent(QWindowSystemInterfacePrivate::Mo
     if (!window)
         return;
 
+    QMouseEvent ev(type, localPoint, localPoint, globalPoint, button, buttons, e->modifiers);
+    ev.setTimestamp(e->timestamp);
+#ifndef QT_NO_CURSOR
+    if (!e->synthetic) {
+        if (const QScreen *screen = window->screen())
+            if (QPlatformCursor *cursor = screen->handle()->cursor())
+                cursor->pointerEvent(ev);
+    }
+#endif
+
     if (window->d_func()->blockedByModalWindow) {
         // a modal window is blocking this window, don't allow mouse events through
         return;
     }
 
-    QMouseEvent ev(type, localPoint, localPoint, globalPoint, button, buttons, e->modifiers);
-    ev.setTimestamp(e->timestamp);
-#ifndef QT_NO_CURSOR
-    if (const QScreen *screen = window->screen())
-        if (QPlatformCursor *cursor = screen->handle()->cursor())
-            cursor->pointerEvent(ev);
-#endif
     QGuiApplication::sendSpontaneousEvent(window, &ev);
     if (!e->synthetic && !ev.isAccepted()
         && !frameStrut
@@ -1651,22 +1669,11 @@ void QGuiApplicationPrivate::processKeyEvent(QWindowSystemInterfacePrivate::KeyE
     QWindow *window = e->window.data();
     modifier_buttons = e->modifiers;
     if (e->nullWindow
-#ifdef Q_OS_ANDROID
-           || (e->keyType == QEvent::KeyRelease && e->key == Qt::Key_Back) || e->key == Qt::Key_Menu
+#if defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_NO_SDK)
+           || e->key == Qt::Key_Back || e->key == Qt::Key_Menu
 #endif
             ) {
         window = QGuiApplication::focusWindow();
-    }
-    if (!window
-#ifdef Q_OS_ANDROID
-           && e->keyType != QEvent::KeyRelease && e->key != Qt::Key_Back
-#endif
-            ) {
-        return;
-    }
-    if (window->d_func()->blockedByModalWindow) {
-        // a modal window is blocking this window, don't allow key events through
-        return;
     }
 
     QKeyEvent ev(e->keyType, e->key, e->modifiers,
@@ -1674,18 +1681,24 @@ void QGuiApplicationPrivate::processKeyEvent(QWindowSystemInterfacePrivate::KeyE
                  e->unicode, e->repeat, e->repeatCount);
     ev.setTimestamp(e->timestamp);
 
-#ifdef Q_OS_ANDROID
-    if (e->keyType == QEvent::KeyRelease && e->key == Qt::Key_Back) {
-        if (!window) {
-            qApp->quit();
-        } else {
-            QGuiApplication::sendEvent(window, &ev);
-            if (!ev.isAccepted() && e->key == Qt::Key_Back)
-                QWindowSystemInterface::handleCloseEvent(window);
-        }
-    } else
-#endif
+    // only deliver key events when we have a window, and no modal window is blocking this window
+
+    if (window && !window->d_func()->blockedByModalWindow)
         QGuiApplication::sendSpontaneousEvent(window, &ev);
+#if defined(Q_OS_ANDROID) && !defined(Q_OS_ANDROID_NO_SDK)
+    else
+        ev.setAccepted(false);
+
+    static bool backKeyPressAccepted = false;
+    if (e->keyType == QEvent::KeyPress) {
+        backKeyPressAccepted = e->key == Qt::Key_Back && ev.isAccepted();
+    } else if (e->keyType == QEvent::KeyRelease && e->key == Qt::Key_Back && !backKeyPressAccepted && !ev.isAccepted()) {
+        if (!window)
+            qApp->quit();
+        else
+            QWindowSystemInterface::handleCloseEvent(window);
+    }
+#endif
 }
 
 void QGuiApplicationPrivate::processEnterEvent(QWindowSystemInterfacePrivate::EnterEvent *e)
@@ -1748,10 +1761,7 @@ void QGuiApplicationPrivate::processActivatedEvent(QWindowSystemInterfacePrivate
         QObject::disconnect(previous, SIGNAL(focusObjectChanged(QObject*)),
                             qApp, SLOT(_q_updateFocusObject(QObject*)));
     } else if (!platformIntegration()->hasCapability(QPlatformIntegration::ApplicationState)) {
-        QEvent appActivate(QEvent::ApplicationActivate);
-        qApp->sendSpontaneousEvent(qApp, &appActivate);
-        QApplicationStateChangeEvent appState(Qt::ApplicationActive);
-        qApp->sendSpontaneousEvent(qApp, &appState);
+        setApplicationState(Qt::ApplicationActive);
     }
 
     if (QGuiApplicationPrivate::focus_window) {
@@ -1760,10 +1770,7 @@ void QGuiApplicationPrivate::processActivatedEvent(QWindowSystemInterfacePrivate
         QObject::connect(QGuiApplicationPrivate::focus_window, SIGNAL(focusObjectChanged(QObject*)),
                          qApp, SLOT(_q_updateFocusObject(QObject*)));
     } else if (!platformIntegration()->hasCapability(QPlatformIntegration::ApplicationState)) {
-        QEvent appActivate(QEvent::ApplicationDeactivate);
-        qApp->sendSpontaneousEvent(qApp, &appActivate);
-        QApplicationStateChangeEvent appState(Qt::ApplicationInactive);
-        qApp->sendSpontaneousEvent(qApp, &appState);
+        setApplicationState(Qt::ApplicationInactive);
     }
 
     if (self) {
@@ -1799,29 +1806,6 @@ void QGuiApplicationPrivate::processWindowScreenChangedEvent(QWindowSystemInterf
     }
 }
 
-void QGuiApplicationPrivate::processApplicationStateChangedEvent(QWindowSystemInterfacePrivate::ApplicationStateChangedEvent *e)
-{
-    if (e->newState == applicationState)
-        return;
-    applicationState = e->newState;
-
-    switch (e->newState) {
-    case Qt::ApplicationActive: {
-        QEvent appActivate(QEvent::ApplicationActivate);
-        qApp->sendSpontaneousEvent(qApp, &appActivate);
-        break; }
-    case Qt::ApplicationInactive: {
-        QEvent appDeactivate(QEvent::ApplicationDeactivate);
-        qApp->sendSpontaneousEvent(qApp, &appDeactivate);
-        break; }
-    default:
-        break;
-    }
-
-    QApplicationStateChangeEvent event(applicationState);
-    qApp->sendSpontaneousEvent(qApp, &event);
-}
-
 void QGuiApplicationPrivate::processThemeChanged(QWindowSystemInterfacePrivate::ThemeChangeEvent *tce)
 {
     if (self)
@@ -1842,33 +1826,33 @@ void QGuiApplicationPrivate::processGeometryChangeEvent(QWindowSystemInterfacePr
         return;
 
     QRect newRect = e->newGeometry;
-    QRect cr = window->d_func()->geometry;
+    QRect oldRect = e->oldGeometry.isNull() ? window->d_func()->geometry : e->oldGeometry;
 
-    bool isResize = cr.size() != newRect.size();
-    bool isMove = cr.topLeft() != newRect.topLeft();
+    bool isResize = oldRect.size() != newRect.size();
+    bool isMove = oldRect.topLeft() != newRect.topLeft();
 
     window->d_func()->geometry = newRect;
 
     if (isResize || window->d_func()->resizeEventPending) {
-        QResizeEvent e(newRect.size(), cr.size());
+        QResizeEvent e(newRect.size(), oldRect.size());
         QGuiApplication::sendSpontaneousEvent(window, &e);
 
         window->d_func()->resizeEventPending = false;
 
-        if (cr.width() != newRect.width())
+        if (oldRect.width() != newRect.width())
             window->widthChanged(newRect.width());
-        if (cr.height() != newRect.height())
+        if (oldRect.height() != newRect.height())
             window->heightChanged(newRect.height());
     }
 
     if (isMove) {
         //### frame geometry
-        QMoveEvent e(newRect.topLeft(), cr.topLeft());
+        QMoveEvent e(newRect.topLeft(), oldRect.topLeft());
         QGuiApplication::sendSpontaneousEvent(window, &e);
 
-        if (cr.x() != newRect.x())
+        if (oldRect.x() != newRect.x())
             window->xChanged(newRect.x());
-        if (cr.y() != newRect.y())
+        if (oldRect.y() != newRect.y())
             window->yChanged(newRect.y());
     }
 }
@@ -1975,6 +1959,15 @@ void QGuiApplicationPrivate::processTabletLeaveProximityEvent(QWindowSystemInter
     Q_UNUSED(e)
 #endif
 }
+
+#ifndef QT_NO_GESTURES
+void QGuiApplicationPrivate::processGestureEvent(QWindowSystemInterfacePrivate::GestureEvent *e)
+{
+    QNativeGestureEvent ev(e->type, e->pos, e->pos, e->globalPos, e->realValue, e->sequenceId, e->intValue);
+    ev.setTimestamp(e->timestamp);
+    QGuiApplication::sendSpontaneousEvent(e->window, &ev);
+}
+#endif // QT_NO_GESTURES
 
 void QGuiApplicationPrivate::processPlatformPanelEvent(QWindowSystemInterfacePrivate::PlatformPanelEvent *e)
 {
@@ -2541,8 +2534,8 @@ void QGuiApplication::setFont(const QFont &font)
 /*!
     \fn bool QGuiApplication::isRightToLeft()
 
-    Returns true if the application's layout direction is
-    Qt::RightToLeft; otherwise returns false.
+    Returns \c true if the application's layout direction is
+    Qt::RightToLeft; otherwise returns \c false.
 
     \sa layoutDirection(), isLeftToRight()
 */
@@ -2550,14 +2543,19 @@ void QGuiApplication::setFont(const QFont &font)
 /*!
     \fn bool QGuiApplication::isLeftToRight()
 
-    Returns true if the application's layout direction is
-    Qt::LeftToRight; otherwise returns false.
+    Returns \c true if the application's layout direction is
+    Qt::LeftToRight; otherwise returns \c false.
 
     \sa layoutDirection(), isRightToLeft()
 */
 
 void QGuiApplicationPrivate::notifyLayoutDirectionChange()
 {
+    const QWindowList list = QGuiApplication::topLevelWindows();
+    for (int i = 0; i < list.size(); ++i) {
+        QEvent ev(QEvent::ApplicationLayoutDirectionChange);
+        QCoreApplication::sendEvent(list.at(i), &ev);
+    }
 }
 
 void QGuiApplicationPrivate::notifyActiveWindowChange(QWindow *)
@@ -2573,7 +2571,7 @@ void QGuiApplicationPrivate::notifyActiveWindowChange(QWindow *)
 
     The default is true.
 
-    If this property is true, the applications quits when the last visible
+    If this property is \c true, the applications quits when the last visible
     primary window (i.e. window with no parent) is closed.
 
     \sa quit(), QWindow::close()
@@ -2629,6 +2627,58 @@ bool QGuiApplicationPrivate::shouldQuitInternal(const QWindowList &processedWind
             return false;
     }
     return true;
+}
+
+/*!
+    \since 5.2
+    \fn Qt::ApplicationState QGuiApplication::applicationState()
+
+
+    Returns the current state of the application.
+
+    You can react to application state changes to perform actions such as
+    stopping/resuming CPU-intensive tasks, freeing/loading resources or
+    saving/restoring application data.
+ */
+
+Qt::ApplicationState QGuiApplication::applicationState()
+{
+    return QGuiApplicationPrivate::applicationState;
+}
+
+/*!
+    \since 5.2
+    \fn void QGuiApplication::applicationStateChanged(Qt::ApplicationState state)
+
+    This signal is emitted when the \a state of the application changes.
+
+    \sa applicationState()
+*/
+
+void QGuiApplicationPrivate::setApplicationState(Qt::ApplicationState state)
+{
+    if (applicationState == state)
+        return;
+
+    applicationState = state;
+
+    switch (state) {
+    case Qt::ApplicationActive: {
+        QEvent appActivate(QEvent::ApplicationActivate);
+        QCoreApplication::sendSpontaneousEvent(qApp, &appActivate);
+        break; }
+    case Qt::ApplicationInactive: {
+        QEvent appDeactivate(QEvent::ApplicationDeactivate);
+        QCoreApplication::sendSpontaneousEvent(qApp, &appDeactivate);
+        break; }
+    default:
+        break;
+    }
+
+    QApplicationStateChangeEvent event(applicationState);
+    QCoreApplication::sendSpontaneousEvent(qApp, &event);
+
+    emit qApp->applicationStateChanged(applicationState);
 }
 
 /*!
@@ -2689,8 +2739,8 @@ bool QGuiApplicationPrivate::shouldQuitInternal(const QWindowList &processedWind
 /*!
     \fn bool QGuiApplication::isSessionRestored() const
 
-    Returns true if the application has been restored from an earlier
-    \l{Session Management}{session}; otherwise returns false.
+    Returns \c true if the application has been restored from an earlier
+    \l{Session Management}{session}; otherwise returns \c false.
 
     \sa sessionId(), commitDataRequest(), saveStateRequest()
 */
@@ -2699,8 +2749,8 @@ bool QGuiApplicationPrivate::shouldQuitInternal(const QWindowList &processedWind
     \since 5.0
     \fn bool QGuiApplication::isSavingSession() const
 
-    Returns true if the application is currently saving the
-    \l{Session Management}{session}; otherwise returns false.
+    Returns \c true if the application is currently saving the
+    \l{Session Management}{session}; otherwise returns \c false.
 
     This is true when commitDataRequest() and saveStateRequest() are emitted,
     but also when the windows are closed afterwards by session management.
@@ -2744,13 +2794,13 @@ bool QGuiApplication::isSessionRestored() const
 QString QGuiApplication::sessionId() const
 {
     Q_D(const QGuiApplication);
-    return d->session_id;
+    return d->session_manager->sessionId();
 }
 
 QString QGuiApplication::sessionKey() const
 {
     Q_D(const QGuiApplication);
-    return d->session_key;
+    return d->session_manager->sessionKey();
 }
 
 bool QGuiApplication::isSavingSession() const
@@ -2759,12 +2809,33 @@ bool QGuiApplication::isSavingSession() const
     return d->is_saving_session;
 }
 
-void QGuiApplicationPrivate::commitData(QSessionManager& manager)
+/*!
+    \since 5.2
+
+    Function that can be used to sync Qt state with the Window Systems state.
+
+    This function will first empty Qts events by calling QCoreApplication::processEvents(),
+    then the platform plugin will sync up with the windowsystem, and finally Qts events
+    will be delived by another call to QCoreApplication::processEvents();
+
+    This function is timeconsuming and its use is discouraged.
+*/
+void QGuiApplication::sync()
+{
+    QCoreApplication::processEvents();
+    if (QGuiApplicationPrivate::platform_integration
+            && QGuiApplicationPrivate::platform_integration->hasCapability(QPlatformIntegration::SyncState)) {
+        QGuiApplicationPrivate::platform_integration->sync();
+        QCoreApplication::processEvents();
+    }
+}
+
+void QGuiApplicationPrivate::commitData()
 {
     Q_Q(QGuiApplication);
     is_saving_session = true;
-    emit q->commitDataRequest(manager);
-    if (manager.allowsInteraction()) {
+    emit q->commitDataRequest(*session_manager);
+    if (session_manager->allowsInteraction()) {
         QWindowList done;
         QWindowList list = QGuiApplication::topLevelWindows();
         bool cancelled = false;
@@ -2779,17 +2850,17 @@ void QGuiApplicationPrivate::commitData(QSessionManager& manager)
             }
         }
         if (cancelled)
-            manager.cancel();
+            session_manager->cancel();
     }
     is_saving_session = false;
 }
 
 
-void QGuiApplicationPrivate::saveState(QSessionManager &manager)
+void QGuiApplicationPrivate::saveState()
 {
     Q_Q(QGuiApplication);
     is_saving_session = true;
-    emit q->saveStateRequest(manager);
+    emit q->saveStateRequest(*session_manager);
     is_saving_session = false;
 }
 #endif //QT_NO_SESSIONMANAGER
@@ -2912,7 +2983,7 @@ static inline void applyWindowCursor(const QList<QWindow *> &l)
     restoreOverrideCursor(), otherwise the stack will never be emptied.
 
     Example:
-    \snippet code/src_gui_kernel_qapplication_x11.cpp 0
+    \snippet code/src_gui_kernel_qguiapplication_x11.cpp 0
 
     \sa overrideCursor(), restoreOverrideCursor(), changeOverrideCursor(),
     QWidget::setCursor()
@@ -2972,7 +3043,7 @@ QStyleHints *QGuiApplication::styleHints()
     This function must be called before creating the QGuiApplication object, like
     this:
 
-    \snippet code/src_gui_kernel_qapplication.cpp 6
+    \snippet code/src_gui_kernel_qguiapplication.cpp 0
 
     \sa desktopSettingsAware()
 */
@@ -2982,8 +3053,8 @@ void QGuiApplication::setDesktopSettingsAware(bool on)
 }
 
 /*!
-    Returns true if Qt is set to use the system's standard colors, fonts, etc.;
-    otherwise returns false. The default is true.
+    Returns \c true if Qt is set to use the system's standard colors, fonts, etc.;
+    otherwise returns \c false. The default is true.
 
     \sa setDesktopSettingsAware()
 */

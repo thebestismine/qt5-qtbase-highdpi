@@ -75,6 +75,8 @@ private slots:
     void usage_connect();
     void usage_templateConnect();
 
+    void classNameFirstInStringData();
+
 private:
     static bool checkForSideEffects
         (const QMetaObjectBuilder& builder,
@@ -397,7 +399,7 @@ void tst_QMetaObjectBuilder::signal()
     QCOMPARE(method1.parameterTypes(), QList<QByteArray>() << "QString" << "int");
     QVERIFY(method1.parameterNames().isEmpty());
     QVERIFY(method1.tag().isEmpty());
-    QVERIFY(method1.access() == QMetaMethod::Protected);
+    QVERIFY(method1.access() == QMetaMethod::Public);
     QCOMPARE(method1.attributes(), 0);
     QCOMPARE(method1.index(), 0);
     QCOMPARE(builder.methodCount(), 1);
@@ -410,7 +412,7 @@ void tst_QMetaObjectBuilder::signal()
     QCOMPARE(method2.parameterTypes(), QList<QByteArray>() << "QString");
     QVERIFY(method2.parameterNames().isEmpty());
     QVERIFY(method2.tag().isEmpty());
-    QVERIFY(method2.access() == QMetaMethod::Protected);
+    QVERIFY(method2.access() == QMetaMethod::Public);
     QCOMPARE(method2.attributes(), 0);
     QCOMPARE(method2.index(), 1);
     QCOMPARE(builder.methodCount(), 2);
@@ -1692,6 +1694,20 @@ void tst_QMetaObjectBuilder::usage_templateConnect()
     con = QObject::connect(testObject.data(), &TestObject::setIntProp,
                            testObject.data(), &TestObject::intPropChanged);
     QVERIFY(!con);
+}
+
+void tst_QMetaObjectBuilder::classNameFirstInStringData()
+{
+    QMetaObjectBuilder builder;
+    builder.addMetaObject(&SomethingOfEverything::staticMetaObject);
+    builder.setClassName(QByteArrayLiteral("TestClass"));
+    QMetaObject *mo = builder.toMetaObject();
+
+    QByteArrayDataPtr header;
+    header.ptr = const_cast<QByteArrayData*>(mo->d.stringdata);
+    QCOMPARE(QByteArray(header), QByteArrayLiteral("TestClass"));
+
+    free(mo);
 }
 
 QTEST_MAIN(tst_QMetaObjectBuilder)

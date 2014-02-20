@@ -43,6 +43,7 @@
 #include <QtTest/QtTest>
 #include <qkeysequence.h>
 #include <qpa/qplatformtheme.h>
+#include <qpa/qplatformtheme_p.h>
 #include <private/qkeysequence_p.h>
 #include <private/qguiapplication_p.h>
 #include <QTranslator>
@@ -119,10 +120,8 @@ private slots:
     void symetricConstructors();
     void checkMultipleNames();
     void checkMultipleCodes();
-#ifndef Q_OS_MAC
     void mnemonic_data();
     void mnemonic();
-#endif
     void toString_data();
     void toString();
     void toStringFromKeycode_data();
@@ -143,10 +142,8 @@ private slots:
     void standardKeys_data();
     void standardKeys();
     void keyBindings();
-#if !defined (Q_OS_MAC) && !defined (Q_OS_WINCE)
     void translated_data();
     void translated();
-#endif
     void i18nKeys_data();
     void i18nKeys();
 
@@ -306,16 +303,16 @@ void tst_QKeySequence::checkMultipleCodes()
 }
 
 /*
-* We must ensure that the keyBindings data is always sorted
+* We must ensure that the keyBindings data are always sorted by standardKey
 * so that we can safely perform binary searches.
 */
 #ifdef QT_BUILD_INTERNAL
 void tst_QKeySequence::ensureSorted()
 {
-    uint N = QKeySequencePrivate::numberOfKeyBindings;
-    uint val = QKeySequencePrivate::keyBindings[0].shortcut;
+    uint N = QPlatformThemePrivate::numberOfKeyBindings;
+    uint val = QPlatformThemePrivate::keyBindings[0].standardKey;
     for ( uint i = 1 ; i < N ; ++i) {
-        uint nextval = QKeySequencePrivate::keyBindings[i].shortcut;
+        uint nextval = QPlatformThemePrivate::keyBindings[i].standardKey;
         if (nextval < val)
             qDebug() << "Data not sorted at index " << i;
         QVERIFY(nextval >= val);
@@ -404,9 +401,11 @@ void tst_QKeySequence::keyBindings()
     QCOMPARE(bindings, expected);
 }
 
-#ifndef Q_OS_MAC
 void tst_QKeySequence::mnemonic_data()
 {
+#ifdef Q_OS_MAC
+    QSKIP("Test not applicable to Mac OS X");
+#endif
     QTest::addColumn<QString>("string");
     QTest::addColumn<QString>("key");
     QTest::addColumn<bool>("warning");
@@ -426,6 +425,7 @@ void tst_QKeySequence::mnemonic_data()
 
 void tst_QKeySequence::mnemonic()
 {
+#ifndef Q_OS_MAC
     QFETCH(QString, string);
     QFETCH(QString, key);
     QFETCH(bool, warning);
@@ -443,8 +443,8 @@ void tst_QKeySequence::mnemonic()
     QKeySequence res = QKeySequence(key);
 
     QCOMPARE(seq, res);
-}
 #endif
+}
 
 void tst_QKeySequence::toString_data()
 {
@@ -605,11 +605,6 @@ void tst_QKeySequence::parseString()
     QFETCH( QString, strSequence );
     QFETCH( QKeySequence, keycode );
 
-#ifdef Q_OS_MAC
-    QEXPECT_FAIL("Win+A", "QTBUG-24406 - This test fails on OSX", Abort);
-    QEXPECT_FAIL("Simon+G", "QTBUG-24406 - This test fails on OSX", Abort);
-#endif
-
     QCOMPARE( QKeySequence(strSequence).toString(), keycode.toString() );
     QVERIFY( QKeySequence(strSequence) == keycode );
 }
@@ -738,9 +733,12 @@ void tst_QKeySequence::listFromString()
     QCOMPARE(QKeySequence::listFromString(strSequences), sequences);
 }
 
-#if !defined (Q_OS_MAC) && !defined (Q_OS_WINCE)
 void tst_QKeySequence::translated_data()
 {
+#if defined (Q_OS_MAC) || defined (Q_OS_WINCE)
+    QSKIP("Test not applicable");
+#endif
+
     qApp->installTranslator(ourTranslator);
     qApp->installTranslator(qtTranslator);
 
@@ -768,6 +766,7 @@ void tst_QKeySequence::translated_data()
 
 void tst_QKeySequence::translated()
 {
+#if !defined (Q_OS_MAC) && !defined (Q_OS_WINCE)
     QFETCH(QString, transKey);
     QFETCH(QString, compKey);
 
@@ -779,8 +778,8 @@ void tst_QKeySequence::translated()
 
     qApp->removeTranslator(ourTranslator);
     qApp->removeTranslator(qtTranslator);
-}
 #endif
+}
 
 void tst_QKeySequence::i18nKeys_data()
 {

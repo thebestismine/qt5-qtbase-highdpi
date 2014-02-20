@@ -94,9 +94,19 @@ static QString defaultTemplateName()
     return QDir::tempPath() + QLatin1Char('/') + baseName + QLatin1String("-XXXXXX");
 }
 
+#if defined(Q_OS_QNX ) || defined(Q_OS_WIN) || defined(Q_OS_ANDROID)
+
+static int nextRand(int &v)
+{
+    int r = v % 62;
+    v /= 62;
+    if (v < 62)
+        v = qrand();
+    return r;
+}
+
 static char *q_mkdtemp(char *templateName)
 {
-#if defined(Q_OS_QNX ) || defined(Q_OS_WIN) || defined(Q_OS_ANDROID)
     static const char letters[] = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
     const size_t length = strlen(templateName);
@@ -110,16 +120,11 @@ static char *q_mkdtemp(char *templateName)
         int v = qrand();
 
         /* Fill in the random bits.  */
-        XXXXXX[0] = letters[v % 62];
-        v /= 62;
-        XXXXXX[1] = letters[v % 62];
-        v /= 62;
-        XXXXXX[2] = letters[v % 62];
-        v /= 62;
-        XXXXXX[3] = letters[v % 62];
-        v /= 62;
-        XXXXXX[4] = letters[v % 62];
-        v /= 62;
+        XXXXXX[0] = letters[nextRand(v)];
+        XXXXXX[1] = letters[nextRand(v)];
+        XXXXXX[2] = letters[nextRand(v)];
+        XXXXXX[3] = letters[nextRand(v)];
+        XXXXXX[4] = letters[nextRand(v)];
         XXXXXX[5] = letters[v % 62];
 
         QString templateNameStr = QFile::decodeName(templateName);
@@ -137,10 +142,16 @@ static char *q_mkdtemp(char *templateName)
         }
     }
     return 0;
-#else
-    return mkdtemp(templateName);
-#endif
 }
+
+#else // defined(Q_OS_QNX ) || defined(Q_OS_WIN) || defined(Q_OS_ANDROID)
+
+static char *q_mkdtemp(char *templateName)
+{
+   return mkdtemp(templateName);
+}
+
+#endif
 
 void QTemporaryDirPrivate::create(const QString &templateName)
 {
@@ -242,7 +253,7 @@ QTemporaryDir::~QTemporaryDir()
 }
 
 /*!
-   Returns true if the QTemporaryDir was created successfully.
+   Returns \c true if the QTemporaryDir was created successfully.
 */
 bool QTemporaryDir::isValid() const
 {
@@ -259,7 +270,7 @@ QString QTemporaryDir::path() const
 }
 
 /*!
-   Returns true if the QTemporaryDir is in auto remove
+   Returns \c true if the QTemporaryDir is in auto remove
    mode. Auto-remove mode will automatically delete the directory from
    disk upon destruction. This makes it very easy to create your
    QTemporaryDir object on the stack, fill it with files, do something with
@@ -290,7 +301,7 @@ void QTemporaryDir::setAutoRemove(bool b)
 /*!
     Removes the temporary directory, including all its contents.
 
-    Returns true if removing was successful.
+    Returns \c true if removing was successful.
 */
 bool QTemporaryDir::remove()
 {
@@ -299,7 +310,13 @@ bool QTemporaryDir::remove()
     Q_ASSERT(!path().isEmpty());
     Q_ASSERT(path() != QLatin1String("."));
 
-    return QDir(path()).removeRecursively();
+    const bool result = QDir(path()).removeRecursively();
+    if (!result) {
+        qWarning() << "QTemporaryDir: Unable to remove"
+                   << QDir::toNativeSeparators(path())
+                   << "most likely due to the presence of read-only files.";
+    }
+    return result;
 }
 
 QT_END_NAMESPACE

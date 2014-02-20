@@ -130,8 +130,8 @@ QString Node::fullName(const Node* relative) const
     if (type() == Node::Document) {
         const DocNode* dn = static_cast<const DocNode*>(this);
         // Only print modulename::type on collision pages.
-        if (!dn->qmlModuleIdentifier().isEmpty() && relative != 0 && relative->isCollisionNode())
-            return dn->qmlModuleIdentifier() + "::" + dn->title();
+        if (!dn->qmlModuleName().isEmpty() && relative != 0 && relative->isCollisionNode())
+            return dn->qmlModuleName() + "::" + dn->title();
         return dn->title();
     }
     else if (type() == Node::Class) {
@@ -625,7 +625,7 @@ ClassNode* Node::declarativeCppNode()
 }
 
 /*!
-  Returns true if the node's status is Internal, or if its
+  Returns \c true if the node's status is Internal, or if its
   parent is a class with internal status.
  */
 bool Node::isInternal() const
@@ -654,7 +654,7 @@ InnerNode::~InnerNode()
 }
 
 /*!
-  Returns true if this node's members coolection is not empty.
+  Returns \c true if this node's members coolection is not empty.
  */
 bool InnerNode::hasMembers() const
 {
@@ -672,7 +672,7 @@ void InnerNode::addMember(Node* node)
 }
 
 /*!
-  Returns true if this node's members collection contains at
+  Returns \c true if this node's members collection contains at
   least one namespace node.
  */
 bool InnerNode::hasNamespaces() const
@@ -689,7 +689,7 @@ bool InnerNode::hasNamespaces() const
 }
 
 /*!
-  Returns true if this node's members collection contains at
+  Returns \c true if this node's members collection contains at
   least one class node.
  */
 bool InnerNode::hasClasses() const
@@ -816,8 +816,8 @@ void InnerNode::findNodes(const QString& name, QList<Node*>& n)
   not a recearsive search.
 
   If \a qml is true, only match a node for which node->isQmlNode()
-  returns true. If \a qml is false, only match a node for which
-  node->isQmlNode() returns false.
+  returns \c true. If \a qml is false, only match a node for which
+  node->isQmlNode() returns \c false.
  */
 Node* InnerNode::findChildNodeByName(const QString& name, bool qml)
 {
@@ -1078,11 +1078,11 @@ void InnerNode::deleteChildren()
 }
 
 /*! \fn bool InnerNode::isInnerNode() const
-  Returns true because this is an inner node.
+  Returns \c true because this is an inner node.
  */
 
 /*!
-  Returns true if the node is a class node or a QML type node
+  Returns \c true if the node is a class node or a QML type node
   that is marked as being a wrapper class or QML type, or if
   it is a member of a wrapper class or type.
  */
@@ -1101,8 +1101,8 @@ const Node *InnerNode::findChildNodeByName(const QString& name) const
 
 /*!
   If \a qml is true, only match a node for which node->isQmlNode()
-  returns true. If \a qml is false, only match a node for which
-  node->isQmlNode() returns false.
+  returns \c true. If \a qml is false, only match a node for which
+  node->isQmlNode() returns \c false.
  */
 const Node* InnerNode::findChildNodeByName(const QString& name, bool qml) const
 {
@@ -1395,7 +1395,7 @@ QmlPropertyNode* InnerNode::hasQmlProperty(const QString& n) const
  */
 
 /*! \fn bool LeafNode::isInnerNode() const
-  Returns false because this is a LeafNode.
+  Returns \c false because this is a LeafNode.
  */
 
 /*!
@@ -1867,7 +1867,10 @@ FunctionNode::FunctionNode(Type type, InnerNode *parent, const QString& name, bo
       rf(0),
       ap(0)
 {
-    // nothing.
+    if (type == QmlMethod || type == QmlSignal) {
+        if (name.startsWith("__"))
+            setStatus(Internal);
+    }
 }
 
 /*!
@@ -2122,6 +2125,7 @@ QmlClassNode::QmlClassNode(InnerNode *parent, const QString& name)
       cnodeRequired_(false),
       wrapper_(false),
       cnode_(0),
+      qmlModule_(0),
       baseNode_(0)
 {
     int i = 0;
@@ -2171,45 +2175,27 @@ void QmlClassNode::subclasses(const QString& base, NodeList& subs)
     }
 }
 
-/*! \fn QString QmlClassNode::qmlModuleIdentifier() const
-  This function is called to get a string that is used either
-  as a prefix for the file name to use for QML element or
-  component reference page, or as a qualifier to prefix a
-  reference to a QML element or comnponent. The string that
-  is returned is the concatenation of the QML module name
-  and its version number. e.g., if an element or component
-  is defined to be in the QML module QtQuick 1, its module
-  identifier is "QtQuick1". See setQmlModuleInfo().
- */
-
 /*!
   This function splits \a arg on the blank character to get a
-  QML module name and version number. It then spilts the version
-  number on the '.' character to get a major version number and
-  a minor vrsion number. Both major the major and minor version
-  numbers should be present, but the minor version number is not
+  QML module name and version number. If the version number is
+  present, it spilts the version number on the '.' character to
+  get a major version number and a minor vrsion number. If the
+  version number is present, both the major and minor version
+  numbers should be there, but the minor version number is not
   absolutely necessary.
-
-  It stores the three components separately in this node. If all
-  three are found, true is returned. If any of the three is not
-  found or is not in the correct format, false is returned.
  */
-bool Node::setQmlModuleInfo(const QString& arg)
+void QmlModuleNode::setQmlModuleInfo(const QString& arg)
 {
-    QStringList dotSplit;
     QStringList blankSplit = arg.split(QLatin1Char(' '));
     qmlModuleName_ = blankSplit[0];
-    qmlModuleVersionMajor_ = "1";
-    qmlModuleVersionMinor_ = "0";
     if (blankSplit.size() > 1) {
-        dotSplit = blankSplit[1].split(QLatin1Char('.'));
+        QStringList dotSplit = blankSplit[1].split(QLatin1Char('.'));
         qmlModuleVersionMajor_ = dotSplit[0];
-        if (dotSplit.size() > 1) {
+        if (dotSplit.size() > 1)
             qmlModuleVersionMinor_ = dotSplit[1];
-            return true;
-        }
+        else
+            qmlModuleVersionMinor_ = "0";
     }
-    return false;
 }
 
 /*!
@@ -2221,7 +2207,7 @@ QString QmlClassNode::qmlFullBaseName() const
 {
     QString result;
     if (baseNode_) {
-        result = baseNode_->qmlModuleIdentifier() + "::" + baseNode_->name();
+        result = baseNode_->qmlModuleName() + "::" + baseNode_->name();
     }
     return result;
 }
@@ -2256,6 +2242,36 @@ void QmlClassNode::clearCurrentChild()
         if (n->subType() == Node::Collision)
             n->clearCurrentChild();
     }
+}
+
+/*!
+  If the QML type's QML module pointer is set, return the QML
+  module name from the QML module node. Otherwise, return the
+  empty string.
+ */
+QString QmlClassNode::qmlModuleName() const
+{
+    return (qmlModule_ ? qmlModule_->qmlModuleName() : QString());
+}
+
+/*!
+  If the QML type's QML module pointer is set, return the QML
+  module version from the QML module node. Otherwise, return
+  the empty string.
+ */
+QString QmlClassNode::qmlModuleVersion() const
+{
+    return (qmlModule_ ? qmlModule_->qmlModuleVersion() : QString());
+}
+
+/*!
+  If the QML type's QML module pointer is set, return the QML
+  module identifier from the QML module node. Otherwise, return
+  the empty string.
+ */
+QString QmlClassNode::qmlModuleIdentifier() const
+{
+    return (qmlModule_ ? qmlModule_->qmlModuleIdentifier() : QString());
 }
 
 /*!
@@ -2313,10 +2329,12 @@ QmlPropertyNode::QmlPropertyNode(InnerNode* parent,
     setPageType(ApiPage);
     if (type_ == QString("alias"))
         isAlias_ = true;
+    if (name.startsWith("__"))
+        setStatus(Internal);
 }
 
 /*!
-  Returns true if a QML property or attached property is
+  Returns \c true if a QML property or attached property is
   not read-only. The algorithm for figuring this out is long
   amd tedious and almost certainly will break. It currently
   doesn't work for the qmlproperty:
@@ -2343,13 +2361,13 @@ bool QmlPropertyNode::isWritable(QDocDatabase* qdb)
                     location().warning(tr("No Q_PROPERTY for QML property %1::%2::%3 "
                                           "in C++ class documented as QML type: "
                                           "(property not found in the C++ class or its base classes)")
-                                       .arg(qmlModuleIdentifier()).arg(qmlTypeName()).arg(name()));
+                                       .arg(qmlModuleName()).arg(qmlTypeName()).arg(name()));
             }
             else
                 location().warning(tr("No Q_PROPERTY for QML property %1::%2::%3 "
                                       "in C++ class documented as QML type: "
                                       "(C++ class not specified or not found).")
-                                   .arg(qmlModuleIdentifier()).arg(qmlTypeName()).arg(name()));
+                                   .arg(qmlModuleName()).arg(qmlTypeName()).arg(name()));
         }
     }
     return true;
@@ -2461,7 +2479,7 @@ NameCollisionNode::~NameCollisionNode()
  */
 
 /*!
-  Returns true if this collision node's current node is a QML node.
+  Returns \c true if this collision node's current node is a QML node.
  */
 bool NameCollisionNode::isQmlNode() const
 {
@@ -2492,18 +2510,18 @@ InnerNode* NameCollisionNode::findAny(Node::Type t, Node::SubType st)
 
 /*!
   This node is a name collision node. Find a child of this node
-  such that the child's QML module identifier matches origin's
-  QML module identifier. Return the matching node, or return this
-  node if there is no matching node.
+  such that the child's QML module name matches origin's QML module
+  Name. Return the matching node, or return this node if there is
+  no matching node.
  */
-const Node* NameCollisionNode::applyModuleIdentifier(const Node* origin) const
+const Node* NameCollisionNode::applyModuleName(const Node* origin) const
 {
-    if (origin && !origin->qmlModuleIdentifier().isEmpty()) {
+    if (origin && !origin->qmlModuleName().isEmpty()) {
         const NodeList& cn = childNodes();
         NodeList::ConstIterator i = cn.constBegin();
         while (i != cn.constEnd()) {
             if ((*i)->type() == Node::Document && (*i)->subType() == Node::QmlClass) {
-                if (origin->qmlModuleIdentifier() == (*i)->qmlModuleIdentifier())
+                if (origin->qmlModuleName() == (*i)->qmlModuleName())
                     return (*i);
             }
             ++i;
@@ -2526,7 +2544,7 @@ QString Node::fullDocumentName() const
 
         if (n->type() == Node::Document) {
             if ((n->subType() == Node::QmlClass) && !n->qmlModuleName().isEmpty())
-                pieces.insert(0, n->qmlModuleIdentifier());
+                pieces.insert(0, n->qmlModuleName());
             break;
         }
 

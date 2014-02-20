@@ -688,7 +688,7 @@ bool CppCodeParser::splitQmlPropertyGroupArg(const QString& arg,
   Components. A <QML-module> is the QML equivalent of a
   C++ namespace. So this function splits \a arg on "::"
   and stores the parts in \a type, \a module, \a qmlType,
-  and \a name, and returns true. If any part other than
+  and \a name, and returns \c true. If any part other than
   \a module is not found, a qdoc warning is emitted and
   false is returned.
 
@@ -833,17 +833,15 @@ void CppCodeParser::processQmlProperties(const Doc& doc, NodeList& nodes, DocLis
             if (qmlClass) {
                 qpgn = new QmlPropertyGroupNode(qmlClass, property);
                 qpgn->setLocation(doc.startLocation());
+                nodes.append(qpgn);
+                docs.append(doc);
             }
-        }
-        if (topics.size() == 1) {
-            nodes.append(qpgn);
-            docs.append(doc);
-            return;
         }
     }
     for (int i=0; i<topics.size(); ++i) {
-        if (topics.at(i).topic == COMMAND_QMLPROPERTYGROUP)
-            continue;
+        if (topics.at(i).topic == COMMAND_QMLPROPERTYGROUP) {
+             continue;
+        }
         topic = topics.at(i).topic;
         arg = topics.at(i).args;
         if ((topic == COMMAND_QMLPROPERTY) || (topic == COMMAND_QMLATTACHEDPROPERTY)) {
@@ -1918,6 +1916,16 @@ bool CppCodeParser::matchProperty(InnerNode *parent)
         QString key = previousLexeme();
         QString value;
 
+        // Keywords with no associated values
+        if (key == "CONSTANT") {
+            property->setConstant();
+            continue;
+        }
+        else if (key == "FINAL") {
+            property->setFinal();
+            continue;
+        }
+
         if (match(Tok_Ident) || match(Tok_Number)) {
             value = previousLexeme();
         }
@@ -1968,7 +1976,7 @@ bool CppCodeParser::matchProperty(InnerNode *parent)
             if (ok)
                 property->setRevision(revision);
             else
-                parent->doc().location().warning(tr("Invalid revision number: %1").arg(value));
+                location().warning(tr("Invalid revision number: %1").arg(value));
         } else if (key == "SCRIPTABLE") {
             QString v = value.toLower();
             if (v == "true")
@@ -1980,10 +1988,6 @@ bool CppCodeParser::matchProperty(InnerNode *parent)
                 property->setRuntimeScrFunc(value);
             }
         }
-        else if (key == "CONSTANT")
-            property->setConstant();
-        else if (key == "FINAL")
-            property->setFinal();
     }
     match(Tok_RightParen);
     return true;
@@ -2063,7 +2067,11 @@ bool CppCodeParser::matchDeclList(InnerNode *parent)
         case Tok_Q_PROPERTY:
         case Tok_Q_PRIVATE_PROPERTY:
         case Tok_QDOC_PROPERTY:
-            matchProperty(parent);
+            if (!matchProperty(parent)) {
+                location().warning(tr("Failed to parse token %1 in property declaration").arg(lexeme()));
+                skipTo(Tok_RightParen);
+                match(Tok_RightParen);
+            }
             break;
         case Tok_Q_DECLARE_SEQUENTIAL_ITERATOR:
             readToken();
@@ -2172,7 +2180,6 @@ bool CppCodeParser::matchDocsAndStuff()
                     isQmlPropertyTopic = true;
                 }
             }
-            // if (isQmlPropertyTopic && doc.location().fileName().endsWith("qquickitem.cpp")) {
             NodeList nodes;
             DocList docs;
 

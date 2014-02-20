@@ -62,6 +62,7 @@
 #include "qglyphrun.h"
 
 #include <qpa/qplatformtheme.h>
+#include <qpa/qplatformintegration.h>
 
 #include <private/qfontengine_p.h>
 #include <private/qpaintengine_p.h>
@@ -115,12 +116,6 @@ static inline QGradient::CoordinateMode coordinateMode(const QBrush &brush)
     return QGradient::LogicalMode;
 }
 
-/* Returns true if the gradient requires stretch to device...*/
-static inline bool check_gradient(const QBrush &brush)
-{
-    return coordinateMode(brush) == QGradient::StretchToDeviceMode;
-}
-
 extern bool qHasPixmapTexture(const QBrush &);
 
 static inline bool is_brush_transparent(const QBrush &brush) {
@@ -152,17 +147,18 @@ static inline uint line_emulation(uint emulation)
 }
 
 #ifndef QT_NO_DEBUG
-static bool qt_painter_thread_test(int devType, const char *what, bool extraCondition = false)
+static bool qt_painter_thread_test(int devType, const char *what)
 {
     switch (devType) {
     case QInternal::Image:
     case QInternal::Printer:
     case QInternal::Picture:
         // can be drawn onto these devices safely from any thread
-        if (extraCondition)
-            break;
+        break;
     default:
-        if (!extraCondition && QThread::currentThread() != qApp->thread()) {
+        if (QThread::currentThread() != qApp->thread()
+                && (devType!=QInternal::Pixmap || !QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::ThreadedPixmaps))
+                && (devType!=QInternal::OpenGL || !QGuiApplicationPrivate::platformIntegration()->hasCapability(QPlatformIntegration::ThreadedOpenGL))) {
             qWarning("QPainter: It is not safe to use %s outside the GUI thread", what);
             return false;
         }
@@ -247,7 +243,7 @@ QTransform QPainterPrivate::hidpiScaleTransform() const
 
 /*
    \internal
-   Returns true if using a shared painter; otherwise false.
+   Returns \c true if using a shared painter; otherwise false.
 */
 bool QPainterPrivate::attachPainterPrivate(QPainter *q, QPaintDevice *pdev)
 {
@@ -781,8 +777,8 @@ void QPainterPrivate::updateEmulationSpecifier(QPainterState *s)
         complexXform = !s->matrix.isAffine();
     }
 
-    const bool brushXform = (!s->brush.transform().type() == QTransform::TxNone);
-    const bool penXform = (!s->pen.brush().transform().type() == QTransform::TxNone);
+    const bool brushXform = (s->brush.transform().type() != QTransform::TxNone);
+    const bool penXform = (s->pen.brush().transform().type() != QTransform::TxNone);
 
     const bool patternXform = patternBrush && (xform || brushXform || penXform);
 
@@ -1517,8 +1513,8 @@ QPaintDevice *QPainter::device() const
 }
 
 /*!
-    Returns true if begin() has been called and end() has not yet been
-    called; otherwise returns false.
+    Returns \c true if begin() has been called and end() has not yet been
+    called; otherwise returns \c false.
 
     \sa begin(), QPaintDevice::paintingActive()
 */
@@ -1654,7 +1650,7 @@ void QPainter::restore()
 
         //Since we've updated the clip region anyway, pretend that the clip path hasn't changed:
         d->state->dirtyFlags &= ~(QPaintEngine::DirtyClipPath | QPaintEngine::DirtyClipRegion);
-        tmp->changeFlags &= ~(QPaintEngine::DirtyClipPath | QPaintEngine::DirtyClipRegion);
+        tmp->changeFlags &= ~uint(QPaintEngine::DirtyClipPath | QPaintEngine::DirtyClipRegion);
         tmp->changeFlags |= QPaintEngine::DirtyTransform;
     }
 
@@ -1667,8 +1663,8 @@ void QPainter::restore()
 
     \fn bool QPainter::begin(QPaintDevice *device)
 
-    Begins painting the paint \a device and returns true if
-    successful; otherwise returns false.
+    Begins painting the paint \a device and returns \c true if
+    successful; otherwise returns \c false.
 
     Notice that all painter settings (setPen(), setBrush() etc.) are reset
     to default values when begin() is called.
@@ -1872,7 +1868,7 @@ bool QPainter::begin(QPaintDevice *pd)
     don't normally need to call this since it is called by the
     destructor.
 
-    Returns true if the painter is no longer active; otherwise returns false.
+    Returns \c true if the painter is no longer active; otherwise returns \c false.
 
     \sa begin(), isActive()
 */
@@ -2436,7 +2432,7 @@ const QBrush &QPainter::background() const
 
 
 /*!
-    Returns true if clipping has been set; otherwise returns false.
+    Returns \c true if clipping has been set; otherwise returns \c false.
 
     \sa setClipping(), {QPainter#Clipping}{Clipping}
 */
@@ -3074,7 +3070,7 @@ void QPainter::setWorldMatrixEnabled(bool enable)
 /*!
     \since 4.2
 
-    Returns true if world transformation is enabled; otherwise returns
+    Returns \c true if world transformation is enabled; otherwise returns
     false.
 
     \sa setWorldMatrixEnabled(), worldTransform(), {Coordinate System}
@@ -5068,7 +5064,7 @@ void QPainter::drawPixmap(const QPointF &p, const QPixmap &pm)
         return;
 
 #ifndef QT_NO_DEBUG
-    qt_painter_thread_test(d->device->devType(), "drawPixmap()", true);
+    qt_painter_thread_test(d->device->devType(), "drawPixmap()");
 #endif
 
     if (d->extended) {
@@ -5139,7 +5135,7 @@ void QPainter::drawPixmap(const QRectF &r, const QPixmap &pm, const QRectF &sr)
     if (!d->engine || pm.isNull())
         return;
 #ifndef QT_NO_DEBUG
-    qt_painter_thread_test(d->device->devType(), "drawPixmap()", true);
+    qt_painter_thread_test(d->device->devType(), "drawPixmap()");
 #endif
 
     qreal x = r.x();
@@ -6365,12 +6361,6 @@ void QPainterPrivate::drawTextItem(const QPointF &p, const QTextItem &_ti, QText
     if (!engine)
         return;
 
-#ifndef QT_NO_DEBUG
-    qt_painter_thread_test(device->devType(),
-                           "text and fonts",
-                           QFontDatabase::supportsThreadedFontRendering());
-#endif
-
     QTextItemInt &ti = const_cast<QTextItemInt &>(static_cast<const QTextItemInt &>(_ti));
 
     if (!extended && state->bgMode == Qt::OpaqueMode) {
@@ -6634,7 +6624,7 @@ void QPainter::drawTiledPixmap(const QRectF &r, const QPixmap &pixmap, const QPo
         return;
 
 #ifndef QT_NO_DEBUG
-    qt_painter_thread_test(d->device->devType(), "drawTiledPixmap()", true);
+    qt_painter_thread_test(d->device->devType(), "drawTiledPixmap()");
 #endif
 
     qreal sw = pixmap.width();
@@ -7100,13 +7090,13 @@ QPainter::RenderHints QPainter::renderHints() const
     \fn bool QPainter::testRenderHint(RenderHint hint) const
     \since 4.3
 
-    Returns true if \a hint is set; otherwise returns false.
+    Returns \c true if \a hint is set; otherwise returns \c false.
 
     \sa renderHints(), setRenderHint()
 */
 
 /*!
-    Returns true if view transformation is enabled; otherwise returns
+    Returns \c true if view transformation is enabled; otherwise returns
     false.
 
     \sa setViewTransformEnabled(), worldTransform()

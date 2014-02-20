@@ -43,6 +43,7 @@
 #include <qdatetime.h>
 #include <qdebug.h>
 #include <qfile.h>
+#include <qfileinfo.h>
 #include <qstring.h>
 #include <qstringlist.h>
 #include <qtextstream.h>
@@ -65,6 +66,7 @@ static QString parentClassName;
 static QString proxyFile;
 static QString adaptorFile;
 static QString inputFile;
+static QDateTime classCreationTime;
 static bool skipNamespaces;
 static bool verbose;
 static bool includeMocs;
@@ -216,10 +218,13 @@ static void parseCmdLine(QStringList args)
 static QDBusIntrospection::Interfaces readInput()
 {
     QFile input(inputFile);
-    if (inputFile.isEmpty() || inputFile == QLatin1String("-"))
+    if (inputFile.isEmpty() || inputFile == QLatin1String("-")) {
         input.open(stdin, QIODevice::ReadOnly);
-    else
+        classCreationTime = QDateTime::currentDateTime();
+    } else {
         input.open(QIODevice::ReadOnly);
+        classCreationTime = QFileInfo(input).lastModified();
+    }
 
     QByteArray data = input.readAll();
 
@@ -509,10 +514,10 @@ static QString stringify(const QString &data)
     return retval;
 }
 
-static void openFile(const QString &fileName, QFile &file)
+static bool openFile(const QString &fileName, QFile &file)
 {
     if (fileName.isEmpty())
-        return;
+        return false;
 
     bool isOk = false;
     if (fileName == QLatin1String("-")) {
@@ -525,6 +530,7 @@ static void openFile(const QString &fileName, QFile &file)
     if (!isOk)
         fprintf(stderr, "Unable to open '%s': %s\n", qPrintable(fileName),
                 qPrintable(file.errorString()));
+    return isOk;
 }
 
 static void writeProxy(const QString &filename, const QDBusIntrospection::Interfaces &interfaces)
@@ -555,7 +561,7 @@ static void writeProxy(const QString &filename, const QDBusIntrospection::Interf
     }
     includeGuard = QString(QLatin1String("%1_%2"))
                    .arg(includeGuard)
-                   .arg(QDateTime::currentDateTime().toTime_t());
+                   .arg(classCreationTime.toTime_t());
     hs << "#ifndef " << includeGuard << endl
        << "#define " << includeGuard << endl
        << endl;
@@ -821,15 +827,17 @@ static void writeProxy(const QString &filename, const QDBusIntrospection::Interf
     hs.flush();
 
     QFile file;
-    openFile(headerName, file);
-    file.write(headerData);
+    const bool headerOpen = openFile(headerName, file);
+    if (headerOpen)
+        file.write(headerData);
 
     if (headerName == cppName) {
-        file.write(cppData);
+        if (headerOpen)
+            file.write(cppData);
     } else {
         QFile cppFile;
-        openFile(cppName, cppFile);
-        cppFile.write(cppData);
+        if (openFile(cppName, cppFile))
+            cppFile.write(cppData);
     }
 }
 
@@ -1125,15 +1133,17 @@ static void writeAdaptor(const QString &filename, const QDBusIntrospection::Inte
     hs.flush();
 
     QFile file;
-    openFile(headerName, file);
-    file.write(headerData);
+    const bool headerOpen = openFile(headerName, file);
+    if (headerOpen)
+        file.write(headerData);
 
     if (headerName == cppName) {
-        file.write(cppData);
+        if (headerOpen)
+            file.write(cppData);
     } else {
         QFile cppFile;
-        openFile(cppName, cppFile);
-        cppFile.write(cppData);
+        if (openFile(cppName, cppFile))
+            cppFile.write(cppData);
     }
 }
 

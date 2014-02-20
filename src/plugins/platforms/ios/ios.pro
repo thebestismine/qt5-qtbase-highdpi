@@ -9,9 +9,8 @@ LIBS += -framework Foundation -framework UIKit -framework QuartzCore
 
 OBJECTIVE_SOURCES = \
     plugin.mm \
-    qiosmain_wrapper.mm \
-    qiosmain_dummy.mm \
     qiosintegration.mm \
+    qioseventdispatcher.mm \
     qioswindow.mm \
     qiosscreen.mm \
     qiosbackingstore.mm \
@@ -21,10 +20,12 @@ OBJECTIVE_SOURCES = \
     qioscontext.mm \
     qiosinputcontext.mm \
     qiostheme.mm \
-    qiosglobal.mm
+    qiosglobal.mm \
+    qiosservices.mm
 
 HEADERS = \
     qiosintegration.h \
+    qioseventdispatcher.h \
     qioswindow.h \
     qiosscreen.h \
     qiosbackingstore.h \
@@ -34,6 +35,7 @@ HEADERS = \
     qioscontext.h \
     qiosinputcontext.h \
     qiostheme.h \
-    qiosglobal.h
+    qiosglobal.h \
+    qiosservices.h
 
 #HEADERS = qiossoftwareinputhandler.h

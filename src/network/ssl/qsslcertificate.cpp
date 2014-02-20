@@ -200,8 +200,8 @@ QSslCertificate &QSslCertificate::operator=(const QSslCertificate &other)
 */
 
 /*!
-    Returns true if this certificate is the same as \a other; otherwise
-    returns false.
+    Returns \c true if this certificate is the same as \a other; otherwise
+    returns \c false.
 */
 bool QSslCertificate::operator==(const QSslCertificate &other) const
 {
@@ -217,13 +217,13 @@ bool QSslCertificate::operator==(const QSslCertificate &other) const
 /*!
     \fn bool QSslCertificate::operator!=(const QSslCertificate &other) const
 
-    Returns true if this certificate is not the same as \a other; otherwise
-    returns false.
+    Returns \c true if this certificate is not the same as \a other; otherwise
+    returns \c false.
 */
 
 /*!
-    Returns true if this is a null certificate (i.e., a certificate
-    with no contents); otherwise returns false.
+    Returns \c true if this is a null certificate (i.e., a certificate
+    with no contents); otherwise returns \c false.
 
     By default, QSslCertificate constructs a null certificate.
 
@@ -254,8 +254,8 @@ bool QSslCertificate::isNull() const
 #endif
 
 /*!
-    Returns true if this certificate is blacklisted; otherwise
-    returns false.
+    Returns \c true if this certificate is blacklisted; otherwise
+    returns \c false.
 
     \sa isNull()
 */
@@ -341,8 +341,9 @@ static QByteArray _q_SubjectInfoToString(QSslCertificate::SubjectInfo info)
   \fn QString QSslCertificate::issuerInfo(SubjectInfo subject) const
 
   Returns the issuer information for the \a subject from the
-  certificate, or an empty string if there is no information for
-  \a subject in the certificate.
+  certificate, or an empty list if there is no information for
+  \a subject in the certificate. There can be more than one entry
+  of each type.
 
   \sa subjectInfo()
 */
@@ -359,8 +360,8 @@ QStringList QSslCertificate::issuerInfo(SubjectInfo info) const
 
 /*!
   Returns the issuer information for \a attribute from the certificate,
-  or an empty string if there is no information for \a attribute in the
-  certificate.
+  or an empty list if there is no information for \a attribute in the
+  certificate. There can be more than one entry for an attribute.
 
   \sa subjectInfo()
 */
@@ -379,8 +380,9 @@ QStringList QSslCertificate::issuerInfo(const QByteArray &attribute) const
 
   \fn QString QSslCertificate::subjectInfo(SubjectInfo subject) const
 
-  Returns the information for the \a subject, or an empty string if
-  there is no information for \a subject in the certificate.
+  Returns the information for the \a subject, or an empty list if
+  there is no information for \a subject in the certificate. There
+  can be more than one entry of each type.
 
     \sa issuerInfo()
 */
@@ -396,8 +398,9 @@ QStringList QSslCertificate::subjectInfo(SubjectInfo info) const
 }
 
 /*!
-    Returns the subject information for \a attribute, or an empty string if
-    there is no information for \a attribute in the certificate.
+    Returns the subject information for \a attribute, or an empty list if
+    there is no information for \a attribute in the certificate. There
+    can be more than one entry for an attribute.
 
     \sa issuerInfo()
 */
@@ -1214,6 +1217,8 @@ static const char *certificate_blacklist[] = {
 
     "08:27",                                           "*.EGO.GOV.TR", // Turktrust mis-issued intermediate certificate
     "08:64",                                           "e-islem.kktcmerkezbankasi.org", // Turktrust mis-issued intermediate certificate
+
+    "03:1d:a7",                                        "AC DG Tr\xC3\xA9sor SSL", // intermediate certificate linking back to ANSSI French National Security Agency
     0
 };
 

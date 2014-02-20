@@ -60,6 +60,9 @@
 #include <private/qwidget_p.h>
 #include "qtoolbar_p.h"
 #include "qwidgetanimator_p.h"
+#ifdef Q_OS_OSX
+#include <qpa/qplatformnativeinterface.h>
+#endif
 #ifdef Q_WS_MAC
 #include <private/qt_mac_p.h>
 #include <private/qt_cocoa_helpers_mac_p.h>
@@ -76,6 +79,9 @@ class QMainWindowPrivate : public QWidgetPrivate
 public:
     inline QMainWindowPrivate()
         : layout(0), explicitIconSize(false), toolButtonStyle(Qt::ToolButtonIconOnly)
+#ifdef Q_OS_OSX
+            , useUnifiedToolBar(false)
+#endif
 #ifdef Q_WS_MAC
             , useHIToolBar(false)
             , activateUnifiedToolbarAfterFullScreen(false)
@@ -88,6 +94,9 @@ public:
     QSize iconSize;
     bool explicitIconSize;
     Qt::ToolButtonStyle toolButtonStyle;
+#ifdef Q_OS_OSX
+    bool useUnifiedToolBar;
+#endif
 #ifdef Q_WS_MAC
     bool useHIToolBar;
     bool activateUnifiedToolbarAfterFullScreen;
@@ -629,6 +638,22 @@ void QMainWindow::setCentralWidget(QWidget *widget)
     d->layout->setCentralWidget(widget);
 }
 
+/*!
+    Removes the central widget from this main window.
+
+    The ownership of the removed widget is passed to the caller.
+
+    \since Qt 5.2
+*/
+QWidget *QMainWindow::takeCentralWidget()
+{
+    Q_D(QMainWindow);
+    QWidget *oldcentralwidget = d->layout->centralWidget();
+    oldcentralwidget->setParent(0);
+    d->layout->setCentralWidget(0);
+    return oldcentralwidget;
+}
+
 #ifndef QT_NO_DOCKWIDGET
 /*!
     Sets the given dock widget \a area to occupy the specified \a
@@ -888,8 +913,8 @@ void QMainWindow::setAnimated(bool enabled)
     \brief whether docks can be nested
     \since 4.2
 
-    If this property is false, dock areas can only contain a single row
-    (horizontal or vertical) of dock widgets. If this property is true,
+    If this property is \c false, dock areas can only contain a single row
+    (horizontal or vertical) of dock widgets. If this property is \c true,
     the area occupied by a dock widget can be split in either direction to contain
     more dock widgets.
 
@@ -1076,8 +1101,8 @@ void QMainWindow::addDockWidget(Qt::DockWidgetArea area, QDockWidget *dockwidget
 
 /*!
     Restores the state of \a dockwidget if it is created after the call
-    to restoreState(). Returns true if the state was restored; otherwise
-    returns false.
+    to restoreState(). Returns \c true if the state was restored; otherwise
+    returns \c false.
 
     \sa restoreState(), saveState()
 */
@@ -1476,16 +1501,29 @@ bool QMainWindow::event(QEvent *event)
 /*!
     \property QMainWindow::unifiedTitleAndToolBarOnMac
     \brief whether the window uses the unified title and toolbar look on Mac OS X
-    \since 4.3
-    \obsolete
-
-    This property is not implemented in Qt 5. Setting it has no effect.
-
-    A replacement API (QtMacUnifiedToolBar) is available in QtMacExtras at
-    http://qt.gitorious.org/qtplayground/qtmacextras
+    \since 5.2
 */
 void QMainWindow::setUnifiedTitleAndToolBarOnMac(bool set)
 {
+#ifdef Q_OS_OSX
+    Q_D(QMainWindow);
+    if (isWindow()) {
+        QPlatformNativeInterface *nativeInterface = QGuiApplication::platformNativeInterface();
+        QPlatformNativeInterface::NativeResourceForIntegrationFunction function =
+            nativeInterface->nativeResourceFunctionForIntegration("setContentBorderThickness");
+        if (!function)
+            return; // Not Cocoa platform plugin.
+
+        createWinId();
+
+        d->useUnifiedToolBar = set;
+
+        const int toolBarHeight = 50;
+        typedef void (*SetContentBorderThicknessFunction)(QWindow *window, int topThickness, int bottomThickness);
+        (reinterpret_cast<SetContentBorderThicknessFunction>(function))(window()->windowHandle(), toolBarHeight, 0);
+    }
+#endif
+
 #ifdef Q_WS_MAC
     Q_D(QMainWindow);
     if (!isWindow() || d->useHIToolBar == set || QSysInfo::MacintoshVersion < QSysInfo::MV_10_3)
@@ -1518,6 +1556,9 @@ void QMainWindow::setUnifiedTitleAndToolBarOnMac(bool set)
 
 bool QMainWindow::unifiedTitleAndToolBarOnMac() const
 {
+#ifdef Q_OS_OSX
+    return d_func()->useUnifiedToolBar;
+#endif
 #ifdef Q_WS_MAC
     return d_func()->useHIToolBar && !testAttribute(Qt::WA_MacBrushedMetal) && !(windowFlags() & Qt::FramelessWindowHint);
 #endif
@@ -1639,9 +1680,7 @@ QMenu *QMainWindow::createPopupMenu()
         for (int i = 0; i < toolbars.size(); ++i) {
             QToolBar *toolBar = toolbars.at(i);
             if (toolBar->parentWidget() == this
-                && (!d->layout->layoutState.toolBarAreaLayout.indexOf(toolBar).isEmpty()
-                    || (unifiedTitleAndToolBarOnMac()
-                        && toolBarArea(toolBar) == Qt::TopToolBarArea))) {
+                && (!d->layout->layoutState.toolBarAreaLayout.indexOf(toolBar).isEmpty())) {
                 menu->addAction(toolbars.at(i)->toggleViewAction());
             }
         }

@@ -930,8 +930,8 @@ void QTabBar::removeTab(int index)
 
 
 /*!
-    Returns true if the tab at position \a index is enabled; otherwise
-    returns false.
+    Returns \c true if the tab at position \a index is enabled; otherwise
+    returns \c false.
 */
 bool QTabBar::isTabEnabled(int index) const
 {
@@ -1496,6 +1496,12 @@ bool QTabBar::event(QEvent *event)
             }
         }
 #endif
+    } else if (event->type() == QEvent::MouseButtonDblClick) { // ### fixme Qt 6: move to mouseDoubleClickEvent(), here for BC reasons.
+        const QPoint pos = static_cast<const QMouseEvent *>(event)->pos();
+        const bool isEventInCornerButtons = (!d->leftB->isHidden() && d->leftB->geometry().contains(pos))
+                                            || (!d->rightB->isHidden() && d->rightB->geometry().contains(pos));
+        if (!isEventInCornerButtons)
+            emit tabBarDoubleClicked(tabAt(pos));
     }
     return QWidget::event(event);
 }
@@ -1675,6 +1681,7 @@ void QTabBar::moveTab(int from, int to)
         d->tabList[i].lastTab = d->calculateNewPosition(from, to, d->tabList[i].lastTab);
 
     // update external variables
+    int previousIndex = d->currentIndex;
     d->currentIndex = d->calculateNewPosition(from, to, d->currentIndex);
 
     // If we are in the middle of a drag update the dragStartPosition
@@ -1693,6 +1700,8 @@ void QTabBar::moveTab(int from, int to)
     d->layoutWidgets(start);
     update();
     emit tabMoved(from, to);
+    if (previousIndex != d->currentIndex)
+        emit currentChanged(d->currentIndex);
     emit tabLayoutChange();
 }
 
@@ -1721,23 +1730,6 @@ void QTabBarPrivate::moveTab(int index, int offset)
     tabList[index].dragOffset = offset;
     layoutTab(index); // Make buttons follow tab
     q_func()->update();
-}
-
-
-/*!
-    \reimp
-*/
-void QTabBar::mouseDoubleClickEvent(QMouseEvent *event)
-{
-    Q_D(QTabBar);
-
-    const QPoint pos = event->pos();
-    const bool isEventInCornerButtons = (!d->leftB->isHidden() && d->leftB->geometry().contains(pos))
-                                     || (!d->rightB->isHidden() && d->rightB->geometry().contains(pos));
-    if (!isEventInCornerButtons) {
-        const int index = tabAt(pos);
-        emit tabBarDoubleClicked(index);
-    }
 }
 
 /*!\reimp
@@ -2219,7 +2211,7 @@ void QTabBar::setExpanding(bool enabled)
 
     \since 4.5
 
-    By default, this property is false;
+    By default, this property is \c false;
 */
 
 bool QTabBar::isMovable() const
@@ -2370,8 +2362,20 @@ void CloseButton::paintEvent(QPaintEvent *)
     style()->drawPrimitive(QStyle::PE_IndicatorTabClose, &opt, &p, this);
 }
 
+void QTabBarPrivate::Tab::TabBarAnimation::updateCurrentValue(const QVariant &current)
+{
+    priv->moveTab(priv->tabList.indexOf(*tab), current.toInt());
+}
+
+void QTabBarPrivate::Tab::TabBarAnimation::updateState(QAbstractAnimation::State, QAbstractAnimation::State newState)
+{
+    if (newState == Stopped) priv->moveTabFinished(priv->tabList.indexOf(*tab));
+}
+
 QT_END_NAMESPACE
 
 #include "moc_qtabbar.cpp"
 
 #endif // QT_NO_TABBAR
+
+

@@ -55,11 +55,12 @@
 #include <QMetaMethod>
 #ifndef QT_NO_ACCESSIBILITY
 #include <qaccessible.h>
-#include <private/qaccessible2_p.h>
 #endif
 
 #include <private/qtreeview_p.h>
 #include <private/qheaderview_p.h>
+
+#include <algorithm>
 
 QT_BEGIN_NAMESPACE
 
@@ -396,7 +397,7 @@ void QTreeView::setIndentation(int i)
   false, these controls are not shown for top-level items. This can be used to
   make a single level tree structure appear like a simple list of items.
 
-  By default, this property is true.
+  By default, this property is \c true.
 */
 bool QTreeView::rootIsDecorated() const
 {
@@ -424,7 +425,7 @@ void QTreeView::setRootIsDecorated(bool show)
   The height is obtained from the first item in the view.  It is updated
   when the data changes on that item.
 
-  By default, this property is false.
+  By default, this property is \c false.
 */
 bool QTreeView::uniformRowHeights() const
 {
@@ -445,7 +446,7 @@ void QTreeView::setUniformRowHeights(bool uniform)
   This property holds whether the user can expand and collapse items
   interactively.
 
-  By default, this property is true.
+  By default, this property is \c true.
 
 */
 bool QTreeView::itemsExpandable() const
@@ -526,7 +527,7 @@ int QTreeView::columnAt(int x) const
 }
 
 /*!
-    Returns true if the \a column is hidden; otherwise returns false.
+    Returns \c true if the \a column is hidden; otherwise returns \c false.
 
     \sa hideColumn(), isRowHidden()
 */
@@ -554,7 +555,7 @@ void QTreeView::setColumnHidden(int column, bool hide)
   \brief whether the header is shown or not.
   \since 4.4
 
-  If this property is true, the header is not shown otherwise it is.
+  If this property is \c true, the header is not shown otherwise it is.
   The default value is false.
 
   \sa header()
@@ -572,8 +573,8 @@ void QTreeView::setHeaderHidden(bool hide)
 }
 
 /*!
-    Returns true if the item in the given \a row of the \a parent is hidden;
-    otherwise returns false.
+    Returns \c true if the item in the given \a row of the \a parent is hidden;
+    otherwise returns \c false.
 
     \sa setRowHidden(), isColumnHidden()
 */
@@ -611,8 +612,8 @@ void QTreeView::setRowHidden(int row, const QModelIndex &parent, bool hide)
 /*!
   \since 4.3
 
-  Returns true if the item in first column in the given \a row
-  of the \a parent is spanning all the columns; otherwise returns false.
+  Returns \c true if the item in first column in the given \a row
+  of the \a parent is spanning all the columns; otherwise returns \c false.
 
   \sa setFirstColumnSpanned()
 */
@@ -809,7 +810,7 @@ void QTreeView::collapse(const QModelIndex &index)
 /*!
   \fn bool QTreeView::isExpanded(const QModelIndex &index) const
 
-  Returns true if the model item \a index is expanded; otherwise returns
+  Returns \c true if the model item \a index is expanded; otherwise returns
   false.
 
   \sa expand(), expanded(), setExpanded()
@@ -839,7 +840,7 @@ void QTreeView::setExpanded(const QModelIndex &index, bool expanded)
     \property QTreeView::sortingEnabled
     \brief whether sorting is enabled
 
-    If this property is true, sorting is enabled for the tree; if the property
+    If this property is \c true, sorting is enabled for the tree; if the property
     is false, sorting is not enabled. The default value is false.
 
     \note In order to avoid performance issues, it is recommended that
@@ -879,12 +880,12 @@ bool QTreeView::isSortingEnabled() const
     \property QTreeView::animated
     \brief whether animations are enabled
 
-    If this property is true the treeview will animate expansion
-    and collapsing of branches. If this property is false, the treeview
+    If this property is \c true the treeview will animate expansion
+    and collapsing of branches. If this property is \c false, the treeview
     will expand or collapse branches immediately without showing
     the animation.
 
-    By default, this property is false.
+    By default, this property is \c false.
 */
 
 void QTreeView::setAnimated(bool animate)
@@ -904,7 +905,7 @@ bool QTreeView::isAnimated() const
     \property QTreeView::allColumnsShowFocus
     \brief whether items should show keyboard focus using all columns
 
-    If this property is true all columns will show focus, otherwise only
+    If this property is \c true all columns will show focus, otherwise only
     one column will show focus.
 
     The default is false.
@@ -930,9 +931,9 @@ bool QTreeView::allColumnsShowFocus() const
     \brief the item text word-wrapping policy
     \since 4.3
 
-    If this property is true then the item text is wrapped where
+    If this property is \c true then the item text is wrapped where
     necessary at word-breaks; otherwise it is not wrapped at all.
-    This property is false by default.
+    This property is \c false by default.
 
     Note that even if wrapping is enabled, the cell will not be
     expanded to fit all text. Ellipsis will be inserted according to
@@ -1440,7 +1441,7 @@ void QTreeView::drawTree(QPainter *painter, const QRegion &region) const
     Q_D(const QTreeView);
     const QVector<QTreeViewItem> viewItems = d->viewItems;
 
-    QStyleOptionViewItem option = d->viewOptions();
+    QStyleOptionViewItem option = d->viewOptionsV1();
     const QStyle::State state = option.state;
     d->current = 0;
 
@@ -1585,7 +1586,7 @@ int QTreeViewPrivate::widthHintForIndex(const QModelIndex &index, int hint, cons
 
 /*!
     Draws the row in the tree view that contains the model item \a index,
-    using the \a painter given. The \a option control how the item is
+    using the \a painter given. The \a option controls how the item is
     displayed.
 
     \sa setAlternatingRowColors()
@@ -2179,10 +2180,10 @@ QModelIndex QTreeView::moveCursor(CursorAction cursorAction, Qt::KeyboardModifie
     if (!current.isValid()) {
         int i = d->below(-1);
         int c = 0;
-        while (c < d->header->count() && d->header->isSectionHidden(c))
+        while (c < d->header->count() && d->header->isSectionHidden(d->header->logicalIndex(c)))
             ++c;
         if (i < d->viewItems.count() && c < d->header->count()) {
-            return d->modelIndex(i, c);
+            return d->modelIndex(i, d->header->logicalIndex(c));
         }
         return QModelIndex();
     }
@@ -2849,7 +2850,7 @@ int QTreeView::sizeHintForColumn(int column) const
         return -1;
     ensurePolished();
     int w = 0;
-    QStyleOptionViewItem option = d->viewOptions();
+    QStyleOptionViewItem option = d->viewOptionsV1();
     const QVector<QTreeViewItem> viewItems = d->viewItems;
 
     const int maximumProcessRows = d->header->resizeContentsPrecision(); // To avoid this to take forever.
@@ -2857,6 +2858,21 @@ int QTreeView::sizeHintForColumn(int column) const
     int offset = 0;
     int start = d->firstVisibleItem(&offset);
     int end = d->lastVisibleItem(start, offset);
+    if (start < 0 || end < 0 || end == viewItems.size() - 1) {
+        end = viewItems.size() - 1;
+        if (maximumProcessRows < 0) {
+            start = 0;
+        } else if (maximumProcessRows == 0) {
+            start = qMax(0, end - 1);
+            int remainingHeight = viewport()->height();
+            while (start > 0 && remainingHeight > 0) {
+                remainingHeight -= d->itemHeight(start);
+                --start;
+            }
+        } else {
+            start = qMax(0, end - maximumProcessRows);
+        }
+    }
 
     int rowsProcessed = 0;
 
@@ -2946,7 +2962,7 @@ int QTreeView::indexRowSizeHint(const QModelIndex &index) const
         qSwap(end, start);
 
     int height = -1;
-    QStyleOptionViewItem option = d->viewOptions();
+    QStyleOptionViewItem option = d->viewOptionsV1();
     // ### If we want word wrapping in the items,
     // ### we need to go through all the columns
     // ### and set the width of the column
@@ -3219,7 +3235,7 @@ QPixmap QTreeViewPrivate::renderTreeToPixmapForAnimation(const QRect &rect) cons
     painter.end();
 
     //and now let's render the editors the editors
-    QStyleOptionViewItem option = viewOptions();
+    QStyleOptionViewItem option = viewOptionsV1();
     for (QEditorIndexHash::const_iterator it = editorIndexHash.constBegin(); it != editorIndexHash.constEnd(); ++it) {
         QWidget *editor = it.key();
         const QModelIndex &index = it.value();
@@ -3605,8 +3621,11 @@ int QTreeViewPrivate::firstVisibleItem(int *offset) const
 
 int QTreeViewPrivate::lastVisibleItem(int firstVisual, int offset) const
 {
-    if (firstVisual < 0 || offset < 0)
+    if (firstVisual < 0 || offset < 0) {
         firstVisual = firstVisibleItem(&offset);
+        if (firstVisual < 0)
+            return -1;
+    }
     int y = - offset;
     int value = viewport->height();
 
@@ -3758,7 +3777,7 @@ QList<QPair<int, int> > QTreeViewPrivate::columnRanges(const QModelIndex &topInd
         }
     }
     //let's sort the list
-    qSort(logicalIndexes.begin(), logicalIndexes.end());
+    std::sort(logicalIndexes.begin(), logicalIndexes.end());
 
     QList<QPair<int, int> > ret;
     QPair<int, int> current;
@@ -3887,6 +3906,14 @@ void QTreeViewPrivate::_q_sortIndicatorChanged(int column, Qt::SortOrder order)
     model->sort(column, order);
 }
 
+int QTreeViewPrivate::accessibleTree2Index(const QModelIndex &index) const
+{
+    Q_Q(const QTreeView);
+
+    // Note that this will include the header, even if its hidden.
+    return (q->visualIndex(index) + (q->header() ? 1 : 0)) * index.model()->columnCount() + index.column();
+}
+
 /*!
   \reimp
  */
@@ -3910,9 +3937,10 @@ void QTreeView::currentChanged(const QModelIndex &current, const QModelIndex &pr
     }
 #ifndef QT_NO_ACCESSIBILITY
     if (QAccessible::isActive() && current.isValid()) {
-        int entry = (visualIndex(current) + (header()?1:0))*current.model()->columnCount()+current.column();
+        Q_D(QTreeView);
+
         QAccessibleEvent event(this, QAccessible::Focus);
-        event.setChild(entry);
+        event.setChild(d->accessibleTree2Index(current));
         QAccessible::updateAccessibility(&event);
     }
 #endif
@@ -3927,10 +3955,12 @@ void QTreeView::selectionChanged(const QItemSelection &selected,
     QAbstractItemView::selectionChanged(selected, deselected);
 #ifndef QT_NO_ACCESSIBILITY
     if (QAccessible::isActive()) {
+        Q_D(QTreeView);
+
         // ### does not work properly for selection ranges.
         QModelIndex sel = selected.indexes().value(0);
         if (sel.isValid()) {
-            int entry = (visualIndex(sel) + (header()?1:0))*sel.model()->columnCount()+sel.column();
+            int entry = d->accessibleTree2Index(sel);
             Q_ASSERT(entry >= 0);
             QAccessibleEvent event(this, QAccessible::Selection);
             event.setChild(entry);
@@ -3938,7 +3968,7 @@ void QTreeView::selectionChanged(const QItemSelection &selected,
         }
         QModelIndex desel = deselected.indexes().value(0);
         if (desel.isValid()) {
-            int entry = (visualIndex(desel) + (header()?1:0))*desel.model()->columnCount()+desel.column();
+            int entry = d->accessibleTree2Index(desel);
             Q_ASSERT(entry >= 0);
             QAccessibleEvent event(this, QAccessible::SelectionRemove);
             event.setChild(entry);

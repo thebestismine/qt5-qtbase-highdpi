@@ -63,17 +63,22 @@ public:
     virtual QSizeF physicalScreenSize() const;
     virtual QSize screenSize() const;
     virtual QDpi logicalDpi() const;
+    virtual Qt::ScreenOrientation nativeOrientation() const;
+    virtual Qt::ScreenOrientation orientation() const;
     virtual int screenDepth() const;
     virtual QImage::Format screenFormat() const;
     virtual QSurfaceFormat surfaceFormatFor(const QSurfaceFormat &inputFormat) const;
-    virtual EGLNativeWindowType createNativeWindow(const QSize &size, const QSurfaceFormat &format);
+    virtual EGLNativeWindowType createNativeWindow(QPlatformWindow *platformWindow,
+                                                   const QSize &size,
+                                                   const QSurfaceFormat &format);
     virtual void destroyNativeWindow(EGLNativeWindowType window);
     virtual bool hasCapability(QPlatformIntegration::Capability cap) const;
     virtual QEglFSCursor *createCursor(QEglFSScreen *screen) const;
     virtual bool filterConfig(EGLDisplay display, EGLConfig config) const;
     virtual void waitForVSync() const;
 
-    virtual const char *fbDeviceName() const;
+    virtual QByteArray fbDeviceName() const;
+    virtual int framebufferIndex() const;
 
     static QEglFSHooks *hooks()
     {

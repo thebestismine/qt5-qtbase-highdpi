@@ -58,6 +58,10 @@
 #include "qnetworkreplydataimpl_p.h"
 #include "qnetworkreplyfileimpl_p.h"
 
+#if defined(Q_OS_IOS) && defined(QT_NO_SSL)
+#include "qnetworkreplynsurlconnectionimpl_p.h"
+#endif
+
 #include "QtCore/qbuffer.h"
 #include "QtCore/qurl.h"
 #include "QtCore/qvector.h"
@@ -220,12 +224,7 @@ static void ensureInitialized()
     \note The network and roaming support in QNetworkAccessManager is conditional
     upon the platform supporting connection management. The
     \l QNetworkConfigurationManager::NetworkSessionRequired can be used to
-    detect whether QNetworkAccessManager utilizes this feature. Currently only
-    Meego/Harmattan platforms provide connection management support.
-
-    \note This feature cannot be used in combination with the Bearer Management
-    API as provided by QtMobility. Applications have to migrate to the Qt version
-    of Bearer Management.
+    detect whether QNetworkAccessManager utilizes this feature.
 
     \sa QNetworkRequest, QNetworkReply, QNetworkProxy
 */
@@ -1159,6 +1158,12 @@ QNetworkReply *QNetworkAccessManager::createRequest(QNetworkAccessManager::Opera
         }
     }
 
+// Use NSURLConnection for https on iOS when OpenSSL is disabled.
+#if defined(Q_OS_IOS) && defined(QT_NO_SSL)
+    if (scheme == QLatin1String("https"))
+        return new QNetworkReplyNSURLConnectionImpl(this, request, op, outgoingData);
+#endif
+
 #ifndef QT_NO_HTTP
     // Since Qt 5 we use the new QNetworkReplyHttpImpl
     if (scheme == QLatin1String("http") || scheme == QLatin1String("preconnect-http")
@@ -1358,8 +1363,8 @@ void QNetworkAccessManagerPrivate::authenticationRequired(QAuthenticator *authen
         // if credentials are included in the url, then use them
         if (!url.userName().isEmpty()
             && !url.password().isEmpty()) {
-            authenticator->setUser(url.userName());
-            authenticator->setPassword(url.password());
+            authenticator->setUser(url.userName(QUrl::FullyDecoded));
+            authenticator->setPassword(url.password(QUrl::FullyDecoded));
             *urlForLastAuthentication = url;
             authenticationManager->cacheCredentials(url, authenticator);
             return;

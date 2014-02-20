@@ -46,6 +46,7 @@
 #include <QtWidgets/qdialog.h>
 #include <QtWidgets/qapplication.h>
 #include <private/qwidget_p.h>
+#include <QtGui/qpa/qplatformdialoghelper.h>
 #include <QtWidgets/qaction.h>
 
 #include "qdialogbuttonbox.h"
@@ -166,46 +167,8 @@ enum {
 
 static QDialogButtonBox::ButtonRole roleFor(QDialogButtonBox::StandardButton button)
 {
-    switch (button) {
-    case QDialogButtonBox::Ok:
-    case QDialogButtonBox::Save:
-    case QDialogButtonBox::Open:
-    case QDialogButtonBox::SaveAll:
-    case QDialogButtonBox::Retry:
-    case QDialogButtonBox::Ignore:
-        return QDialogButtonBox::AcceptRole;
-
-    case QDialogButtonBox::Cancel:
-    case QDialogButtonBox::Close:
-    case QDialogButtonBox::Abort:
-        return QDialogButtonBox::RejectRole;
-
-    case QDialogButtonBox::Discard:
-        return QDialogButtonBox::DestructiveRole;
-
-    case QDialogButtonBox::Help:
-        return QDialogButtonBox::HelpRole;
-
-    case QDialogButtonBox::Apply:
-        return QDialogButtonBox::ApplyRole;
-
-    case QDialogButtonBox::Yes:
-    case QDialogButtonBox::YesToAll:
-        return QDialogButtonBox::YesRole;
-
-    case QDialogButtonBox::No:
-    case QDialogButtonBox::NoToAll:
-        return QDialogButtonBox::NoRole;
-
-    case QDialogButtonBox::RestoreDefaults:
-    case QDialogButtonBox::Reset:
-        return QDialogButtonBox::ResetRole;
-
-    case QDialogButtonBox::NoButton:    // NoButton means zero buttons, not "No" button
-        ;
-    }
-
-    return QDialogButtonBox::InvalidRole;
+    return static_cast<QDialogButtonBox::ButtonRole>(QMessageDialogOptions::buttonRole(
+        static_cast<QMessageDialogOptions::StandardButton>(button)));
 }
 
 static const uint layouts[2][5][14] =
@@ -1075,7 +1038,7 @@ void QDialogButtonBoxPrivate::_q_handleButtonDestroyed()
     \property QDialogButtonBox::centerButtons
     \brief whether the buttons in the button box are centered
 
-    By default, this property is false. This behavior is appopriate
+    By default, this property is \c false. This behavior is appopriate
     for most types of dialogs. A notable exception is message boxes
     on most platforms (e.g. Windows), where the button box is
     centered horizontally.

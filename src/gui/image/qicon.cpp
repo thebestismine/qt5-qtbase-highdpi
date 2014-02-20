@@ -43,6 +43,7 @@
 #include "qicon_p.h"
 #include "qiconengine.h"
 #include "qiconengineplugin.h"
+#include "qimagereader.h"
 #include "private/qfactoryloader_p.h"
 #include "private/qiconloader_p.h"
 #include "qpainter.h"
@@ -366,37 +367,40 @@ void QPixmapIconEngine::addPixmap(const QPixmap &pixmap, QIcon::Mode mode, QIcon
 void QPixmapIconEngine::addFile(const QString &fileName, const QSize &_size, QIcon::Mode mode, QIcon::State state)
 {
     if (!fileName.isEmpty()) {
-        QSize size = _size;
-        QPixmap pixmap;
-
         QString abs = fileName;
         if (fileName.at(0) != QLatin1Char(':'))
             abs = QFileInfo(fileName).absoluteFilePath();
+        QImageReader reader(abs);
 
-        for (int i = 0; i < pixmaps.count(); ++i) {
-            if (pixmaps.at(i).mode == mode && pixmaps.at(i).state == state) {
-                QPixmapIconEngineEntry *pe = &pixmaps[i];
-                if(size == QSize()) {
-                    pixmap = QPixmap(abs);
-                    size = pixmap.size();
-                }
-                if (pe->size == QSize() && pe->pixmap.isNull()) {
-                    pe->pixmap = QPixmap(pe->fileName);
-                    // Reset the devicePixelRatio. The pixmap may be loaded from a @2x file,
-                    // but be used as a 1x pixmap by QIcon.
-                    pe->pixmap.setDevicePixelRatio(1.0);
-                    pe->size = pe->pixmap.size();
-                }
-                if(pe->size == size) {
-                    pe->pixmap = pixmap;
-                    pe->fileName = abs;
-                    return;
+        do {
+            QSize size = _size;
+            QPixmap pixmap;
+
+            for (int i = 0; i < pixmaps.count(); ++i) {
+                if (pixmaps.at(i).mode == mode && pixmaps.at(i).state == state) {
+                    QPixmapIconEngineEntry *pe = &pixmaps[i];
+                    if (size == QSize()) {
+                        pixmap.convertFromImage(reader.read());
+                        size = pixmap.size();
+                    }
+                    if (pe->size == QSize() && pe->pixmap.isNull()) {
+                        pe->pixmap = QPixmap(pe->fileName);
+                        // Reset the devicePixelRatio. The pixmap may be loaded from a @2x file,
+                        // but be used as a 1x pixmap by QIcon.
+                        pe->pixmap.setDevicePixelRatio(1.0);
+                        pe->size = pe->pixmap.size();
+                    }
+                    if (pe->size == size) {
+                        pe->pixmap = pixmap;
+                        pe->fileName = abs;
+                        return;
+                    }
                 }
             }
-        }
-        QPixmapIconEngineEntry e(abs, size, mode, state);
-        e.pixmap = pixmap;
-        pixmaps += e;
+            QPixmapIconEngineEntry e(abs, size, mode, state);
+            e.pixmap = pixmap;
+            pixmaps += e;
+        } while (reader.jumpToNextImage());
     }
 }
 
@@ -653,6 +657,14 @@ QIcon &QIcon::operator=(const QIcon &other)
 }
 
 /*!
+    \fn QIcon &QIcon::operator=(QIcon &&other)
+
+    Move-assigns \a other to this QIcon instance.
+
+    \since 5.2
+*/
+
+/*!
     \fn void QIcon::swap(QIcon &other)
     \since 4.8
 
@@ -861,7 +873,7 @@ void QIcon::paint(QPainter *painter, const QRect &rect, Qt::Alignment alignment,
 */
 
 /*!
-    Returns true if the icon is empty; otherwise returns false.
+    Returns \c true if the icon is empty; otherwise returns \c false.
 
     An icon is empty if it has neither a pixmap nor a filename.
 
@@ -1138,8 +1150,8 @@ QIcon QIcon::fromTheme(const QString &name, const QIcon &fallback)
 /*!
     \since 4.6
 
-    Returns true if there is an icon available for \a name in the
-    current icon theme, otherwise returns false.
+    Returns \c true if there is an icon available for \a name in the
+    current icon theme, otherwise returns \c false.
 
     \sa themeSearchPaths(), fromTheme(), setThemeName()
 */

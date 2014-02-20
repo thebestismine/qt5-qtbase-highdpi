@@ -72,7 +72,7 @@ static bool correctActionContext(Qt::ShortcutContext context, QAction *a, QWidge
 
 
 /*! \internal
-    Returns true if the widget \a w is a logical sub window of the current
+    Returns \c true if the widget \a w is a logical sub window of the current
     top-level widget.
 */
 bool qWidgetShortcutContextMatcher(QObject *object, Qt::ShortcutContext context)
@@ -158,7 +158,7 @@ static bool correctWidgetContext(Qt::ShortcutContext context, QWidget *w, QWidge
 
     if (context == Qt::WidgetWithChildrenShortcut) {
         const QWidget *tw = QApplication::focusWidget();
-        while (tw && tw != w && (tw->windowType() == Qt::Widget || tw->windowType() == Qt::Popup))
+        while (tw && tw != w && (tw->windowType() == Qt::Widget || tw->windowType() == Qt::Popup || tw->windowType() == Qt::SubWindow))
             tw = tw->parentWidget();
         return tw == w;
     }
@@ -279,13 +279,12 @@ static bool correctActionContext(Qt::ShortcutContext context, QAction *a, QWidge
             // (and reaches this point), then the menu item itself has been disabled.
             // This occurs at the QPA level on Mac, were we disable all the Cocoa menus
             // when showing a modal window.
-            Q_UNUSED(menu);
-            continue;
-#else
+            if (a->shortcut().count() <= 1)
+                continue;
+#endif
             QAction *a = menu->menuAction();
             if (correctActionContext(context, a, active_window))
                 return true;
-#endif
         } else
 #endif
             if (correctWidgetContext(context, w, active_window))
@@ -517,7 +516,7 @@ QKeySequence QShortcut::key() const
     If the application is in \c WhatsThis mode the shortcut will not emit
     the signals, but will show the "What's This?" text instead.
 
-    By default, this property is true.
+    By default, this property is \c true.
 
     \sa whatsThis
 */

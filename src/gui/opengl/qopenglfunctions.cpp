@@ -347,6 +347,9 @@ static int qt_gl_resolve_extensions()
 {
     int extensions = 0;
     QOpenGLExtensionMatcher extensionMatcher;
+    if (extensionMatcher.match("GL_EXT_bgra"))
+        extensions |= QOpenGLExtensions::BGRATextureFormat;
+
 #if defined(QT_OPENGL_ES)
     if (extensionMatcher.match("GL_OES_mapbuffer"))
         extensions |= QOpenGLExtensions::MapBuffer;
@@ -356,10 +359,9 @@ static int qt_gl_resolve_extensions()
         extensions |= QOpenGLExtensions::ElementIndexUint;
     if (extensionMatcher.match("GL_OES_depth24"))
         extensions |= QOpenGLExtensions::Depth24;
-
-    if (extensionMatcher.match("GL_EXT_bgra"))
+    // TODO: Consider matching GL_APPLE_texture_format_BGRA8888 as well, but it needs testing.
+    if (extensionMatcher.match("GL_IMG_texture_format_BGRA8888") || extensionMatcher.match("GL_EXT_texture_format_BGRA8888"))
         extensions |= QOpenGLExtensions::BGRATextureFormat;
-
 #else
     QSurfaceFormat format = QOpenGLContext::currentContext()->format();
     extensions |= QOpenGLExtensions::ElementIndexUint | QOpenGLExtensions::MapBuffer;
@@ -403,7 +405,7 @@ QOpenGLFunctions::OpenGLFeatures QOpenGLFunctions::openGLFeatures() const
 }
 
 /*!
-    Returns true if \a feature is present on this system's OpenGL
+    Returns \c true if \a feature is present on this system's OpenGL
     implementation; false otherwise.
 
     It is assumed that the QOpenGLContext associated with this function
@@ -441,7 +443,7 @@ QOpenGLExtensions::OpenGLExtensions QOpenGLExtensions::openGLExtensions()
 }
 
 /*!
-    Returns true if \a extension is present on this system's OpenGL
+    Returns \c true if \a extension is present on this system's OpenGL
     implementation; false otherwise.
 
     It is assumed that the QOpenGLContext associated with this extension

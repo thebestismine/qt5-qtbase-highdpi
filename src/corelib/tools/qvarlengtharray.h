@@ -49,6 +49,7 @@
 #include <new>
 #include <string.h>
 #include <stdlib.h>
+#include <algorithm>
 
 QT_BEGIN_NAMESPACE
 
@@ -317,7 +318,7 @@ Q_OUTOFLINE_TEMPLATE void QVarLengthArray<T, Prealloc>::realloc(int asize, int a
 template <class T, int Prealloc>
 Q_OUTOFLINE_TEMPLATE T QVarLengthArray<T, Prealloc>::value(int i) const
 {
-    if (i < 0 || i >= size()) {
+    if (uint(i) >= uint(size())) {
         return T();
     }
     return at(i);
@@ -325,7 +326,7 @@ Q_OUTOFLINE_TEMPLATE T QVarLengthArray<T, Prealloc>::value(int i) const
 template <class T, int Prealloc>
 Q_OUTOFLINE_TEMPLATE T QVarLengthArray<T, Prealloc>::value(int i, const T &defaultValue) const
 {
-    return (i < 0 || i >= size()) ? defaultValue : at(i);
+    return (uint(i) >= uint(size())) ? defaultValue : at(i);
 }
 
 template <class T, int Prealloc>
@@ -396,7 +397,7 @@ Q_OUTOFLINE_TEMPLATE typename QVarLengthArray<T, Prealloc>::iterator QVarLengthA
     int l = int(aend - ptr);
     int n = l - f;
     if (QTypeInfo<T>::isComplex) {
-        qCopy(ptr + l, ptr + s, ptr + f);
+        std::copy(ptr + l, ptr + s, ptr + f);
         T *i = ptr + s;
         T *b = ptr + s - n;
         while (i != b) {

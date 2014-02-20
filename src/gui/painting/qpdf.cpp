@@ -1486,7 +1486,6 @@ QPdfEnginePrivate::QPdfEnginePrivate()
       leftMargin(10), topMargin(10), rightMargin(10), bottomMargin(10) // ~3.5 mm
 {
     resolution = 1200;
-    postscript = false;
     currentObject = 1;
     currentPage = 0;
     stroker.stream = 0;
@@ -1520,7 +1519,6 @@ bool QPdfEngine::begin(QPaintDevice *pdev)
         d->ownsDevice = true;
     }
 
-    d->postscript = false;
     d->currentObject = 1;
 
     d->currentPage = new QPdfPage;
@@ -1651,7 +1649,7 @@ void QPdfEnginePrivate::writeInfo()
     xprintf("\n/Creator ");
     printString(creator);
     xprintf("\n/Producer ");
-    printString(QString::fromLatin1("Qt " QT_VERSION_STR " (C) 2012 Digia Plc and/or its subsidiary(-ies)"));
+    printString(QString::fromLatin1("Qt " QT_VERSION_STR));
     QDateTime now = QDateTime::currentDateTime().toUTC();
     QTime t = now.time();
     QDate d = now.date();
@@ -2506,8 +2504,8 @@ void QPdfEnginePrivate::drawTextItem(const QPointF &p, const QTextItemInt &ti)
     QFontEngine::FaceId face_id = fe->faceId();
     bool noEmbed = false;
     if (face_id.filename.isEmpty()
-        || (!postscript && ((fe->fsType & 0x200) /* bitmap embedding only */
-                            || (fe->fsType == 2) /* no embedding allowed */))) {
+        || fe->fsType & 0x200 /* bitmap embedding only */
+        || fe->fsType == 2 /* no embedding allowed */) {
         *currentPage << "Q\n";
         q->QPaintEngine::drawTextItem(p, ti);
         *currentPage << "q\n";

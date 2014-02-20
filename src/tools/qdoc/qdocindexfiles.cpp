@@ -50,6 +50,8 @@
 #include "generator.h"
 #include <qdebug.h>
 
+#include <algorithm>
+
 QT_BEGIN_NAMESPACE
 
 /*!
@@ -133,7 +135,8 @@ void QDocIndexFiles::readIndexFile(const QString& path)
         else {
             // Use a fake directory, since we will copy the output to a sub directory of
             // installDir when using "make install". This is just for a proper relative path.
-            QDir installDir(path.section('/', 0, -3) + "/outputdir");
+            //QDir installDir(path.section('/', 0, -3) + "/outputdir");
+            QDir installDir(path.section('/', 0, -3) + '/' + Generator::outputSubdir());
             indexUrl = installDir.relativeFilePath(path).section('/', 0, -2);
         }
         project_ = indexElement.attribute("project", QString());
@@ -169,6 +172,12 @@ void QDocIndexFiles::readIndexSection(const QDomElement& element,
     Node* node;
     Location location;
 
+    QString filePath;
+    int lineNo = 0;
+    if (element.hasAttribute("filepath")) {
+        filePath = element.attribute("filepath", QString());
+        lineNo = element.attribute("lineno", QString()).toInt();
+    }
     if (element.nodeName() == "namespace") {
         node = new NamespaceNode(parent, name);
 
@@ -187,14 +196,22 @@ void QDocIndexFiles::readIndexSection(const QDomElement& element,
             location = Location(indexUrl + QLatin1Char('/') + name.toLower() + ".html");
         else if (!indexUrl.isNull())
             location = Location(name.toLower() + ".html");
+        bool abstract = false;
+        if (element.attribute("abstract") == "true")
+            abstract = true;
+        node->setAbstract(abstract);
     }
     else if ((element.nodeName() == "qmlclass") ||
              ((element.nodeName() == "page") && (element.attribute("subtype") == "qmlclass"))) {
         QmlClassNode* qcn = new QmlClassNode(parent, name);
         qcn->setTitle(element.attribute("title"));
         QString qmlModuleName = element.attribute("qml-module-name");
-        QString qmlModuleVersion = element.attribute("qml-module-version");
-        qdb_->addToQmlModule(qmlModuleName + " " + qmlModuleVersion, qcn);
+        if (!qmlModuleName.isEmpty())
+            qdb_->addToQmlModule(qmlModuleName, qcn);
+        bool abstract = false;
+        if (element.attribute("abstract") == "true")
+            abstract = true;
+        qcn->setAbstract(abstract);
         QString qmlFullBaseName = element.attribute("qml-base-type");
         if (!qmlFullBaseName.isEmpty())
             qcn->setQmlBaseName(qmlFullBaseName);
@@ -263,50 +280,58 @@ void QDocIndexFiles::readIndexSection(const QDomElement& element,
     else if (element.nodeName() == "page") {
         Node::SubType subtype;
         Node::PageType ptype = Node::NoPageType;
-        if (element.attribute("subtype") == "example") {
+        QString attr = element.attribute("subtype");
+        if (attr == "example") {
             subtype = Node::Example;
             ptype = Node::ExamplePage;
         }
-        else if (element.attribute("subtype") == "header") {
+        else if (attr == "header") {
             subtype = Node::HeaderFile;
             ptype = Node::ApiPage;
         }
-        else if (element.attribute("subtype") == "file") {
+        else if (attr == "file") {
             subtype = Node::File;
             ptype = Node::NoPageType;
         }
-        else if (element.attribute("subtype") == "group") {
+        else if (attr == "group") {
             subtype = Node::Group;
             ptype = Node::OverviewPage;
         }
-        else if (element.attribute("subtype") == "module") {
+        else if (attr == "module") {
             subtype = Node::Module;
             ptype = Node::OverviewPage;
         }
-        else if (element.attribute("subtype") == "qmlmodule") {
+        else if (attr == "qmlmodule") {
             subtype = Node::QmlModule;
             ptype = Node::OverviewPage;
         }
-        else if (element.attribute("subtype") == "page") {
+        else if (attr == "page") {
             subtype = Node::Page;
             ptype = Node::ArticlePage;
         }
-        else if (element.attribute("subtype") == "externalpage") {
+        else if (attr == "externalpage") {
             subtype = Node::ExternalPage;
             ptype = Node::ArticlePage;
         }
-        else if (element.attribute("subtype") == "qmlclass") {
+        else if (attr == "qmlclass") {
             subtype = Node::QmlClass;
             ptype = Node::ApiPage;
         }
-        else if (element.attribute("subtype") == "qmlbasictype") {
+        else if (attr == "qmlbasictype") {
             subtype = Node::QmlBasicType;
             ptype = Node::ApiPage;
         }
         else
             return;
 
-        DocNode* docNode = new DocNode(parent, name, subtype, ptype);
+        DocNode* docNode = 0;
+        if (subtype == Node::QmlModule) {
+            QString t = element.attribute("qml-module-name") + " " +
+                element.attribute("qml-module-version");
+            docNode = qdb_->addQmlModule(t);
+        }
+        else
+            docNode = new DocNode(parent, name, subtype, ptype);
         docNode->setTitle(element.attribute("title"));
 
         if (element.hasAttribute("location"))
@@ -447,7 +472,7 @@ void QDocIndexFiles::readIndexSection(const QDomElement& element,
         node->setAccess(Node::Public);
     else if (access == "protected")
         node->setAccess(Node::Protected);
-    else if (access == "private")
+    else if ((access == "private") || (access == "internal"))
         node->setAccess(Node::Private);
     else
         node->setAccess(Node::Public);
@@ -489,8 +514,11 @@ void QDocIndexFiles::readIndexSection(const QDomElement& element,
     QString moduleName = element.attribute("module");
     if (!moduleName.isEmpty())
         node->setModuleName(moduleName);
-    if (!indexUrl.isEmpty()) {
-        node->setUrl(indexUrl + QLatin1Char('/') + href);
+    if (!href.isEmpty()) {
+        if (node->isExternalPage())
+            node->setUrl(href);
+        else if (!indexUrl.isEmpty())
+            node->setUrl(indexUrl + QLatin1Char('/') + href);
     }
 
     QString since = element.attribute("since");
@@ -515,6 +543,12 @@ void QDocIndexFiles::readIndexSection(const QDomElement& element,
 
     // Create some content for the node.
     QSet<QString> emptySet;
+    Location t(filePath);
+    if (!filePath.isEmpty()) {
+        t.setLineNo(lineNo);
+        node->setLocation(t);
+        location = t;
+    }
     Doc doc(location, location, " ", emptySet, emptySet); // placeholder
     node->setDoc(doc);
     node->setIndexNodeFlag();
@@ -633,8 +667,9 @@ bool QDocIndexFiles::generateIndexSection(QXmlStreamWriter& writer,
         nodeName = "page";
         if (node->subType() == Node::QmlClass) {
             nodeName = "qmlclass";
-            qmlModuleName = node->qmlModuleName();
-            qmlModuleVersion = node->qmlModuleVersion();
+            QmlModuleNode* qmn = node->qmlModule();
+            if (qmn)
+                qmlModuleName = qmn->qmlModuleName();
             qmlFullBaseName = node->qmlFullBaseName();
         }
         else if (node->subType() == Node::QmlBasicType)
@@ -683,6 +718,7 @@ bool QDocIndexFiles::generateIndexSection(QXmlStreamWriter& writer,
         access = "protected";
         break;
     case Node::Private:
+#if 0
         // Do not include private non-internal nodes in the index.
         // (Internal public and protected nodes are marked as private
         // by qdoc. We can check their internal status to determine
@@ -691,6 +727,13 @@ bool QDocIndexFiles::generateIndexSection(QXmlStreamWriter& writer,
             access = "internal";
         else
             return false;
+#endif
+        {
+            access = "private";
+            bool b = generateInternalNodes;
+            if (b)
+                b = false;
+        }
         break;
     default:
         return false;
@@ -704,7 +747,6 @@ bool QDocIndexFiles::generateIndexSection(QXmlStreamWriter& writer,
     writer.writeStartElement(nodeName);
 
     QXmlStreamAttributes attributes;
-    writer.writeAttribute("access", access);
 
     if (node->type() != Node::Document) {
         QString threadSafety;
@@ -751,27 +793,55 @@ bool QDocIndexFiles::generateIndexSection(QXmlStreamWriter& writer,
         status = "main";
         break;
     }
-    writer.writeAttribute("status", status);
 
     writer.writeAttribute("name", objName);
+    if (node->isQmlModule()) {
+        qmlModuleName = node->qmlModuleName();
+        qmlModuleVersion = node->qmlModuleVersion();
+    }
     if (!qmlModuleName.isEmpty()) {
         writer.writeAttribute("qml-module-name", qmlModuleName);
-        writer.writeAttribute("qml-module-version", qmlModuleVersion);
+        if (node->isQmlModule())
+            writer.writeAttribute("qml-module-version", qmlModuleVersion);
         if (!qmlFullBaseName.isEmpty())
             writer.writeAttribute("qml-base-type", qmlFullBaseName);
     }
-    QString fullName = node->fullDocumentName();
-    if (fullName != objName)
-        writer.writeAttribute("fullname", fullName);
+
     QString href;
-    if (Generator::useOutputSubdirs())
-        href = node->outputSubdirectory();
+    if (!node->isExternalPage()) {
+        QString fullName = node->fullDocumentName();
+        if (fullName != objName)
+            writer.writeAttribute("fullname", fullName);
+        if (Generator::useOutputSubdirs())
+            href = node->outputSubdirectory();
+        if (!href.isEmpty())
+            href.append(QLatin1Char('/'));
+        href.append(gen_->fullDocumentLocation(node));
+    }
+    else
+        href = node->name();
+    if (node->isQmlNode()) {
+        InnerNode* p = node->parent();
+        if (p) {
+            if (p->isQmlPropertyGroup())
+                p = p->parent();
+            if (p && p->isQmlType() && p->isAbstract())
+                href.clear();
+        }
+    }
     if (!href.isEmpty())
-        href.append(QLatin1Char('/'));
-    href.append(gen_->fullDocumentLocation(node));
-    writer.writeAttribute("href", href);
-    if ((node->type() != Node::Document) && (!node->isQmlNode()))
+        writer.writeAttribute("href", href);
+
+    writer.writeAttribute("access", access);
+    writer.writeAttribute("status", status);
+    if (node->isAbstract())
+        writer.writeAttribute("abstract", "true");
+    if (!node->location().fileName().isEmpty())
         writer.writeAttribute("location", node->location().fileName());
+    if (!node->location().filePath().isEmpty()) {
+        writer.writeAttribute("filepath", node->location().filePath());
+        writer.writeAttribute("lineno", QString("%1").arg(node->location().lineNo()));
+    }
 
     if (!node->since().isEmpty()) {
         writer.writeAttribute("since", node->since());
@@ -866,7 +936,6 @@ bool QDocIndexFiles::generateIndexSection(QXmlStreamWriter& writer,
             writer.writeAttribute("title", docNode->title());
             writer.writeAttribute("fulltitle", docNode->fullTitle());
             writer.writeAttribute("subtitle", docNode->subTitle());
-            writer.writeAttribute("location", docNode->doc().location().fileName());
             if (!node->moduleName().isEmpty() && writeModuleName) {
                 writer.writeAttribute("module", node->moduleName());
             }
@@ -1124,7 +1193,7 @@ bool QDocIndexFiles::generateIndexSection(QXmlStreamWriter& writer,
 }
 
 /*!
-  Returns true if the node \a n1 is less than node \a n2. The
+  Returns \c true if the node \a n1 is less than node \a n2. The
   comparison is performed by comparing properties of the nodes
   in order of increasing complexity.
 */
@@ -1133,7 +1202,7 @@ bool compareNodes(const Node* n1, const Node* n2)
     // Private nodes can occur in any order since they won't normally be
     // written to the index.
     if (n1->access() == Node::Private && n2->access() == Node::Private)
-        return true;
+        return false;
 
     if (n1->location().filePath() < n2->location().filePath())
         return true;
@@ -1200,7 +1269,7 @@ void QDocIndexFiles::generateIndexSections(QXmlStreamWriter& writer,
             const InnerNode* inner = static_cast<const InnerNode*>(node);
 
             NodeList cnodes = inner->childNodes();
-            qSort(cnodes.begin(), cnodes.end(), compareNodes);
+            std::sort(cnodes.begin(), cnodes.end(), compareNodes);
 
             foreach (Node* child, cnodes) {
                 /*

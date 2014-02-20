@@ -95,6 +95,7 @@ public:
           stretchSections(0),
           contentsSections(0),
           minimumSectionSize(-1),
+          maximumSectionSize(-1),
           lastSectionSize(0),
           sectionIndicatorOffset(0),
           sectionIndicator(0),
@@ -115,6 +116,8 @@ public:
     void _q_layoutChanged();
 
     bool isSectionSelected(int section) const;
+    bool isFirstVisibleSection(int section) const;
+    bool isLastVisibleSection(int section) const;
 
     inline bool rowIntersectsSelection(int row) const {
         return (selectionModel ? selectionModel->rowIntersectsSelection(row, root) : false);
@@ -285,6 +288,7 @@ public:
     int contentsSections;
     int defaultSectionSize;
     int minimumSectionSize;
+    int maximumSectionSize;
     int lastSectionSize; // $$$
     int sectionIndicatorOffset;
     Qt::Alignment defaultAlignment;

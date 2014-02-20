@@ -47,7 +47,8 @@
 #ifndef QT_NO_CONCURRENT
 
 #include <QtCore/qvector.h>
-#include <QtCore/qalgorithms.h>
+
+#include <algorithm>
 
 QT_BEGIN_NAMESPACE
 
@@ -101,9 +102,21 @@ public:
     {
         if (dirty) {
             dirty = false;
+
+// This is a workaround for http://gcc.gnu.org/bugzilla/show_bug.cgi?id=58800
+// Avoid using std::nth_element for the affected stdlibc++ releases 4.7.3 and 4.8.2.
+// Note that the official __GLIBCXX__ value of the releases is not used since that
+// one might be patched on some GNU/Linux distributions.
+#if defined(__GLIBCXX__) && __GLIBCXX__ <= 20140107
             QVector<T> sorted = values;
-            qSort(sorted);
-            currentMedian = sorted.at(bufferSize / 2 + 1);
+            std::sort(sorted.begin(), sorted.end());
+            currentMedian = sorted.at(bufferSize / 2);
+#else
+            QVector<T> copy = values;
+            typename QVector<T>::iterator begin = copy.begin(), mid = copy.begin() + bufferSize/2, end = copy.end();
+            std::nth_element(begin, mid, end);
+            currentMedian = *mid;
+#endif
         }
         return currentMedian;
     }

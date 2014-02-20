@@ -60,7 +60,7 @@ QT_BEGIN_NAMESPACE
     QScopedPointer guarantees that the object pointed to will get deleted when
     the current scope disappears.
 
-    Consider this function which does heap allocations, and have various exit points:
+    Consider this function which does heap allocations, and has various exit points:
 
     \snippet code/src_corelib_tools_qscopedpointer.cpp 0
 
@@ -133,33 +133,6 @@ QT_BEGIN_NAMESPACE
     Constructs this QScopedPointer instance and sets its pointer to \a p.
 */
 
-#ifndef Q_QDOC // QTBUG-32675, qdoc can't parse rvalue refs
-/*!
-    \fn QScopedPointer::QScopedPointer(QScopedPointer<T, Cleanup> &&other)
-
-    Move-constructs a QScopedPointer instance, making it point at the same
-    object that \a other was pointing to. \a other is reset to point to \c{NULL}.
-
-    \since 5.2
-*/
-
-/*!
-    \fn QScopedPointer<T, Cleanup> &operator=(QScopedPointer<T, Cleanup> &&other)
-
-    Move-assigns \a other to this QScopedPointer instance, transferring the
-    ownership of the managed pointer to this instance.
-
-    If \a other and this instance are actually the same object, this operator
-    does nothing.
-
-    Otherwise, this instance is set to point to the object \a other
-    is pointing to, and \a other is set to point to \c{NULL}.
-    If this instance was pointing to an object, that object is destroyed,
-
-    \since 5.2
-*/
-#endif
-
 /*!
     \fn QScopedPointer::~QScopedPointer()
 
@@ -207,18 +180,18 @@ QT_BEGIN_NAMESPACE
 /*!
     \fn bool operator==(const QScopedPointer<T, Cleanup> &lhs, const QScopedPointer<T, Cleanup> &rhs)
 
-    Equality operator. Returns true if the scoped pointers
+    Equality operator. Returns \c true if the scoped pointers
     \a lhs and \a rhs are pointing to the same object.
-    Otherwise returns false.
+    Otherwise returns \c false.
 */
 
 
 /*!
     \fn bool operator!=(const QScopedPointer<T, Cleanup> &lhs, const QScopedPointer<T, Cleanup> &rhs)
 
-    Inequality operator. Returns true if the scoped pointers
+    Inequality operator. Returns \c true if the scoped pointers
     \a lhs and \a rhs are \e not pointing to the same object.
-    Otherwise returns false.
+    Otherwise returns \c false.
 */
 
 /*!

@@ -53,6 +53,7 @@
 #endif
 
 #include <limits.h>
+#include <algorithm>
 
 QT_BEGIN_NAMESPACE
 
@@ -618,7 +619,7 @@ void QStyle::drawItemText(QPainter *painter, const QRect &rect, int alignment, c
 void QStyle::drawItemPixmap(QPainter *painter, const QRect &rect, int alignment,
                             const QPixmap &pixmap) const
 {
-    int scale = pixmap.devicePixelRatio();
+    qreal scale = pixmap.devicePixelRatio();
     QRect aligned = alignedRect(QApplication::layoutDirection(), QFlag(alignment), pixmap.size() / scale, rect);
     QRect inter = aligned.intersected(rect);
 
@@ -1904,6 +1905,9 @@ void QStyle::drawItemPixmap(QPainter *painter, const QRect &rect, int alignment,
            a transition between checked and unchecked statuses in a checkbox.
            This enum value has been introduced in Qt 5.2.
 
+    \value SH_Splitter_OpaqueResize Determines if resizing is opaque
+           This enum value has been introduced in Qt 5.2
+
     \sa styleHint()
 */
 
@@ -2334,7 +2338,7 @@ QDebug operator<<(QDebug debug, QStyle::State state)
     if (state & QStyle::State_Top) states << QLatin1String("Top");
     if (state & QStyle::State_UpArrow) states << QLatin1String("UpArrow");
 
-    qSort(states);
+    std::sort(states.begin(), states.end());
     debug << states.join(QLatin1String(" | "));
     debug << ')';
 #else

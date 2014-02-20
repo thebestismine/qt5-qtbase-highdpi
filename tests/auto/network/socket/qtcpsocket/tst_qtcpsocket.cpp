@@ -1578,7 +1578,7 @@ void tst_QTcpSocket::recursiveReadyRead()
 
     QSignalSpy spy(testSocket, SIGNAL(readyRead()));
 
-    testSocket->connectToHost(QtNetworkSettings::serverName(), 25);
+    testSocket->connectToHost(QtNetworkSettings::serverName(), 143);
     enterLoop(30);
     QVERIFY2(!timeout(),
             "Timed out when connecting to QtNetworkSettings::serverName().");
@@ -2227,6 +2227,9 @@ void tst_QTcpSocket::suddenRemoteDisconnect_data()
 
 void tst_QTcpSocket::suddenRemoteDisconnect()
 {
+#ifdef QT_NO_PROCESS
+    QSKIP("This test requires QProcess support");
+#else
     QFETCH(QString, client);
     QFETCH(QString, server);
 
@@ -2280,6 +2283,7 @@ void tst_QTcpSocket::suddenRemoteDisconnect()
 #endif
     QCOMPARE(clientProcess.readAll().constData(), "SUCCESS\n");
     QCOMPARE(serverProcess.readAll().constData(), "SUCCESS\n");
+#endif // !QT_NO_PROCESS
 }
 
 //----------------------------------------------------------------------------------

@@ -167,7 +167,7 @@ QT_BEGIN_NAMESPACE
 
 QAbstractScrollAreaPrivate::QAbstractScrollAreaPrivate()
     :hbar(0), vbar(0), vbarpolicy(Qt::ScrollBarAsNeeded), hbarpolicy(Qt::ScrollBarAsNeeded),
-     shownOnce(false), sizeAdjustPolicy(QAbstractScrollArea::AdjustIgnored),
+     shownOnce(false), inResize(false), sizeAdjustPolicy(QAbstractScrollArea::AdjustIgnored),
      viewport(0), cornerWidget(0), left(0), top(0), right(0), bottom(0),
      xoffset(0), yoffset(0), viewportFilter(0)
 #ifdef Q_WS_WIN
@@ -995,8 +995,12 @@ bool QAbstractScrollArea::event(QEvent *e)
         d->viewport->setMouseTracking(hasMouseTracking());
         break;
     case QEvent::Resize:
+        if (!d->inResize) {
+            d->inResize = true;
             d->layoutChildren();
-            break;
+            d->inResize = false;
+        }
+        break;
     case QEvent::Show:
         if (!d->shownOnce && d->sizeAdjustPolicy == QAbstractScrollArea::AdjustToContentsOnFirstShow) {
             d->sizeHint = QSize();
@@ -1146,8 +1150,8 @@ bool QAbstractScrollArea::event(QEvent *e)
   It handles the \a event specified, and can be called by subclasses to
   provide reasonable default behavior.
 
-  Returns true to indicate to the event system that the event has been
-  handled, and needs no further processing; otherwise returns false to
+  Returns \c true to indicate to the event system that the event has been
+  handled, and needs no further processing; otherwise returns \c false to
   indicate that the event should be propagated further.
 
   You can reimplement this function in a subclass, but we recommend

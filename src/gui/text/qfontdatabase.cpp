@@ -57,6 +57,7 @@
 
 #include <stdlib.h>
 #include <limits.h>
+#include <algorithm>
 
 
 // #define QFONTDATABASE_DEBUG
@@ -315,9 +316,6 @@ struct  QtFontFamily
     QtFontFamily(const QString &n)
         :
         fixedPitch(false),
-#if !defined(QWS) && defined(Q_OS_MAC)
-        fixedPitchComputed(false),
-#endif
         name(n), count(0), foundries(0)
         , bogusWritingSystems(false)
         , askedForFallback(false)
@@ -331,9 +329,6 @@ struct  QtFontFamily
     }
 
     bool fixedPitch : 1;
-#if !defined(QWS) && defined(Q_OS_MAC)
-    bool fixedPitchComputed : 1;
-#endif
 
     QString name;
     QStringList aliases;
@@ -348,18 +343,6 @@ struct  QtFontFamily
     bool matchesFamilyName(const QString &familyName) const;
     QtFontFoundry *foundry(const QString &f, bool = false);
 };
-
-#if !defined(QWS) && defined(Q_OS_MAC)
-inline static void qt_mac_get_fixed_pitch(QtFontFamily *f)
-{
-    if(f && !f->fixedPitchComputed) {
-        QFontMetrics fm(f->name);
-        f->fixedPitch = fm.width(QLatin1Char('i')) == fm.width(QLatin1Char('m'));
-        f->fixedPitchComputed = true;
-    }
-}
-#endif
-
 
 QtFontFoundry *QtFontFamily::foundry(const QString &f, bool create)
 {
@@ -516,6 +499,8 @@ static const int scriptForWritingSystem[] = {
     QChar::Script_Nko // Nko
 };
 
+Q_STATIC_ASSERT(sizeof(scriptForWritingSystem) / sizeof(scriptForWritingSystem[0]) == QFontDatabase::WritingSystemsCount);
+
 int qt_script_for_writing_system(QFontDatabase::WritingSystem writingSystem)
 {
     return scriptForWritingSystem[writingSystem];
@@ -579,9 +564,9 @@ struct QtFontDesc
     int familyIndex;
 };
 
-static void match(int script, const QFontDef &request,
-                  const QString &family_name, const QString &foundry_name, int force_encoding_id,
-                  QtFontDesc *desc, const QList<int> &blacklistedFamilies = QList<int>());
+static int match(int script, const QFontDef &request,
+                 const QString &family_name, const QString &foundry_name, int force_encoding_id,
+                 QtFontDesc *desc, const QList<int> &blacklisted);
 
 static void initFontDef(const QtFontDesc &desc, const QFontDef &request, QFontDef *fontDef, bool multi)
 {
@@ -824,9 +809,6 @@ unsigned int bestFoundry(int script, unsigned int score, int styleStrategy,
             EncodingMismatch    = 0x0002
         };
         if (pitch != '*') {
-#if !defined(QWS) && defined(Q_OS_MAC)
-            qt_mac_get_fixed_pitch(const_cast<QtFontFamily*>(family));
-#endif
             if ((pitch == 'm' && !family->fixedPitch)
                 || (pitch == 'p' && family->fixedPitch))
                 this_score += PitchMismatch;
@@ -866,11 +848,12 @@ static bool matchFamilyName(const QString &familyName, QtFontFamily *f)
 
     Tries to find the best match for a given request and family/foundry
 */
-static void match(int script, const QFontDef &request,
-                  const QString &family_name, const QString &foundry_name, int force_encoding_id,
-                  QtFontDesc *desc, const QList<int> &blacklistedFamilies)
+static int match(int script, const QFontDef &request,
+                 const QString &family_name, const QString &foundry_name, int force_encoding_id,
+                 QtFontDesc *desc, const QList<int> &blacklistedFamilies)
 {
     Q_UNUSED(force_encoding_id);
+    int result = -1;
 
     QtFontStyle::Key styleKey;
     styleKey.style = request.style;
@@ -901,6 +884,8 @@ static void match(int script, const QFontDef &request,
 
     load(family_name, script);
 
+    const size_t writingSystem = std::find(scriptForWritingSystem, scriptForWritingSystem + QFontDatabase::WritingSystemsCount, script) - scriptForWritingSystem;
+
     QFontDatabasePrivate *db = privateDb();
     for (int x = 0; x < db->count; ++x) {
         if (blacklistedFamilies.contains(x))
@@ -915,19 +900,9 @@ static void match(int script, const QFontDef &request,
         if (family_name.isEmpty())
             load(test.family->name, script);
 
-        uint score_adjust = 0;
-
-        bool supported = (script == QChar::Script_Common);
-        for (int ws = 1; !supported && ws < QFontDatabase::WritingSystemsCount; ++ws) {
-            if (scriptForWritingSystem[ws] != script)
-                continue;
-            if (test.family->writingSystems[ws] & QtFontFamily::Supported)
-                supported = true;
-        }
-        if (!supported) {
-            // family not supported in the script we want
+        // Check if family is supported in the script we want
+        if (script != QChar::Script_Common && !(test.family->writingSystems[writingSystem] & QtFontFamily::Supported))
             continue;
-        }
 
         // as we know the script is supported, we can be sure
         // to find a matching font here.
@@ -942,15 +917,16 @@ static void match(int script, const QFontDef &request,
                                    QString(), styleKey, request.pixelSize,
                                    pitch, &test, force_encoding_id);
         }
-        newscore += score_adjust;
 
         if (newscore < score) {
+            result = x;
             score = newscore;
             *desc = test;
         }
         if (newscore < 10) // xlfd instead of FT... just accept it
             break;
     }
+    return result;
 }
 
 static QString styleStringHelper(int weight, QFont::Style style)
@@ -1140,7 +1116,7 @@ QList<QFontDatabase::WritingSystem> QFontDatabase::writingSystems() const
                 list.append(writingSystem);
         }
     }
-    qSort(list);
+    std::sort(list.begin(), list.end());
     return list;
 }
 
@@ -1258,8 +1234,8 @@ QStringList QFontDatabase::styles(const QString &family) const
 }
 
 /*!
-    Returns true if the font that has family \a family and style \a
-    style is fixed pitch; otherwise returns false.
+    Returns \c true if the font that has family \a family and style \a
+    style is fixed pitch; otherwise returns \c false.
 */
 
 bool QFontDatabase::isFixedPitch(const QString &family,
@@ -1275,15 +1251,12 @@ bool QFontDatabase::isFixedPitch(const QString &family,
     QT_PREPEND_NAMESPACE(load)(familyName);
 
     QtFontFamily *f = d->family(familyName);
-#if !defined(QWS) && defined(Q_OS_MAC)
-    qt_mac_get_fixed_pitch(f);
-#endif
     return (f && f->fixedPitch);
 }
 
 /*!
-    Returns true if the font that has family \a family and style \a
-    style is a scalable bitmap font; otherwise returns false. Scaling
+    Returns \c true if the font that has family \a family and style \a
+    style is a scalable bitmap font; otherwise returns \c false. Scaling
     a bitmap font usually produces an unattractive hardly readable
     result, because the pixels of the font are scaled. If you need to
     scale a bitmap font it is better to scale it to one of the fixed
@@ -1326,9 +1299,9 @@ bool QFontDatabase::isBitmapScalable(const QString &family,
 
 
 /*!
-    Returns true if the font that has family \a family and style \a
-    style is smoothly scalable; otherwise returns false. If this
-    function returns true, it's safe to scale this font to any size,
+    Returns \c true if the font that has family \a family and style \a
+    style is smoothly scalable; otherwise returns \c false. If this
+    function returns \c true, it's safe to scale this font to any size,
     and the result will always look attractive.
 
     \sa isScalable(), isBitmapScalable()
@@ -1365,8 +1338,8 @@ bool QFontDatabase::isSmoothlyScalable(const QString &family, const QString &sty
 }
 
 /*!
-    Returns true if the font that has family \a family and style \a
-    style is scalable; otherwise returns false.
+    Returns \c true if the font that has family \a family and style \a
+    style is scalable; otherwise returns \c false.
 
     \sa isBitmapScalable(), isSmoothlyScalable()
 */
@@ -1435,7 +1408,7 @@ QList<int> QFontDatabase::pointSizes(const QString &family,
     if (smoothScalable)
         return standardSizes();
 
-    qSort(sizes);
+    std::sort(sizes.begin(), sizes.end());
     return sizes;
 }
 
@@ -1538,7 +1511,7 @@ QList<int> QFontDatabase::smoothSizes(const QString &family,
     if (smoothScalable)
         return QFontDatabase::standardSizes();
 
-    qSort(sizes);
+    std::sort(sizes.begin(), sizes.end());
     return sizes;
 }
 
@@ -1555,8 +1528,8 @@ QList<int> QFontDatabase::standardSizes()
 
 
 /*!
-    Returns true if the font that has family \a family and style \a
-    style is italic; otherwise returns false.
+    Returns \c true if the font that has family \a family and style \a
+    style is italic; otherwise returns \c false.
 
     \sa weight(), bold()
 */
@@ -1588,8 +1561,8 @@ bool QFontDatabase::italic(const QString &family, const QString &style) const
 
 
 /*!
-    Returns true if the font that has family \a family and style \a
-    style is bold; otherwise returns false.
+    Returns \c true if the font that has family \a family and style \a
+    style is bold; otherwise returns \c false.
 
     \sa italic(), weight()
 */
@@ -2167,8 +2140,8 @@ QFont QFontDatabase::systemFont(QFontDatabase::SystemFont type)
     \since 4.2
 
     Removes the previously loaded application font identified by \a
-    id. Returns true if unloading of the font succeeded; otherwise
-    returns false.
+    id. Returns \c true if unloading of the font succeeded; otherwise
+    returns \c false.
 
     \sa removeAllApplicationFonts(), addApplicationFont(),
         addApplicationFontFromData()
@@ -2181,8 +2154,8 @@ QFont QFontDatabase::systemFont(QFontDatabase::SystemFont type)
     Removes all application-local fonts previously added using addApplicationFont()
     and addApplicationFontFromData().
 
-    Returns true if unloading of the fonts succeeded; otherwise
-    returns false.
+    Returns \c true if unloading of the fonts succeeded; otherwise
+    returns \c false.
 
     \sa removeApplicationFont(), addApplicationFont(), addApplicationFontFromData()
 */
@@ -2190,11 +2163,14 @@ QFont QFontDatabase::systemFont(QFontDatabase::SystemFont type)
 /*!
     \fn bool QFontDatabase::supportsThreadedFontRendering()
     \since 4.4
+    \deprecated
 
-    Returns true if font rendering is supported outside the GUI
+    Returns \c true if font rendering is supported outside the GUI
     thread, false otherwise. In other words, a return value of false
     means that all QPainter::drawText() calls outside the GUI thread
     will not produce readable output.
+
+    As of 5.0, always returns \c true.
 
     \sa {Thread-Support in Qt Modules#Painting In Threads}{Painting In Threads}
 */

@@ -543,7 +543,7 @@ void QGroupBox::setFlat(bool b)
     \property QGroupBox::checkable
     \brief whether the group box has a checkbox in its title
 
-    If this property is true, the group box displays its title using
+    If this property is \c true, the group box displays its title using
     a checkbox in place of an ordinary label. If the checkbox is checked,
     the group box's children are enabled; otherwise, they are disabled and
     inaccessible.
@@ -645,8 +645,8 @@ void QGroupBox::setChecked(bool b)
 #ifndef QT_NO_ACCESSIBILITY
         QAccessible::State st;
         st.checked = true;
-        QAccessibleStateChangeEvent *ev = new QAccessibleStateChangeEvent(this, st);
-        QAccessible::updateAccessibility(ev);
+        QAccessibleStateChangeEvent e(this, st);
+        QAccessible::updateAccessibility(&e);
 #endif
         emit toggled(b);
     }

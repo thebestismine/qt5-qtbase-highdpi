@@ -88,8 +88,10 @@ void QWindowsBackingStore::flush(QWindow *window, const QRegion &region,
     QWindowsWindow *rw = QWindowsWindow::baseWindowOf(window);
 
 #ifndef Q_OS_WINCE
+    const bool hasAlpha = rw->format().hasAlpha();
     const Qt::WindowFlags flags = window->flags();
-    if ((flags & Qt::FramelessWindowHint) && QWindowsWindow::setWindowLayered(rw->handle(), flags, rw->format().hasAlpha(), rw->opacity())) {
+    if ((flags & Qt::FramelessWindowHint) && QWindowsWindow::setWindowLayered(rw->handle(), flags, hasAlpha, rw->opacity()) && hasAlpha) {
+        // Windows with alpha: Use blend function to update.
         QRect r = window->frameGeometry();
         QPoint frameOffset(window->frameMargins().left(), window->frameMargins().top());
         QRect dirtyRect = br.translated(offset + frameOffset);
@@ -147,7 +149,23 @@ void QWindowsBackingStore::resize(const QSize &size, const QRegion &region)
         QImage::Format format = QWindowsNativeImage::systemFormat();
         if (format == QImage::Format_RGB32 && rasterWindow()->window()->format().hasAlpha())
             format = QImage::Format_ARGB32_Premultiplied;
-        m_image.reset(new QWindowsNativeImage(size.width(), size.height(), format));
+
+        QWindowsNativeImage *oldwni = m_image.data();
+        QWindowsNativeImage *newwni = new QWindowsNativeImage(size.width(), size.height(), format);
+
+        if (oldwni && !region.isEmpty()) {
+            const QImage &oldimg(oldwni->image());
+            QImage &newimg(newwni->image());
+            QRegion staticRegion(region);
+            staticRegion &= QRect(0, 0, oldimg.width(), oldimg.height());
+            staticRegion &= QRect(0, 0, newimg.width(), newimg.height());
+            QPainter painter(&newimg);
+            painter.setCompositionMode(QPainter::CompositionMode_Source);
+            foreach (const QRect &rect, staticRegion.rects())
+                painter.drawImage(rect, oldimg, rect);
+        }
+
+        m_image.reset(newwni);
     }
 }
 

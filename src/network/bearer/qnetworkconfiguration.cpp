@@ -213,6 +213,13 @@ QT_BEGIN_NAMESPACE
 #ifdef Q_OS_BLACKBERRY
 static const char cellularStatusFile[] = "/pps/services/radioctrl/modem0/status_public";
 
+#ifdef Q_OS_BLACKBERRY_TABLET
+static bool pps_decoder_is_integer(pps_decoder_t *decoder, const char *name)
+{
+    return (pps_decoder_type(decoder, name) == PPS_TYPE_NUMBER);
+}
+#endif // Q_OS_BLACKBERRY_TABLET
+
 static QNetworkConfiguration::BearerType cellularStatus()
 {
     QNetworkConfiguration::BearerType ret = QNetworkConfiguration::BearerUnknown;
@@ -324,8 +331,8 @@ QNetworkConfiguration &QNetworkConfiguration::operator=(const QNetworkConfigurat
 */
 
 /*!
-    Returns true, if this configuration is the same as the \a other
-    configuration given; otherwise returns false.
+    Returns \c true, if this configuration is the same as the \a other
+    configuration given; otherwise returns \c false.
 */
 bool QNetworkConfiguration::operator==(const QNetworkConfiguration &other) const
 {
@@ -335,8 +342,8 @@ bool QNetworkConfiguration::operator==(const QNetworkConfiguration &other) const
 /*!
     \fn bool QNetworkConfiguration::operator!=(const QNetworkConfiguration &other) const
 
-    Returns true if this configuration is not the same as the \a other
-    configuration given; otherwise returns false.
+    Returns \c true if this configuration is not the same as the \a other
+    configuration given; otherwise returns \c false.
 */
 
 /*!
@@ -385,7 +392,7 @@ QNetworkConfiguration::Type QNetworkConfiguration::type() const
 }
 
 /*!
-    Returns true if this QNetworkConfiguration object is valid.
+    Returns \c true if this QNetworkConfiguration object is valid.
     A configuration may become invalid if the user deletes the configuration or
     the configuration was default-constructed.
 
@@ -432,7 +439,7 @@ QNetworkConfiguration::Purpose QNetworkConfiguration::purpose() const
 }
 
 /*!
-    Returns true if this configuration supports roaming; otherwise false.
+    Returns \c true if this configuration supports roaming; otherwise false.
 */
 bool QNetworkConfiguration::isRoamingAvailable() const
 {
@@ -584,7 +591,6 @@ QNetworkConfiguration::BearerType QNetworkConfiguration::bearerTypeFamily() cons
             \li Value
         \row
             \li BearerUnknown
-            \li
             \li The session is based on an unknown or unspecified bearer type. The value of the
                string returned describes the bearer type.
         \row

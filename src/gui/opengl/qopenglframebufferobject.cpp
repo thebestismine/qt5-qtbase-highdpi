@@ -238,7 +238,7 @@ void QOpenGLFramebufferObjectFormat::setMipmap(bool enabled)
 }
 
 /*!
-    Returns true if mipmapping is enabled.
+    Returns \c true if mipmapping is enabled.
 
     \sa setMipmap()
 */
@@ -320,8 +320,8 @@ GLenum QOpenGLFramebufferObjectFormat::internalTextureFormat() const
 }
 
 /*!
-    Returns true if all the options of this framebuffer object format
-    are the same as \a other; otherwise returns false.
+    Returns \c true if all the options of this framebuffer object format
+    are the same as \a other; otherwise returns \c false.
 */
 bool QOpenGLFramebufferObjectFormat::operator==(const QOpenGLFramebufferObjectFormat& other) const
 {
@@ -332,8 +332,8 @@ bool QOpenGLFramebufferObjectFormat::operator==(const QOpenGLFramebufferObjectFo
 }
 
 /*!
-    Returns false if all the options of this framebuffer object format
-    are the same as \a other; otherwise returns true.
+    Returns \c false if all the options of this framebuffer object format
+    are the same as \a other; otherwise returns \c true.
 */
 bool QOpenGLFramebufferObjectFormat::operator!=(const QOpenGLFramebufferObjectFormat& other) const
 {
@@ -425,6 +425,19 @@ void QOpenGLFramebufferObjectPrivate::init(QOpenGLFramebufferObject *, const QSi
     if (!funcs.hasOpenGLFeature(QOpenGLFunctions::Framebuffers))
         return;
 
+
+    // Fall back to using a normal non-msaa FBO if we don't have support for MSAA
+    if (!funcs.hasOpenGLExtension(QOpenGLExtensions::FramebufferMultisample)
+            || !funcs.hasOpenGLExtension(QOpenGLExtensions::FramebufferBlit)) {
+        samples = 0;
+    }
+
+#ifndef QT_OPENGL_ES_2
+    GLint maxSamples;
+    glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
+    samples = qBound(0, int(samples), int(maxSamples));
+#endif
+
     size = sz;
     target = texture_target;
     // texture dimensions
@@ -473,25 +486,11 @@ void QOpenGLFramebufferObjectPrivate::init(QOpenGLFramebufferObject *, const QSi
         color_buffer = 0;
     } else {
         mipmap = false;
-        GLint maxSamples;
-        glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
-
-        samples = qBound(0, int(samples), int(maxSamples));
-
         funcs.glGenRenderbuffers(1, &color_buffer);
         funcs.glBindRenderbuffer(GL_RENDERBUFFER, color_buffer);
-        if (funcs.hasOpenGLExtension(QOpenGLExtensions::FramebufferMultisample) && samples > 0) {
-            funcs.glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples,
-                internal_format, size.width(), size.height());
-        } else {
-            samples = 0;
-            funcs.glRenderbufferStorage(GL_RENDERBUFFER, internal_format,
-                size.width(), size.height());
-        }
-
+        funcs.glRenderbufferStorageMultisample(GL_RENDERBUFFER, samples, internal_format, size.width(), size.height());
         funcs.glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
                                              GL_RENDERBUFFER, color_buffer);
-
         QT_CHECK_GLERROR();
         valid = checkFramebufferStatus(ctx);
 
@@ -880,7 +879,7 @@ QOpenGLFramebufferObject::~QOpenGLFramebufferObject()
 /*!
     \fn bool QOpenGLFramebufferObject::isValid() const
 
-    Returns true if the framebuffer object is valid.
+    Returns \c true if the framebuffer object is valid.
 
     The framebuffer can become invalid if the initialization process
     fails, the user attaches an invalid buffer to the framebuffer
@@ -906,7 +905,7 @@ bool QOpenGLFramebufferObject::isValid() const
 
     Switches rendering from the default, windowing system provided
     framebuffer to this framebuffer object.
-    Returns true upon success, false otherwise.
+    Returns \c true upon success, false otherwise.
 
     \sa release()
 */
@@ -934,7 +933,7 @@ bool QOpenGLFramebufferObject::bind()
 
     Switches rendering back to the default, windowing system provided
     framebuffer.
-    Returns true upon success, false otherwise.
+    Returns \c true upon success, false otherwise.
 
     \sa bind()
 */
@@ -1072,7 +1071,7 @@ QImage QOpenGLFramebufferObject::toImage() const
 
     Switches rendering back to the default, windowing system provided
     framebuffer.
-    Returns true upon success, false otherwise.
+    Returns \c true upon success, false otherwise.
 
     \sa bind(), release()
 */
@@ -1096,8 +1095,8 @@ bool QOpenGLFramebufferObject::bindDefault()
 /*!
     \fn bool QOpenGLFramebufferObject::hasOpenGLFramebufferObjects()
 
-    Returns true if the OpenGL \c{GL_EXT_framebuffer_object} extension
-    is present on this system; otherwise returns false.
+    Returns \c true if the OpenGL \c{GL_EXT_framebuffer_object} extension
+    is present on this system; otherwise returns \c false.
 */
 bool QOpenGLFramebufferObject::hasOpenGLFramebufferObjects()
 {
@@ -1157,7 +1156,7 @@ void QOpenGLFramebufferObject::setAttachment(QOpenGLFramebufferObject::Attachmen
 }
 
 /*!
-    Returns true if the framebuffer object is currently bound to a context,
+    Returns \c true if the framebuffer object is currently bound to a context,
     otherwise false is returned.
 */
 
@@ -1171,8 +1170,8 @@ bool QOpenGLFramebufferObject::isBound() const
 /*!
     \fn bool QOpenGLFramebufferObject::hasOpenGLFramebufferBlit()
 
-    Returns true if the OpenGL \c{GL_EXT_framebuffer_blit} extension
-    is present on this system; otherwise returns false.
+    Returns \c true if the OpenGL \c{GL_EXT_framebuffer_blit} extension
+    is present on this system; otherwise returns \c false.
 
     \sa blitFramebuffer()
 */

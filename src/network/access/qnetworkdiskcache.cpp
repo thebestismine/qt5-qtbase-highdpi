@@ -559,6 +559,20 @@ qint64 QNetworkDiskCache::expire()
             break;
         QString name = i.value();
         QFile file(name);
+
+        if (name.contains(PREPARED_SLASH)) {
+            QHashIterator<QIODevice*, QCacheItem*> iterator(d->inserting);
+            while (iterator.hasNext()) {
+                iterator.next();
+                QCacheItem *item = iterator.value();
+                if (item && item->file && item->file->fileName() == name) {
+                    delete item->file;
+                    item->file = 0;
+                    break;
+                }
+            }
+        }
+
         qint64 size = file.size();
         file.remove();
         totalSize -= size;
@@ -685,7 +699,7 @@ void QCacheItem::writeCompressedData(QFile *device) const
 }
 
 /*!
-    Returns false if the file is a cache file,
+    Returns \c false if the file is a cache file,
     but is an older version and should be removed otherwise true.
  */
 bool QCacheItem::read(QFile *device, bool readData)

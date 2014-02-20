@@ -42,7 +42,6 @@
 #include "qandroidplatformintegration.h"
 #include "qabstracteventdispatcher.h"
 #include "androidjnimain.h"
-#include <QtGui/private/qpixmap_raster_p.h>
 #include <QtGui/qguiapplication.h>
 #include <qpa/qwindowsysteminterface.h>
 #include <QThread>
@@ -50,6 +49,7 @@
 #include "qandroidplatformservices.h"
 #include "qandroidplatformfontdatabase.h"
 #include "qandroidplatformclipboard.h"
+#include "qandroidplatformaccessibility.h"
 #include <QtPlatformSupport/private/qgenericunixeventdispatcher_p.h>
 
 #ifndef ANDROID_PLUGIN_OPENGL
@@ -61,6 +61,7 @@
 #  include "androidjnimenu.h"
 #  include "qandroidopenglcontext.h"
 #  include "qandroidopenglplatformwindow.h"
+#  include "qandroidopenglplatformscreen.h"
 #  include "qeglfshooks.h"
 #  include <QtGui/qopenglcontext.h>
 #endif
@@ -75,24 +76,33 @@ int QAndroidPlatformIntegration::m_defaultGeometryHeight = 455;
 int QAndroidPlatformIntegration::m_defaultPhysicalSizeWidth = 50;
 int QAndroidPlatformIntegration::m_defaultPhysicalSizeHeight = 71;
 
+Qt::ScreenOrientation QAndroidPlatformIntegration::m_orientation = Qt::PrimaryOrientation;
+Qt::ScreenOrientation QAndroidPlatformIntegration::m_nativeOrientation = Qt::PrimaryOrientation;
+
 void *QAndroidPlatformNativeInterface::nativeResourceForIntegration(const QByteArray &resource)
 {
     if (resource=="JavaVM")
         return QtAndroid::javaVM();
     if (resource == "QtActivity")
         return QtAndroid::activity();
-
+    if (resource == "AndroidStylePalettes")
+        return &m_palettes;
+    if (resource == "AndroidStyleFonts")
+        return &m_fonts;
+    if (resource == "AndroidDeviceName") {
+        static QString deviceName = QtAndroid::deviceName();
+        return &deviceName;
+    }
     return 0;
 }
 
 QAndroidPlatformIntegration::QAndroidPlatformIntegration(const QStringList &paramList)
     : m_touchDevice(0)
+#ifndef QT_NO_ACCESSIBILITY
+    , m_accessibility(0)
+#endif
 {
     Q_UNUSED(paramList);
-
-#ifndef ANDROID_PLUGIN_OPENGL
-    m_eventDispatcher = createUnixEventDispatcher();
-#endif
 
     m_androidPlatformNativeInterface = new QAndroidPlatformNativeInterface();
 
@@ -108,17 +118,34 @@ QAndroidPlatformIntegration::QAndroidPlatformIntegration(const QStringList &para
 
     m_androidFDB = new QAndroidPlatformFontDatabase();
     m_androidPlatformServices = new QAndroidPlatformServices();
+
+#ifndef QT_NO_CLIPBOARD
     m_androidPlatformClipboard = new QAndroidPlatformClipboard();
+#endif
 
     m_androidSystemLocale = new QAndroidSystemLocale;
+}
+
+bool QAndroidPlatformIntegration::needsWorkaround()
+{
+    static bool needsWorkaround =
+            QtAndroid::deviceName().compare(QStringLiteral("samsung SM-T211"), Qt::CaseInsensitive) == 0
+            || QtAndroid::deviceName().compare(QStringLiteral("samsung SM-T210"), Qt::CaseInsensitive) == 0
+            || QtAndroid::deviceName().compare(QStringLiteral("samsung SM-T215"), Qt::CaseInsensitive) == 0;
+    return needsWorkaround;
 }
 
 bool QAndroidPlatformIntegration::hasCapability(Capability cap) const
 {
     switch (cap) {
         case ThreadedPixmaps: return true;
-        case NonFullScreenWindows: return false;
+        case ApplicationState: return true;
         case NativeWidgets: return false;
+
+        case ThreadedOpenGL:
+            if (needsWorkaround())
+                return false;
+        // fall through
         default:
 #ifndef ANDROID_PLUGIN_OPENGL
         return QPlatformIntegration::hasCapability(cap);
@@ -136,12 +163,15 @@ QPlatformBackingStore *QAndroidPlatformIntegration::createPlatformBackingStore(Q
 
 QPlatformWindow *QAndroidPlatformIntegration::createPlatformWindow(QWindow *window) const
 {
-    return new QAndroidPlatformWindow(window);
+    QAndroidPlatformWindow *platformWindow = new QAndroidPlatformWindow(window);
+    platformWindow->setWindowState(window->windowState());
+
+    return platformWindow;
 }
 
-QAbstractEventDispatcher *QAndroidPlatformIntegration::guiThreadEventDispatcher() const
+QAbstractEventDispatcher *QAndroidPlatformIntegration::createEventDispatcher() const
 {
-    return m_eventDispatcher;
+    return createUnixEventDispatcher();
 }
 #else // !ANDROID_PLUGIN_OPENGL
 QPlatformWindow *QAndroidPlatformIntegration::createPlatformWindow(QWindow *window) const
@@ -149,6 +179,7 @@ QPlatformWindow *QAndroidPlatformIntegration::createPlatformWindow(QWindow *wind
     QAndroidOpenGLPlatformWindow *platformWindow = new QAndroidOpenGLPlatformWindow(window);
     platformWindow->create();
     platformWindow->requestActivateWindow();
+    platformWindow->setWindowState(window->windowState());
     QtAndroidMenu::setActiveTopLevelWindow(window);
 
     return platformWindow;
@@ -166,6 +197,7 @@ void QAndroidPlatformIntegration::invalidateNativeSurface()
 
 void QAndroidPlatformIntegration::surfaceChanged()
 {
+    QAndroidOpenGLPlatformWindow::updateStaticNativeWindow();
     foreach (QWindow *w, QGuiApplication::topLevelWindows()) {
         QAndroidOpenGLPlatformWindow *window =
                 static_cast<QAndroidOpenGLPlatformWindow *>(w->handle());
@@ -188,6 +220,11 @@ QAndroidPlatformIntegration::~QAndroidPlatformIntegration()
     delete m_androidPlatformNativeInterface;
     delete m_androidFDB;
     delete m_androidSystemLocale;
+
+#ifndef QT_NO_CLIPBOARD
+    delete m_androidPlatformClipboard;
+#endif
+
     QtAndroid::setAndroidPlatformIntegration(NULL);
 }
 QPlatformFontDatabase *QAndroidPlatformIntegration::fontDatabase() const
@@ -198,11 +235,7 @@ QPlatformFontDatabase *QAndroidPlatformIntegration::fontDatabase() const
 #ifndef QT_NO_CLIPBOARD
 QPlatformClipboard *QAndroidPlatformIntegration::clipboard() const
 {
-static QAndroidPlatformClipboard *clipboard = 0;
-    if (!clipboard)
-        clipboard = new QAndroidPlatformClipboard;
-
-    return clipboard;
+    return m_androidPlatformClipboard;
 }
 #endif
 
@@ -224,11 +257,20 @@ QPlatformServices *QAndroidPlatformIntegration::services() const
 QVariant QAndroidPlatformIntegration::styleHint(StyleHint hint) const
 {
     switch (hint) {
-    case ShowIsFullScreen:
+    case ShowIsMaximized:
         return true;
     default:
         return QPlatformIntegration::styleHint(hint);
     }
+}
+
+Qt::WindowState QAndroidPlatformIntegration::defaultWindowState(Qt::WindowFlags flags) const
+{
+    // Don't maximize dialogs on Android
+    if (flags & Qt::Dialog & ~Qt::Window)
+        return Qt::WindowNoState;
+
+    return QPlatformIntegration::defaultWindowState(flags);
 }
 
 static const QLatin1String androidThemeName("android");
@@ -240,7 +282,7 @@ QStringList QAndroidPlatformIntegration::themeNames() const
 QPlatformTheme *QAndroidPlatformIntegration::createPlatformTheme(const QString &name) const
 {
     if (androidThemeName == name)
-        return new QAndroidPlatformTheme;
+        return new QAndroidPlatformTheme(m_androidPlatformNativeInterface);
 
     return 0;
 }
@@ -258,6 +300,22 @@ void QAndroidPlatformIntegration::setDefaultDesktopSize(int gw, int gh)
     m_defaultGeometryWidth = gw;
     m_defaultGeometryHeight = gh;
 }
+
+void QAndroidPlatformIntegration::setScreenOrientation(Qt::ScreenOrientation currentOrientation,
+                                                       Qt::ScreenOrientation nativeOrientation)
+{
+    m_orientation = currentOrientation;
+    m_nativeOrientation = nativeOrientation;
+}
+
+#ifndef QT_NO_ACCESSIBILITY
+QPlatformAccessibility *QAndroidPlatformIntegration::accessibility() const
+{
+    if (!m_accessibility)
+        m_accessibility = new QAndroidPlatformAccessibility();
+    return m_accessibility;
+}
+#endif
 
 
 #ifndef ANDROID_PLUGIN_OPENGL
@@ -283,6 +341,11 @@ void QAndroidPlatformIntegration::setDisplayMetrics(int width, int height)
 {
     m_defaultPhysicalSizeWidth = width;
     m_defaultPhysicalSizeHeight = height;
+}
+
+QEglFSScreen *QAndroidPlatformIntegration::createScreen() const
+{
+    return new QAndroidOpenGLPlatformScreen(display());
 }
 
 #endif

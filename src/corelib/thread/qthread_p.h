@@ -150,6 +150,7 @@ public:
     bool running;
     bool finished;
     bool isInFinish; //when in QThreadPrivate::finish
+    bool interruptionRequested;
 
     bool exited;
     int returnCode;
@@ -218,13 +219,11 @@ public:
 
 class QThreadData
 {
-    QAtomicInt _ref;
-
 public:
     QThreadData(int initialRefCount = 1);
     ~QThreadData();
 
-    static QThreadData *current();
+    static QThreadData *current(bool createIfNecessary = true);
     static void clearCurrentThreadData();
     static QThreadData *get2(QThread *thread)
     { Q_ASSERT_X(thread != 0, "QThread", "internal error"); return thread->d_func()->data; }
@@ -241,15 +240,42 @@ public:
         return canWait;
     }
 
-    QThread *thread;
-    Qt::HANDLE threadId;
-    bool quitNow;
+    // This class provides per-thread (by way of being a QThreadData
+    // member) storage for qFlagLocation()
+    class FlaggedDebugSignatures
+    {
+        static const uint Count = 2;
+
+        uint idx;
+        const char* locations[Count];
+
+    public:
+        FlaggedDebugSignatures() : idx(0)
+        { std::fill_n(locations, Count, static_cast<char*>(0)); }
+
+        void store(const char* method)
+        { locations[idx++ % Count] = method; }
+
+        bool contains(const char *method) const
+        { return std::find(locations, locations + Count, method) != locations + Count; }
+    };
+
+private:
+    QAtomicInt _ref;
+
+public:
     int loopLevel;
-    QAtomicPointer<QAbstractEventDispatcher> eventDispatcher;
+
     QStack<QEventLoop *> eventLoops;
     QPostEventList postEventList;
-    bool canWait;
+    QThread *thread;
+    Qt::HANDLE threadId;
+    QAtomicPointer<QAbstractEventDispatcher> eventDispatcher;
     QVector<void *> tls;
+    FlaggedDebugSignatures flaggedSignatures;
+
+    bool quitNow;
+    bool canWait;
     bool isAdopted;
 };
 

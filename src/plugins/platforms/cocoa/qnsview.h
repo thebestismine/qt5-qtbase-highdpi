@@ -71,6 +71,7 @@ QT_END_NAMESPACE
     bool m_subscribesForGlobalFrameNotifications;
     QCocoaGLContext *m_glContext;
     bool m_shouldSetGLContextinDrawRect;
+    NSString *m_inputSource;
 }
 
 - (id)init;
@@ -92,6 +93,8 @@ QT_END_NAMESPACE
 - (BOOL)becomeFirstResponder;
 - (BOOL)hasMask;
 - (BOOL)isOpaque;
+
+- (void)convertFromScreen:(NSPoint)mouseLocation toWindowPoint:(QPointF *)qtWindowPoint andScreenPoint:(QPointF *)qtScreenPoint;
 
 - (void)resetMouseButtons;
 

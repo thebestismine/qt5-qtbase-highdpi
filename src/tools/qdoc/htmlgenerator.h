@@ -164,7 +164,7 @@ private:
                              const Node *relative,
                              const NodeMap &classMap,
                              bool includeAlphabet,
-                             QString commonPrefix = QString());
+                             QString commonPrefix);
     void generateFunctionIndex(const Node *relative);
     void generateLegaleseList(const Node *relative, CodeMarker *marker);
     void generateOverviewList(const Node *relative);
@@ -262,6 +262,7 @@ private:
     QString cppclassespage;
     QString qmltypespage;
     QString buildversion;
+    QString qflagsHref_;
 
 public:
     static bool debugging_on;

@@ -170,6 +170,7 @@ private slots:
     void constructorQByteArray_data();
     void constructorQByteArray();
     void STL();
+    void macTypes();
     void isEmpty();
     void isNull();
     void acc_01();
@@ -937,6 +938,16 @@ void tst_QString::STL()
 
     QCOMPARE(s, QString::fromLatin1("hello"));
     QCOMPARE(stlStr, s.toStdWString());
+}
+
+void tst_QString::macTypes()
+{
+#ifndef Q_OS_MAC
+    QSKIP("This is a Mac-only test");
+#else
+    extern void tst_QString_macTypes(); // in qstring_mac.mm
+    tst_QString_macTypes();
+#endif
 }
 
 void tst_QString::truncate()
@@ -4408,6 +4419,62 @@ void tst_QString::operator_smaller()
     // operator< is not locale-aware (or shouldn't be)
     QVERIFY( foo < QString("\xc3\xa9") );
     QVERIFY( foo < "\xc3\xa9" );
+
+    QVERIFY(QString("a") < QString("b"));
+    QVERIFY(QString("a") <= QString("b"));
+    QVERIFY(QString("a") <= QString("a"));
+    QVERIFY(QString("a") == QString("a"));
+    QVERIFY(QString("a") >= QString("a"));
+    QVERIFY(QString("b") >= QString("a"));
+    QVERIFY(QString("b") > QString("a"));
+
+    QVERIFY("a" < QString("b"));
+    QVERIFY("a" <= QString("b"));
+    QVERIFY("a" <= QString("a"));
+    QVERIFY("a" == QString("a"));
+    QVERIFY("a" >= QString("a"));
+    QVERIFY("b" >= QString("a"));
+    QVERIFY("b" > QString("a"));
+
+    QVERIFY(QString("a") < "b");
+    QVERIFY(QString("a") <= "b");
+    QVERIFY(QString("a") <= "a");
+    QVERIFY(QString("a") == "a");
+    QVERIFY(QString("a") >= "a");
+    QVERIFY(QString("b") >= "a");
+    QVERIFY(QString("b") > "a");
+
+    QVERIFY(QLatin1String("a") < QString("b"));
+    QVERIFY(QLatin1String("a") <= QString("b"));
+    QVERIFY(QLatin1String("a") <= QString("a"));
+    QVERIFY(QLatin1String("a") == QString("a"));
+    QVERIFY(QLatin1String("a") >= QString("a"));
+    QVERIFY(QLatin1String("b") >= QString("a"));
+    QVERIFY(QLatin1String("b") > QString("a"));
+
+    QVERIFY(QString("a") < QLatin1String("b"));
+    QVERIFY(QString("a") <= QLatin1String("b"));
+    QVERIFY(QString("a") <= QLatin1String("a"));
+    QVERIFY(QString("a") == QLatin1String("a"));
+    QVERIFY(QString("a") >= QLatin1String("a"));
+    QVERIFY(QString("b") >= QLatin1String("a"));
+    QVERIFY(QString("b") > QLatin1String("a"));
+
+    QVERIFY("a" < QLatin1String("b"));
+    QVERIFY("a" <= QLatin1String("b"));
+    QVERIFY("a" <= QLatin1String("a"));
+    QVERIFY("a" == QLatin1String("a"));
+    QVERIFY("a" >= QLatin1String("a"));
+    QVERIFY("b" >= QLatin1String("a"));
+    QVERIFY("b" > QLatin1String("a"));
+
+    QVERIFY(QLatin1String("a") < "b");
+    QVERIFY(QLatin1String("a") <= "b");
+    QVERIFY(QLatin1String("a") <= "a");
+    QVERIFY(QLatin1String("a") == "a");
+    QVERIFY(QLatin1String("a") >= "a");
+    QVERIFY(QLatin1String("b") >= "a");
+    QVERIFY(QLatin1String("b") > "a");
 }
 
 void tst_QString::integer_conversion_data()
@@ -5229,6 +5296,18 @@ void tst_QString::resizeAfterReserve()
     s += "hello world";
     s.resize(0);
     QVERIFY(s.capacity() == 100);
+
+    // reserve() can't be used to truncate data
+    s.fill('x', 100);
+    s.reserve(50);
+    QVERIFY(s.capacity() == 100);
+    QVERIFY(s.size() == 100);
+
+    // even with increased ref count truncation isn't allowed
+    QString t = s;
+    s.reserve(50);
+    QVERIFY(s.capacity() == 100);
+    QVERIFY(s.size() == 100);
 }
 
 void tst_QString::resizeWithNegative() const

@@ -128,6 +128,7 @@ public:
         emit send(value);
     }
 
+    bool operator< ( const Sender & ) const { /* QTBUG-36834 */ return true;}
 signals:
     void send(const String::Type&);
     void send(const Int::Type&);
@@ -531,6 +532,7 @@ private slots:
     void frameworkSearchPath();
     void cstyleEnums();
     void defineMacroViaCmdline();
+    void specifyMetaTagsFromCmdline();
     void invokable();
     void singleFunctionKeywordSignalAndSlot();
     void templateGtGt();
@@ -566,6 +568,7 @@ private slots:
     void parseDefines();
     void preprocessorOnly();
     void unterminatedFunctionMacro();
+    void QTBUG32933_relatedObjectsDontIncludeItself();
 
 signals:
     void sigWithUnsignedArg(unsigned foo);
@@ -1169,6 +1172,37 @@ void tst_Moc::defineMacroViaCmdline()
 #endif
 }
 
+// tst_Moc::specifyMetaTagsFromCmdline()
+// plugin_metadata.h contains a plugin which we register here. Since we're not building this
+// application as a plugin, we need top copy some of the initializer code found in qplugin.h:
+extern "C" QObject *qt_plugin_instance();
+extern "C" const char *qt_plugin_query_metadata();
+class StaticPluginInstance{
+public:
+    StaticPluginInstance() {
+        QStaticPlugin plugin = { &qt_plugin_instance, &qt_plugin_query_metadata };
+        qRegisterStaticPluginFunction(plugin);
+    }
+};
+static StaticPluginInstance staticInstance;
+
+void tst_Moc::specifyMetaTagsFromCmdline() {
+    foreach (const QStaticPlugin &plugin, QPluginLoader::staticPlugins()) {
+        const QString iid = plugin.metaData().value(QLatin1String("IID")).toString();
+        if (iid == QLatin1String("test.meta.tags")) {
+            const QJsonArray metaTagsUriList = plugin.metaData().value("uri").toArray();
+            QCOMPARE(metaTagsUriList.size(), 2);
+
+            // The following uri-s are set in the pro file using
+            // -Muri=com.company.app -Muri=com.company.app.private
+            QCOMPARE(metaTagsUriList[0].toString(), QLatin1String("com.company.app"));
+            QCOMPARE(metaTagsUriList[1].toString(), QLatin1String("com.company.app.private"));
+            return;
+        }
+    }
+    QFAIL("Could not find plugin with IID 'test.meta.tags'");
+}
+
 void tst_Moc::invokable()
 {
     {
@@ -1505,13 +1539,30 @@ class QTBUG12260_defaultTemplate_Object : public QObject
 public slots:
 #if !(defined(Q_CC_GNU) && __GNUC__ == 4 && __GNUC_MINOR__ <= 3) || defined(Q_MOC_RUN)
     void doSomething(QHash<QString, QVariant> values = QHash<QString, QVariant>() ) { Q_UNUSED(values); }
+    void doSomethingElse(QSharedPointer<QVarLengthArray<QString, (16 >> 2)> > val
+            = QSharedPointer<QVarLengthArray<QString, (16 >> 2)> >() )
+    { Q_UNUSED(val); }
 #else
     // we want to test the previous function, but gcc < 4.4 seemed to have a bug similar to the one moc has.
     typedef QHash<QString, QVariant> WorkaroundGCCBug;
     void doSomething(QHash<QString, QVariant> values = WorkaroundGCCBug() ) { Q_UNUSED(values); }
+    void doSomethingElse(QSharedPointer<QVarLengthArray<QString, (16 >> 2)> > val
+            = (QSharedPointer<QVarLengthArray<QString, (16 >> 2)> >()) )
+    { Q_UNUSED(val); }
 #endif
 
     void doAnotherThing(bool a = (1 < 3), bool b = (1 > 4)) { Q_UNUSED(a); Q_UNUSED(b); }
+
+#if defined(Q_MOC_RUN) || (defined(Q_COMPILER_AUTO_TYPE) && !(defined(Q_CC_CLANG) && (__clang_major__ * 100) + __clang_minor__) < 304)
+    // There is no Q_COMPILER_>>  but if compiler support auto, it should also support >>
+    void performSomething(QVector<QList<QString>> e = QVector<QList<QString>>(8 < 1),
+                          QHash<int, QVector<QString>> h = QHash<int, QVector<QString>>())
+    { Q_UNUSED(e); Q_UNUSED(h); }
+#else
+    void performSomething(QVector<QList<QString> > e = QVector<QList<QString> >(),
+                          QHash<int, QVector<QString> > h = (QHash<int, QVector<QString> >()))
+    { Q_UNUSED(e); Q_UNUSED(h); }
+#endif
 };
 
 
@@ -1519,6 +1570,8 @@ void tst_Moc::QTBUG12260_defaultTemplate()
 {
     QVERIFY(QTBUG12260_defaultTemplate_Object::staticMetaObject.indexOfSlot("doSomething(QHash<QString,QVariant>)") != -1);
     QVERIFY(QTBUG12260_defaultTemplate_Object::staticMetaObject.indexOfSlot("doAnotherThing(bool,bool)") != -1);
+    QVERIFY(QTBUG12260_defaultTemplate_Object::staticMetaObject.indexOfSlot("doSomethingElse(QSharedPointer<QVarLengthArray<QString,(16>>2)> >)") != -1);
+    QVERIFY(QTBUG12260_defaultTemplate_Object::staticMetaObject.indexOfSlot("performSomething(QVector<QList<QString> >,QHash<int,QVector<QString> >)") != -1);
 }
 
 void tst_Moc::notifyError()
@@ -1759,6 +1812,14 @@ void tst_Moc::warnings_data()
         << 1
         << QString()
         << QString("standard input:1: Error: Class contains Q_OBJECT macro but does not inherit from QObject");
+
+    QTest::newRow("Warning on invalid macro")
+        << QByteArray("#define Foo(a, b)\n class X : public QObject { Q_OBJECT  }; \n Foo(a) \n Foo(a,b,c) \n")
+        << QStringList()
+        << 0
+        << QString("IGNORE_ALL_STDOUT")
+        << QString(":3: Warning: Macro argument mismatch.\n:4: Warning: Macro argument mismatch.");
+
 }
 
 void tst_Moc::warnings()
@@ -1800,7 +1861,7 @@ void tst_Moc::warnings()
     // magic value "IGNORE_ALL_STDOUT" ignores stdout
     if (expectedStdOut != "IGNORE_ALL_STDOUT")
         QCOMPARE(QString::fromLocal8Bit(proc.readAllStandardOutput()).trimmed(), expectedStdOut);
-    QCOMPARE(QString::fromLocal8Bit(proc.readAllStandardError()).trimmed(), expectedStdErr);
+    QCOMPARE(QString::fromLocal8Bit(proc.readAllStandardError()).trimmed().remove('\r'), expectedStdErr);
 }
 
 class tst_Moc::PrivateClass : public QObject {
@@ -2996,6 +3057,9 @@ void tst_Moc::parseDefines()
 
     index = mo->indexOfSlot("PD_DEFINE_ITSELF_SUFFIX(int)");
     QVERIFY(index != -1);
+
+    index = mo->indexOfSignal("cmdlineSignal(QMap<int,int>)");
+    QVERIFY(index != -1);
 }
 
 void tst_Moc::preprocessorOnly()
@@ -3038,7 +3102,37 @@ void tst_Moc::unterminatedFunctionMacro()
 #endif
 }
 
+namespace QTBUG32933_relatedObjectsDontIncludeItself {
+    namespace NS {
+        class Obj : QObject {
+            Q_OBJECT
+            Q_PROPERTY(MyEnum p1 MEMBER member)
+            Q_PROPERTY(Obj::MyEnum p2 MEMBER member)
+            Q_PROPERTY(NS::Obj::MyEnum p3 MEMBER member)
+            Q_PROPERTY(QTBUG32933_relatedObjectsDontIncludeItself::NS::Obj::MyEnum p4 MEMBER member)
+            Q_ENUMS(MyEnum);
+        public:
+            enum MyEnum { Something, SomethingElse };
+            MyEnum member;
+        };
+    }
+}
+
+void tst_Moc::QTBUG32933_relatedObjectsDontIncludeItself()
+{
+    const QMetaObject *mo = &QTBUG32933_relatedObjectsDontIncludeItself::NS::Obj::staticMetaObject;
+    const QMetaObject **objects = mo->d.relatedMetaObjects;
+    // the related objects should be empty because the enums is in the same object.
+    QVERIFY(!objects);
+
+}
+
 QTEST_MAIN(tst_Moc)
+
+// the generated code must compile with QT_NO_KEYWORDS
+#undef signals
+#undef slots
+#undef emit
 
 #include "tst_moc.moc"
 

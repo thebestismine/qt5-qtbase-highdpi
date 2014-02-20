@@ -224,14 +224,11 @@ Type Moc::parseType()
             ;
         }
         if (test(LANGLE)) {
-            QByteArray templ = lexemUntil(RANGLE);
-            for (int i = 0; i < templ.size(); ++i) {
-                type.name += templ.at(i);
-                if ((templ.at(i) == '<' && i+1 < templ.size() && templ.at(i+1) == ':')
-                    || (templ.at(i) == '>' && i+1 < templ.size() && templ.at(i+1) == '>')) {
-                    type.name += ' ';
-                }
+            if (type.name.isEmpty()) {
+                // '<' cannot start a type
+                return type;
             }
+            type.name += lexemUntil(RANGLE);
         }
         if (test(SCOPE)) {
             type.name += lexem();
@@ -787,6 +784,10 @@ void Moc::parse()
             if (!def.hasQObject && !def.hasQGadget)
                 error("Class declarations lacks Q_OBJECT macro.");
 
+            // Add meta tags to the plugin meta data:
+            if (!def.pluginData.iid.isEmpty())
+                def.pluginData.metaArgs = metaArgs;
+
             checkSuperClasses(&def);
             checkProperties(&def);
 
@@ -988,7 +989,7 @@ void Moc::parseSignals(ClassDef *def)
             prev();
         }
         FunctionDef funcDef;
-        funcDef.access = FunctionDef::Protected;
+        funcDef.access = FunctionDef::Public;
         parseFunction(&funcDef);
         if (funcDef.isVirtual)
             warning("Signals cannot be declared virtual");
@@ -1391,10 +1392,14 @@ QByteArray Moc::lexemUntil(Token target)
     QByteArray s;
     while (from <= index) {
         QByteArray n = symbols.at(from++-1).lexem();
-        if (s.size() && n.size()
-            && is_ident_char(s.at(s.size()-1))
-            && is_ident_char(n.at(0)))
-            s += ' ';
+        if (s.size() && n.size()) {
+            char prev = s.at(s.size()-1);
+            char next = n.at(0);
+            if ((is_ident_char(prev) && is_ident_char(next))
+                || (prev == '<' && next == ':')
+                || (prev == '>' && next == '>'))
+                s += ' ';
+        }
         s += n;
     }
     return s;
@@ -1429,9 +1434,20 @@ bool Moc::until(Token target) {
         case RBRACK: --brackCount; break;
         case LPAREN: ++parenCount; break;
         case RPAREN: --parenCount; break;
-        case LANGLE: ++angleCount; break;
-        case RANGLE: --angleCount; break;
-        case GTGT: angleCount -= 2; t = RANGLE; break;
+        case LANGLE:
+            if (parenCount == 0 && braceCount == 0 && parenCount == 0)
+                ++angleCount;
+          break;
+        case RANGLE:
+            if (parenCount == 0 && braceCount == 0)
+                --angleCount;
+          break;
+        case GTGT:
+            if (parenCount == 0 && braceCount == 0) {
+                angleCount -= 2;
+                t = RANGLE;
+            }
+            break;
         default: break;
         }
         if (t == target

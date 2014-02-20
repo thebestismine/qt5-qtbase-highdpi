@@ -53,6 +53,7 @@
 
 #include <QtCore/QtGlobal>
 #include <QtCore/QScopedPointer>
+#include <QtGui/QKeySequence>
 
 QT_BEGIN_NAMESPACE
 
@@ -104,13 +105,16 @@ public:
         SpellCheckUnderlineStyle,
         TabAllWidgets,
         IconPixmapSizes,
-        PasswordMaskCharacter
+        PasswordMaskCharacter,
+        DialogSnapToDefaultButton,
+        ContextMenuOnMouseRelease
     };
 
     enum DialogType {
         FileDialog,
         ColorDialog,
-        FontDialog
+        FontDialog,
+        MessageDialog
     };
 
     enum Palette {
@@ -118,6 +122,8 @@ public:
         ToolTipPalette,
         ToolButtonPalette,
         ButtonPalette,
+        CheckBoxPalette,
+        RadioButtonPalette,
         HeaderPalette,
         ComboBoxPalette,
         ItemViewPalette,
@@ -145,6 +151,8 @@ public:
         MdiSubWindowTitleFont,
         DockWidgetTitleFont,
         PushButtonFont,
+        CheckBoxFont,
+        RadioButtonFont,
         ToolButtonFont,
         ItemViewFont,
         ListViewFont,
@@ -284,6 +292,8 @@ public:
                                    QPlatformTheme::IconOptions iconOptions = 0) const;
 
     virtual QIconEngine *createIconEngine(const QString &iconName) const;
+
+    virtual QList<QKeySequence> keyBindings(QKeySequence::StandardKey key) const;
 
     static QVariant defaultThemeHint(ThemeHint hint);
 

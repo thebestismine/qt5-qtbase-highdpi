@@ -1710,11 +1710,6 @@ int QMdiSubWindowPrivate::titleBarHeight(const QStyleOptionTitleBar &options) co
     }
 
     int height = q->style()->pixelMetric(QStyle::PM_TitleBarHeight, &options, q);
-#if defined(Q_OS_MAC) && !defined(QT_NO_STYLE_MAC)
-    // ### Fix mac style, the +4 pixels hack is not necessary anymore
-    if (qobject_cast<QMacStyle *>(q->style()))
-        height -= 4;
-#endif
     if (hasBorder(options))
         height += q->isMinimized() ? 8 : 4;
     return height;
@@ -2383,7 +2378,7 @@ QWidget *QMdiSubWindow::maximizedSystemMenuIconWidget() const
 }
 
 /*!
-    Returns true if this window is shaded; otherwise returns false.
+    Returns \c true if this window is shaded; otherwise returns \c false.
 
     A window is shaded if it is collapsed so that only the title bar is
     visible.
@@ -2414,7 +2409,7 @@ void QMdiSubWindow::setOption(SubWindowOption option, bool on)
 }
 
 /*!
-    Returns true if \a option is enabled; otherwise returns false.
+    Returns \c true if \a option is enabled; otherwise returns \c false.
 
     \sa SubWindowOption, setOption()
 */

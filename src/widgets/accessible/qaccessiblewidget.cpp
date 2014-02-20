@@ -39,7 +39,7 @@
 **
 ****************************************************************************/
 
-#include "qaccessiblewidget_p.h"
+#include "qaccessiblewidget.h"
 
 #ifndef QT_NO_ACCESSIBILITY
 
@@ -169,7 +169,6 @@ public:
 /*!
     \class QAccessibleWidget
     \brief The QAccessibleWidget class implements the QAccessibleInterface for QWidgets.
-    \internal
 
     \ingroup accessibility
     \inmodule QtWidgets
@@ -204,6 +203,7 @@ QAccessibleWidget::QAccessibleWidget(QWidget *w, QAccessible::Role role, const Q
     d->name = name;
 }
 
+/*! \reimp */
 bool QAccessibleWidget::isValid() const
 {
     if (!object() || static_cast<QWidget *>(object())->d_func()->data.in_destructor)
@@ -425,10 +425,9 @@ QString QAccessibleWidget::text(QAccessible::Text t) const
         }
         break;
     case QAccessible::Description:
-        if (!widget()->accessibleDescription().isEmpty())
-            str = widget()->accessibleDescription();
+        str = widget()->accessibleDescription();
 #ifndef QT_NO_TOOLTIP
-        else
+        if (str.isEmpty())
             str = widget()->toolTip();
 #endif
         break;

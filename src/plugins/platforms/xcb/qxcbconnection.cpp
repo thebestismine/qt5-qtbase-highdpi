@@ -53,11 +53,12 @@
 #include "qxcbintegration.h"
 #include "qxcbsystemtraytracker.h"
 
-#include <QtAlgorithms>
 #include <QSocketNotifier>
 #include <QAbstractEventDispatcher>
 #include <QTimer>
 #include <QByteArray>
+
+#include <algorithm>
 
 #include <dlfcn.h>
 #include <stdio.h>
@@ -261,25 +262,25 @@ QXcbConnection::QXcbConnection(QXcbNativeInterface *nativeInterface, bool canGra
     , has_input_shape(false)
     , has_touch_without_mouse_emulation(false)
     , has_xkb(false)
+    , debug_xinput_devices(false)
+    , debug_xinput(false)
     , m_buttons(0)
     , m_focusWindow(0)
     , m_systemTrayTracker(0)
 {
+#ifdef XCB_USE_EGL
+    EGLNativeDisplayType dpy = EGL_DEFAULT_DISPLAY;
+#elif defined(XCB_USE_XLIB)
+    Display *dpy;
+#endif
 #ifdef XCB_USE_XLIB
-    Display *dpy = XOpenDisplay(m_displayName.constData());
+    dpy = XOpenDisplay(m_displayName.constData());
     if (dpy) {
         m_primaryScreen = DefaultScreen(dpy);
         m_connection = XGetXCBConnection(dpy);
         XSetEventQueueOwner(dpy, XCBOwnsEventQueue);
         XSetErrorHandler(nullErrorHandler);
         m_xlib_display = dpy;
-#ifdef XCB_USE_EGL
-        EGLDisplay eglDisplay = eglGetDisplay(dpy);
-        m_egl_display = eglDisplay;
-        EGLint major, minor;
-        eglBindAPI(EGL_OPENGL_ES_API);
-        m_has_egl = eglInitialize(eglDisplay,&major,&minor);
-#endif //XCB_USE_EGL
     }
 #else
     m_connection = xcb_connect(m_displayName.constData(), &m_primaryScreen);
@@ -288,17 +289,15 @@ QXcbConnection::QXcbConnection(QXcbNativeInterface *nativeInterface, bool canGra
     if (!m_connection || xcb_connection_has_error(m_connection))
         qFatal("QXcbConnection: Could not connect to display %s", m_displayName.constData());
 
-    m_reader = new QXcbEventReader(this);
-    connect(m_reader, SIGNAL(eventPending()), this, SLOT(processXcbEvents()), Qt::QueuedConnection);
-    connect(m_reader, SIGNAL(finished()), this, SLOT(processXcbEvents()));
-    if (!m_reader->startThread()) {
-        QSocketNotifier *notifier = new QSocketNotifier(xcb_get_file_descriptor(xcb_connection()), QSocketNotifier::Read, this);
-        connect(notifier, SIGNAL(activated(int)), this, SLOT(processXcbEvents()));
+#ifdef XCB_USE_EGL
+    EGLDisplay eglDisplay = eglGetDisplay(dpy);
+    m_egl_display = eglDisplay;
+    EGLint major, minor;
+    m_has_egl = eglInitialize(eglDisplay, &major, &minor);
+#endif //XCB_USE_EGL
 
-        QAbstractEventDispatcher *dispatcher = QGuiApplicationPrivate::eventDispatcher;
-        connect(dispatcher, SIGNAL(aboutToBlock()), this, SLOT(processXcbEvents()));
-        connect(dispatcher, SIGNAL(awake()), this, SLOT(processXcbEvents()));
-    }
+    m_reader = new QXcbEventReader(this);
+    m_reader->start();
 
     xcb_extension_t *extensions[] = {
         &xcb_shm_id, &xcb_xfixes_id, &xcb_randr_id, &xcb_shape_id, &xcb_sync_id,
@@ -332,6 +331,17 @@ QXcbConnection::QXcbConnection(QXcbNativeInterface *nativeInterface, bool canGra
                       m_connectionEventListener, m_screens.at(0)->root(),
                       0, 0, 1, 1, 0, XCB_WINDOW_CLASS_INPUT_ONLY,
                       m_screens.at(0)->screen()->root_visual, 0, 0);
+#ifndef QT_NO_DEBUG
+    QByteArray ba("Qt xcb connection listener window");
+    Q_XCB_CALL(xcb_change_property(xcb_connection(),
+                                   XCB_PROP_MODE_REPLACE,
+                                   m_connectionEventListener,
+                                   atom(QXcbAtom::_NET_WM_NAME),
+                                   atom(QXcbAtom::UTF8_STRING),
+                                   8,
+                                   ba.length(),
+                                   ba.constData()));
+#endif
 
     initializeGLX();
     initializeXFixes();
@@ -745,6 +755,8 @@ void QXcbConnection::handleButtonPress(xcb_generic_event_t *ev)
     // the rest we need to manage ourselves
     m_buttons = (m_buttons & ~0x7) | translateMouseButtons(event->state);
     m_buttons |= translateMouseButton(event->detail);
+    if (Q_UNLIKELY(debug_xinput))
+        qDebug("xcb: pressed mouse button %d, button state %X", event->detail, static_cast<unsigned int>(m_buttons));
 }
 
 void QXcbConnection::handleButtonRelease(xcb_generic_event_t *ev)
@@ -755,6 +767,8 @@ void QXcbConnection::handleButtonRelease(xcb_generic_event_t *ev)
     // the rest we need to manage ourselves
     m_buttons = (m_buttons & ~0x7) | translateMouseButtons(event->state);
     m_buttons &= ~translateMouseButton(event->detail);
+    if (Q_UNLIKELY(debug_xinput))
+        qDebug("xcb: released mouse button %d, button state %X", event->detail, static_cast<unsigned int>(m_buttons));
 }
 
 #ifndef QT_NO_XKB
@@ -810,6 +824,10 @@ void QXcbConnection::handleXcbEvent(xcb_generic_event_t *event)
             handleButtonRelease(event);
             HANDLE_PLATFORM_WINDOW_EVENT(xcb_button_release_event_t, event, handleButtonReleaseEvent);
         case XCB_MOTION_NOTIFY:
+            if (Q_UNLIKELY(debug_xinput)) {
+                xcb_motion_notify_event_t *mev = (xcb_motion_notify_event_t *)event;
+                qDebug("xcb: moved mouse to %4d, %4d; button state %X", mev->event_x, mev->event_y, static_cast<unsigned int>(m_buttons));
+            }
 #ifdef QT_NO_XKB
             m_keyboard->updateXKBStateFromCore(((xcb_motion_notify_event_t *)event)->state);
 #endif
@@ -976,14 +994,27 @@ QXcbEventReader::QXcbEventReader(QXcbConnection *connection)
 #endif
 }
 
-bool QXcbEventReader::startThread()
+void QXcbEventReader::start()
 {
     if (m_xcb_poll_for_queued_event) {
+        connect(this, SIGNAL(eventPending()), m_connection, SLOT(processXcbEvents()), Qt::QueuedConnection);
+        connect(this, SIGNAL(finished()), m_connection, SLOT(processXcbEvents()));
         QThread::start();
-        return true;
+    } else {
+        // Must be done after we have an event-dispatcher. By posting a method invocation
+        // we are sure that by the time the method is called we have an event-dispatcher.
+        QMetaObject::invokeMethod(this, "registerForEvents", Qt::QueuedConnection);
     }
+}
 
-    return false;
+void QXcbEventReader::registerForEvents()
+{
+    QSocketNotifier *notifier = new QSocketNotifier(xcb_get_file_descriptor(m_connection->xcb_connection()), QSocketNotifier::Read, this);
+    connect(notifier, SIGNAL(activated(int)), m_connection, SLOT(processXcbEvents()));
+
+    QAbstractEventDispatcher *dispatcher = QGuiApplicationPrivate::eventDispatcher;
+    connect(dispatcher, SIGNAL(aboutToBlock()), m_connection, SLOT(processXcbEvents()));
+    connect(dispatcher, SIGNAL(awake()), m_connection, SLOT(processXcbEvents()));
 }
 
 void QXcbEventReader::run()
@@ -998,8 +1029,11 @@ void QXcbEventReader::run()
         emit eventPending();
     }
 
+    m_mutex.lock();
     for (int i = 0; i < m_events.size(); ++i)
         free(m_events.at(i));
+    m_events.clear();
+    m_mutex.unlock();
 }
 
 void QXcbEventReader::addEvent(xcb_generic_event_t *event)
@@ -1159,6 +1193,12 @@ void QXcbConnection::processXcbEvents()
                 if (found)
                     continue;
             }
+
+            bool accepted = false;
+            if (clipboard()->processIncr())
+                clipboard()->incrTransactionPeeker(event, accepted);
+            if (accepted)
+                continue;
 
             QVector<PeekFunc>::iterator it = m_peekFuncs.begin();
             while (it != m_peekFuncs.end()) {
@@ -1413,17 +1453,15 @@ static const char * xcb_atomnames = {
 #if XCB_USE_MAEMO_WINDOW_PROPERTIES
     "_MEEGOTOUCH_ORIENTATION_ANGLE\0"
 #endif
-    "_XSETTINGS_SETTINGS\0" // \0\0 terminates loop.
+    "_XSETTINGS_SETTINGS\0"
+    "_COMPIZ_DECOR_PENDING\0"
+    "_COMPIZ_DECOR_REQUEST\0"
+    "_COMPIZ_DECOR_DELETE_PIXMAP\0" // \0\0 terminates loop.
 };
-
-xcb_atom_t QXcbConnection::atom(QXcbAtom::Atom atom) const
-{
-    return m_allAtoms[atom];
-}
 
 QXcbAtom::Atom QXcbConnection::qatom(xcb_atom_t xatom) const
 {
-    return static_cast<QXcbAtom::Atom>(qFind(m_allAtoms, m_allAtoms + QXcbAtom::NAtoms, xatom) - m_allAtoms);
+    return static_cast<QXcbAtom::Atom>(std::find(m_allAtoms, m_allAtoms + QXcbAtom::NAtoms, xatom) - m_allAtoms);
 }
 
 void QXcbConnection::initializeAllAtoms() {
@@ -1726,10 +1764,26 @@ bool QXcbConnection::xi2GetValuatorValueIfSet(void *event, int valuatorNum, doub
     return true;
 }
 
-bool QXcbConnection::xi2PrepareXIGenericDeviceEvent(xcb_ge_event_t *event, int opCode)
+// Starting from the xcb version 1.9.3 struct xcb_ge_event_t has changed:
+// - "pad0" became "extension"
+// - "pad1" and "pad" became "pad0"
+// New and old version of this struct share the following fields:
+// NOTE: API might change again in the next release of xcb in which case this comment will
+// need to be updated to reflect the reality.
+typedef struct qt_xcb_ge_event_t {
+    uint8_t  response_type;
+    uint8_t  extension;
+    uint16_t sequence;
+    uint32_t length;
+    uint16_t event_type;
+} qt_xcb_ge_event_t;
+
+bool QXcbConnection::xi2PrepareXIGenericDeviceEvent(xcb_ge_event_t *ev, int opCode)
 {
-    // xGenericEvent has "extension" on the second byte, xcb_ge_event_t has "pad0".
-    if (event->pad0 == opCode) {
+    qt_xcb_ge_event_t *event = (qt_xcb_ge_event_t *)ev;
+    // xGenericEvent has "extension" on the second byte, the same is true for xcb_ge_event_t starting from
+    // the xcb version 1.9.3, prior to that it was called "pad0".
+    if (event->extension == opCode) {
         // xcb event structs contain stuff that wasn't on the wire, the full_sequence field
         // adds an extra 4 bytes and generic events cookie data is on the wire right after the standard 32 bytes.
         // Move this data back to have the same layout in memory as it was on the wire

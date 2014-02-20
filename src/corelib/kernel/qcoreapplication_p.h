@@ -98,6 +98,7 @@ public:
     bool notify_helper(QObject *, QEvent *);
 
     virtual void createEventDispatcher();
+    virtual void eventDispatcherReady();
     static void removePostedEvent(QEvent *);
 #ifdef Q_OS_WIN
     static void removePostedTimerEvent(QObject *object, int timerId);
@@ -138,7 +139,9 @@ public:
     QCoreApplicationPrivate::Type application_type;
 
     QString cachedApplicationDirPath;
-    QString cachedApplicationFilePath;
+    static QString *cachedApplicationFilePath;
+    static void setApplicationFilePath(const QString &path);
+    static inline void clearApplicationFilePath() { delete cachedApplicationFilePath; cachedApplicationFilePath = 0; }
 
 #ifndef QT_NO_QOBJECT
     bool in_exec;

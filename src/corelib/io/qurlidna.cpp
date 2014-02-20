@@ -42,6 +42,7 @@
 #include "qurl_p.h"
 
 #include <QtCore/qstringlist.h>
+#include <algorithm>
 
 QT_BEGIN_NAMESPACE
 
@@ -59,6 +60,11 @@ struct NameprepCaseFoldingEntry {
     uint uc;
     ushort mapping[4];
 };
+
+#if defined(Q_CC_MSVC) && _MSC_VER < 1600
+inline bool operator<(const NameprepCaseFoldingEntry &one, const NameprepCaseFoldingEntry &other)
+{ return one.uc < other.uc; }
+#endif
 
 inline bool operator<(uint one, const NameprepCaseFoldingEntry &other)
 { return one < other.uc; }
@@ -1461,10 +1467,10 @@ static void mapToLowerCase(QString *str, int from)
                     ++i;
                 }
             }
-            const NameprepCaseFoldingEntry *entry = qBinaryFind(NameprepCaseFolding,
-                                                                NameprepCaseFolding + N,
-                                                                uc);
-            if ((entry - NameprepCaseFolding) != N) {
+            const NameprepCaseFoldingEntry *entry = std::lower_bound(NameprepCaseFolding,
+                                                                     NameprepCaseFolding + N,
+                                                                     uc);
+            if ((entry != NameprepCaseFolding + N) && !(uc < *entry)) {
                 int l = 1;
                 while (l < 4 && entry->mapping[l])
                     ++l;
@@ -2597,7 +2603,7 @@ QStringList QUrl::idnWhitelist()
     Note that if you call this function, you need to do so \e before
     you start any threads that might access idnWhitelist().
 
-    Qt has comes a default list that contains the Internet top-level domains
+    Qt comes with a default list that contains the Internet top-level domains
     that have published support for Internationalized Domain Names (IDNs)
     and rules to guarantee that no deception can happen between similarly-looking
     characters (such as the Latin lowercase letter \c 'a' and the Cyrillic

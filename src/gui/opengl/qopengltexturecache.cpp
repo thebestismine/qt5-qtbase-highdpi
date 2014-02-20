@@ -40,6 +40,7 @@
 ****************************************************************************/
 
 #include "qopengltexturecache_p.h"
+#include <qopenglfunctions.h>
 #include <private/qopenglcontext_p.h>
 #include <private/qimagepixmapcleanuphooks_p.h>
 #include <qpa/qplatformpixmap.h>
@@ -95,10 +96,9 @@ void QOpenGLTextureCacheWrapper::cleanupTexturesForPixmapData(QPlatformPixmap *p
     cleanupTexturesForCacheKey(pmd->cacheKey());
 }
 
-QOpenGLTextureCache::QOpenGLTextureCache(QOpenGLContext *ctx, bool useByteSwapImage)
+QOpenGLTextureCache::QOpenGLTextureCache(QOpenGLContext *ctx)
     : QOpenGLSharedResource(ctx->shareGroup())
     , m_cache(64 * 1024) // 64 MB cache
-    , m_useByteSwapImage(useByteSwapImage)
 {
 }
 
@@ -129,6 +129,20 @@ GLuint QOpenGLTextureCache::bindTexture(QOpenGLContext *context, const QPixmap &
     return id;
 }
 
+// returns the highest number closest to v, which is a power of 2
+// NB! assumes 32 bit ints
+static int qt_next_power_of_two(int v)
+{
+    v--;
+    v |= v >> 1;
+    v |= v >> 2;
+    v |= v >> 4;
+    v |= v >> 8;
+    v |= v >> 16;
+    ++v;
+    return v;
+}
+
 GLuint QOpenGLTextureCache::bindTexture(QOpenGLContext *context, const QImage &image)
 {
     if (image.isNull())
@@ -145,32 +159,23 @@ GLuint QOpenGLTextureCache::bindTexture(QOpenGLContext *context, const QImage &i
         }
     }
 
-    GLuint id = bindTexture(context, key, image);
+    QImage img = image;
+    if (!context->functions()->hasOpenGLFeature(QOpenGLFunctions::NPOTTextures)) {
+        // Scale the pixmap if needed. GL textures needs to have the
+        // dimensions 2^n+2(border) x 2^m+2(border), unless we're using GL
+        // 2.0 or use the GL_TEXTURE_RECTANGLE texture target
+        int tx_w = qt_next_power_of_two(image.width());
+        int tx_h = qt_next_power_of_two(image.height());
+        if (tx_w != image.width() || tx_h != image.height()) {
+            img = img.scaled(tx_w, tx_h);
+        }
+    }
+
+    GLuint id = bindTexture(context, key, img);
     if (id > 0)
         QImagePixmapCleanupHooks::enableCleanupHooks(image);
 
     return id;
-}
-
-static inline void qgl_byteSwapImage(QImage &img)
-{
-    const int width = img.width();
-    const int height = img.height();
-
-    if (QSysInfo::ByteOrder == QSysInfo::LittleEndian)
-    {
-        for (int i = 0; i < height; ++i) {
-            uint *p = (uint *) img.scanLine(i);
-            for (int x = 0; x < width; ++x)
-                p[x] = ((p[x] << 16) & 0xff0000) | ((p[x] >> 16) & 0xff) | (p[x] & 0xff00ff00);
-        }
-    } else {
-        for (int i = 0; i < height; ++i) {
-            uint *p = (uint *) img.scanLine(i);
-            for (int x = 0; x < width; ++x)
-                p[x] = (p[x] << 8) | (p[x] >> 24);
-        }
-    }
 }
 
 GLuint QOpenGLTextureCache::bindTexture(QOpenGLContext *context, qint64 key, const QImage &image)
@@ -179,11 +184,7 @@ GLuint QOpenGLTextureCache::bindTexture(QOpenGLContext *context, qint64 key, con
     glGenTextures(1, &id);
     glBindTexture(GL_TEXTURE_2D, id);
 
-    QImage tx = image.convertToFormat(QImage::Format_ARGB32_Premultiplied);
-
-    // Performance could be improved by skipping qgl_byteSwapImage().
-    if (m_useByteSwapImage)
-        qgl_byteSwapImage(tx);
+    QImage tx = image.convertToFormat(QImage::Format_RGBA8888_Premultiplied);
 
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, tx.width(), tx.height(), 0, GL_RGBA, GL_UNSIGNED_BYTE, const_cast<const QImage &>(tx).bits());
 

@@ -217,7 +217,7 @@ int QTextTableCell::columnSpan() const
 /*!
     \fn bool QTextTableCell::isValid() const
 
-    Returns true if this is a valid table cell; otherwise returns
+    Returns \c true if this is a valid table cell; otherwise returns
     false.
 */
 
@@ -303,15 +303,15 @@ QTextFrame::iterator QTextTableCell::end() const
 /*!
     \fn QTextCursor QTextTableCell::operator==(const QTextTableCell &other) const
 
-    Returns true if this cell object and the \a other cell object
-    describe the same cell; otherwise returns false.
+    Returns \c true if this cell object and the \a other cell object
+    describe the same cell; otherwise returns \c false.
 */
 
 /*!
     \fn QTextCursor QTextTableCell::operator!=(const QTextTableCell &other) const
 
-    Returns true if this cell object and the \a other cell object
-    describe different cells; otherwise returns false.
+    Returns \c true if this cell object and the \a other cell object
+    describe different cells; otherwise returns \c false.
 */
 
 /*!
@@ -355,12 +355,12 @@ QTextTable *QTextTablePrivate::createTable(QTextDocumentPrivate *pieceTable, int
 
     for (int i = 1; i < rows*cols; ++i) {
         d->cells.append(pieceTable->insertBlock(QTextBeginningOfFrame, pos, cellIdx, charIdx));
-// 	    qDebug("      addCell at %d", pos);
+//      qDebug("      addCell at %d", pos);
         ++pos;
     }
 
     d->fragment_end = pieceTable->insertBlock(QTextEndOfFrame, pos, cellIdx, charIdx);
-// 	qDebug("      addEOR at %d", pos);
+//  qDebug("      addEOR at %d", pos);
     ++pos;
 
     d->blockFragmentUpdates = false;
@@ -393,10 +393,10 @@ int QTextTablePrivate::findCellIndex(int fragment) const
 {
     QFragmentFindHelper helper(pieceTable->fragmentMap().position(fragment),
                               pieceTable->fragmentMap());
-    QList<int>::ConstIterator it = qBinaryFind(cells.begin(), cells.end(), helper);
-    if (it == cells.end())
+    QList<int>::ConstIterator it = std::lower_bound(cells.constBegin(), cells.constEnd(), helper);
+    if ((it == cells.constEnd()) || (helper < *it))
         return -1;
-    return it - cells.begin();
+    return it - cells.constBegin();
 }
 
 void QTextTablePrivate::fragmentAdded(QChar type, uint fragment)
@@ -482,7 +482,7 @@ void QTextTablePrivate::update() const
             for (int jj = 0; jj < colspan; ++jj) {
                 Q_ASSERT(grid[(r+ii)*nCols + c+jj] == 0);
                 grid[(r+ii)*nCols + c+jj] = fragment;
-//  		    qDebug("    setting cell %d span=%d/%d at %d/%d", fragment, rowspan, colspan, r+ii, c+jj);
+//              qDebug("    setting cell %d span=%d/%d at %d/%d", fragment, rowspan, colspan, r+ii, c+jj);
             }
         }
     }
@@ -654,7 +654,7 @@ void QTextTable::resize(int rows, int cols)
     int nCols = this->columns();
 
     if (rows == nRows && cols == nCols)
-	return;
+        return;
 
     d->pieceTable->beginEditBlock();
 
@@ -682,7 +682,7 @@ void QTextTable::insertRows(int pos, int num)
 {
     Q_D(QTextTable);
     if (num <= 0)
-	return;
+        return;
 
     if (d->dirty)
         d->update();
@@ -744,7 +744,7 @@ void QTextTable::insertColumns(int pos, int num)
 {
     Q_D(QTextTable);
     if (num <= 0)
-	return;
+        return;
 
     if (d->dirty)
         d->update();
@@ -932,7 +932,7 @@ void QTextTable::removeColumns(int pos, int num)
 //     qDebug() << "-------- removeCols" << pos << num;
 
     if (num <= 0 || pos < 0)
-	return;
+        return;
     if (d->dirty)
         d->update();
     if (pos >= d->nCols)
@@ -1048,8 +1048,9 @@ void QTextTable::mergeCells(int row, int column, int numRows, int numCols)
 
     // find the position at which to insert the contents of the merged cells
     QFragmentFindHelper helper(origCellPosition, p->fragmentMap());
-    QList<int>::Iterator it = qBinaryFind(d->cells.begin(), d->cells.end(), helper);
+    QList<int>::Iterator it = std::lower_bound(d->cells.begin(), d->cells.end(), helper);
     Q_ASSERT(it != d->cells.end());
+    Q_ASSERT(!(helper < *it));
     Q_ASSERT(*it == cellFragment);
     const int insertCellIndex = it - d->cells.begin();
     int insertFragment = d->cells.value(insertCellIndex + 1, d->fragment_end);
@@ -1080,8 +1081,9 @@ void QTextTable::mergeCells(int row, int column, int numRows, int numCols)
 
             if (firstCellIndex == -1) {
                 QFragmentFindHelper helper(pos, p->fragmentMap());
-                QList<int>::Iterator it = qBinaryFind(d->cells.begin(), d->cells.end(), helper);
+                QList<int>::Iterator it = std::lower_bound(d->cells.begin(), d->cells.end(), helper);
                 Q_ASSERT(it != d->cells.end());
+                Q_ASSERT(!(helper < *it));
                 Q_ASSERT(*it == fragment);
                 firstCellIndex = cellIndex = it - d->cells.begin();
             }

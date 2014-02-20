@@ -256,7 +256,7 @@ QSurfaceFormat::~QSurfaceFormat()
 /*!
     \fn bool QSurfaceFormat::stereo() const
 
-    Returns true if stereo buffering is enabled; otherwise returns
+    Returns \c true if stereo buffering is enabled; otherwise returns
     false. Stereo buffering is disabled by default.
 
     \sa setStereo()
@@ -346,7 +346,7 @@ void QSurfaceFormat::setOption(QSurfaceFormat::FormatOptions opt)
 }
 
 /*!
-    Returns true if format option \a opt is set; otherwise returns false.
+    Returns \c true if format option \a opt is set; otherwise returns \c false.
 
     \sa setOption()
 */
@@ -358,7 +358,7 @@ bool QSurfaceFormat::testOption(QSurfaceFormat::FormatOptions opt) const
 /*!
     Set the minimum depth buffer size to \a size.
 
-    \sa depthBufferSize(), setDepth(), depth()
+    \sa depthBufferSize()
 */
 void QSurfaceFormat::setDepthBufferSize(int size)
 {
@@ -371,7 +371,7 @@ void QSurfaceFormat::setDepthBufferSize(int size)
 /*!
     Returns the depth buffer size.
 
-    \sa setDepthBufferSize(), setDepth(), depth()
+    \sa setDepthBufferSize()
 */
 int QSurfaceFormat::depthBufferSize() const
 {
@@ -404,7 +404,7 @@ QSurfaceFormat::SwapBehavior QSurfaceFormat::swapBehavior() const
 }
 
 /*!
-    Returns true if the alpha buffer size is greater than zero.
+    Returns \c true if the alpha buffer size is greater than zero.
 
     This means that the surface might be used with per pixel
     translucency effects.
@@ -417,7 +417,7 @@ bool QSurfaceFormat::hasAlpha() const
 /*!
     Set the preferred stencil buffer size to \a size bits.
 
-    \sa stencilBufferSize(), setStencil(), stencil()
+    \sa stencilBufferSize()
 */
 void QSurfaceFormat::setStencilBufferSize(int size)
 {
@@ -430,7 +430,7 @@ void QSurfaceFormat::setStencilBufferSize(int size)
 /*!
     Returns the stencil buffer size in bits.
 
-    \sa stencil(), setStencil(), setStencilBufferSize()
+    \sa setStencilBufferSize()
 */
 int QSurfaceFormat::stencilBufferSize() const
 {
@@ -628,7 +628,7 @@ void QSurfaceFormat::setVersion(int major, int minor)
 }
 
 /*!
-    Returns true if all the options of the two QSurfaceFormat objects
+    Returns \c true if all the options of the two QSurfaceFormat objects
     \a a and \a b are equal.
 
     \relates QSurfaceFormat
@@ -650,8 +650,8 @@ bool operator==(const QSurfaceFormat& a, const QSurfaceFormat& b)
 }
 
 /*!
-    Returns false if all the options of the two QSurfaceFormat objects
-    \a a and \a b are equal; otherwise returns true.
+    Returns \c false if all the options of the two QSurfaceFormat objects
+    \a a and \a b are equal; otherwise returns \c true.
 
     \relates QSurfaceFormat
 */

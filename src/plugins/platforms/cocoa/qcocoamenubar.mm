@@ -79,6 +79,10 @@ QCocoaMenuBar::~QCocoaMenuBar()
 
     if (m_window && m_window->menubar() == this) {
         m_window->setMenubar(0);
+        // Delete the children first so they do not cause
+        // the native menu items to be hidden after
+        // the menu bar was updated
+        qDeleteAll(children());
         updateMenuBarImmediately();
     }
 }
@@ -175,6 +179,7 @@ void QCocoaMenuBar::handleReparent(QWindow *newParentWindow)
     if (newParentWindow == NULL) {
         m_window = NULL;
     } else {
+        newParentWindow->create();
         m_window = static_cast<QCocoaWindow*>(newParentWindow->handle());
         m_window->setMenubar(this);
     }

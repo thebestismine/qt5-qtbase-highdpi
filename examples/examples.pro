@@ -4,9 +4,9 @@ CONFIG += no_docs_target
 SUBDIRS = \
     dbus \
     embedded \
-    gestures \
     gui \
     ipc \
+    json \
     network \
     opengl \
     qpa \

@@ -113,6 +113,8 @@ private slots:
     void testCustomPageSizes();
     void customPaperSizeAndMargins_data();
     void customPaperSizeAndMargins();
+    void customPaperNameSettingBySize();
+    void customPaperNameSettingByName();
 #if !defined(QT_NO_COMPLETER) && !defined(QT_NO_FILEDIALOG)
     void printDialogCompleter();
 #endif
@@ -204,9 +206,6 @@ void tst_QPrinter::getSetCheck()
     obj1.setPrinterSelectionOption(QString::fromLatin1("--option"));
     QCOMPARE(obj1.printerSelectionOption(), QString::fromLatin1("--option"));
 #endif
-
-    obj1.setPrinterName(QString::fromLatin1("myPrinter"));
-    QCOMPARE(obj1.printerName(), QString::fromLatin1("myPrinter"));
 
     // bool QPrinter::fontEmbeddingEnabled()
     // void QPrinter::setFontEmbeddingEnabled(bool)
@@ -459,7 +458,7 @@ void tst_QPrinter::testNonExistentPrinter()
     QPainter painter;
 
     // Make sure it doesn't crash on setting or getting properties
-    printer.setPrinterName("some non existing printer");
+    printer.printEngine()->setProperty(QPrintEngine::PPK_PrinterName, "some non existing printer");
     printer.setPageSize(QPrinter::A4);
     printer.setOrientation(QPrinter::Portrait);
     printer.setFullPage(true);
@@ -590,6 +589,7 @@ void tst_QPrinter::setGetPaperSize()
     QSizeF size(500, 10);
     p.setPaperSize(size, QPrinter::Millimeter);
     QCOMPARE(p.paperSize(QPrinter::Millimeter), size);
+    QCOMPARE(p.pageSizeMM(), size);
     QSizeF ptSize = p.paperSize(QPrinter::Point);
     //qDebug() << ptSize;
     QVERIFY(qAbs(ptSize.width() - size.width() * (72/25.4)) < 1E-4);
@@ -706,9 +706,6 @@ void tst_QPrinter::valuePreservation()
 
         printer.setCollateCopies(!status);
         printer.setOutputFormat(newFormat);
-#ifdef Q_OS_MAC
-        QEXPECT_FAIL("","QTBUG-26430", Abort);
-#endif
         QCOMPARE(printer.collateCopies(), !status);
         printer.setOutputFormat(oldFormat);
         QCOMPARE(printer.collateCopies(), !status);
@@ -906,13 +903,6 @@ void tst_QPrinter::valuePreservation()
         printer.setOutputFormat(newFormat);
         printer.setOutputFormat(oldFormat);
         QCOMPARE(printer.printerName(), status);
-
-        status = QString::fromLatin1("SuperDuperPrinter");
-        printer.setPrinterName(status);
-        printer.setOutputFormat(newFormat);
-        QCOMPARE(printer.printerName(), status);
-        printer.setOutputFormat(oldFormat);
-        QCOMPARE(printer.printerName(), status);
     }
     // QPrinter::printerSelectionOption is explicitly documented not to be available on Windows.
 #ifndef Q_OS_WIN
@@ -966,6 +956,13 @@ void tst_QPrinter::errorReporting()
     painter.end();
 }
 
+static QByteArray msgSizeMismatch(const QSizeF &actual, const QSizeF &expected)
+{
+  QString result;
+  QDebug(&result) << "Paper size mismatch" << actual << "!=" << expected;
+  return result.toLocal8Bit();
+}
+
 void tst_QPrinter::testCustomPageSizes()
 {
     QPrinter p;
@@ -974,12 +971,16 @@ void tst_QPrinter::testCustomPageSizes()
     p.setPaperSize(customSize, QPrinter::Inch);
 
     QSizeF paperSize = p.paperSize(QPrinter::Inch);
-    QCOMPARE(paperSize, customSize);
+    // Due to the different calculations, the sizes may be off by a fraction so we have to check it manually
+    // instead of relying on QSizeF comparison
+    QVERIFY2(sqrt(pow(paperSize.width() - customSize.width(), 2.0) + pow(paperSize.height() - customSize.height(), 2.0)) < 0.01,
+             msgSizeMismatch(paperSize, customSize));
 
     QPrinter p2(QPrinter::HighResolution);
     p2.setPaperSize(customSize, QPrinter::Inch);
     paperSize = p.paperSize(QPrinter::Inch);
-    QCOMPARE(paperSize, customSize);
+    QVERIFY2(sqrt(pow(paperSize.width() - customSize.width(), 2.0) + pow(paperSize.height() - customSize.height(), 2.0)) < 0.01,
+            msgSizeMismatch(paperSize, customSize));
 }
 
 void tst_QPrinter::customPaperSizeAndMargins_data()
@@ -1190,6 +1191,68 @@ void tst_QPrinter::testPageMetrics()
     QCOMPARE(printer.widthMM(), int(widthMM));
     QCOMPARE(printer.heightMM(), int(heightMM));
     QCOMPARE(printer.pageSizeMM(), QSizeF(widthMMf, heightMMf));
+}
+
+void tst_QPrinter::customPaperNameSettingBySize()
+{
+#ifndef Q_OS_WIN
+    QSKIP("Currently this triggers a problem on non Windows platforms, this will be fixed separately - QTBUG-34521");
+#endif
+    QPrinter printer(QPrinter::HighResolution);
+    QPrinterInfo info(printer);
+    QList<QPair<QString, QSizeF> > sizes = info.supportedSizesWithNames();
+    if (sizes.size() == 0)
+        QSKIP("No printers installed on this machine");
+    for (int i=0; i<sizes.size(); i++) {
+        printer.setPaperSize(sizes.at(i).second, QPrinter::Millimeter);
+        QCOMPARE(sizes.at(i).second, printer.paperSize(QPrinter::Millimeter));
+        // Some printers have the same size under different names which can cause a problem for the test
+        // So we iterate up to the current position to check
+        QSizeF paperSize = sizes.at(i).second;
+        QString paperName = printer.paperName();
+        bool paperNameFound = (sizes.at(i).first == paperName);
+        if (!paperNameFound) {
+            for (int j=0; j<i; j++) {
+                if (sizes.at(j).second == paperSize && sizes.at(j).first == paperName) {
+                    paperNameFound = true;
+                    break;
+                }
+            }
+        }
+        // Fail with the original values
+        if (!paperNameFound)
+            QCOMPARE(sizes.at(i).first, printer.paperName());
+    }
+
+    // Check setting a custom size after setting a standard one works
+    QSizeF customSize(200, 200);
+    printer.setPaperSize(customSize, QPrinter::Millimeter);
+    QCOMPARE(printer.paperSize(QPrinter::Millimeter), customSize);
+    QCOMPARE(printer.paperSize(), QPrinter::Custom);
+
+    // Finally check setting a standard size after a custom one works
+    printer.setPaperSize(sizes.at(0).second, QPrinter::Millimeter);
+    QCOMPARE(printer.paperName(), sizes.at(0).first);
+    QCOMPARE(printer.paperSize(QPrinter::Millimeter), sizes.at(0).second);
+}
+
+void tst_QPrinter::customPaperNameSettingByName()
+{
+#ifndef Q_OS_WIN
+    QSKIP("Currently this triggers a problem on non Windows platforms, this will be fixed separately - QTBUG-34521");
+#endif
+    QPrinter printer(QPrinter::HighResolution);
+    QPrinterInfo info(printer);
+    QList<QPair<QString, QSizeF> > sizes = info.supportedSizesWithNames();
+    if (sizes.size() == 0)
+        QSKIP("No printers installed on this machine");
+    for (int i=0; i<sizes.size(); i++) {
+        printer.setPaperName(sizes.at(i).first);
+        QCOMPARE(sizes.at(i).first, printer.paperName());
+        QSizeF paperSize = printer.paperSize(QPrinter::Millimeter);
+        QVERIFY2(sqrt(pow(sizes.at(i).second.width() - paperSize.width(), 2.0) + pow(sizes.at(i).second.height() - paperSize.height(), 2.0)) < 0.01,
+             msgSizeMismatch(sizes.at(i).second, paperSize));
+    }
 }
 
 #endif // QT_NO_PRINTER

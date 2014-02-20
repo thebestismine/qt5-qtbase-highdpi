@@ -277,6 +277,10 @@ namespace QXcbAtom {
 #endif
         _XSETTINGS_SETTINGS,
 
+        _COMPIZ_DECOR_PENDING,
+        _COMPIZ_DECOR_REQUEST,
+        _COMPIZ_DECOR_DELETE_PIXMAP,
+
         NPredefinedAtoms,
 
         _QT_SETTINGS_TIMESTAMP = NPredefinedAtoms,
@@ -298,10 +302,13 @@ public:
     QXcbEventArray *lock();
     void unlock();
 
-    bool startThread();
+    void start();
 
 signals:
     void eventPending();
+
+private slots:
+    void registerForEvents();
 
 private:
     void addEvent(xcb_generic_event_t *event);
@@ -352,7 +359,7 @@ public:
     const QList<QXcbScreen *> &screens() const { return m_screens; }
     int primaryScreen() const { return m_primaryScreen; }
 
-    xcb_atom_t atom(QXcbAtom::Atom atom) const;
+    inline xcb_atom_t atom(QXcbAtom::Atom atom) const { return m_allAtoms[atom]; }
     QXcbAtom::Atom qatom(xcb_atom_t atom) const;
     xcb_atom_t internAtom(const char *name);
     QByteArray atomName(xcb_atom_t atom);
@@ -567,6 +574,8 @@ private:
     bool has_input_shape;
     bool has_touch_without_mouse_emulation;
     bool has_xkb;
+    bool debug_xinput_devices;
+    bool debug_xinput;
 
     Qt::MouseButtons m_buttons;
 
@@ -574,6 +583,8 @@ private:
 
     QByteArray m_startupId;
     QXcbSystemTrayTracker *m_systemTrayTracker;
+
+    friend class QXcbEventReader;
 };
 
 #define DISPLAY_FROM_XCB(object) ((Display *)(object->connection()->xlib_display()))

@@ -43,15 +43,15 @@
 #define QEGLFSCURSOR_H
 
 #include <qpa/qplatformcursor.h>
+#include <QtGui/QOpenGLFunctions>
 #include "qeglfsscreen.h"
-#include <GLES2/gl2.h>
 
 QT_BEGIN_NAMESPACE
 
 class QOpenGLShaderProgram;
 class QEglFSScreen;
 
-class QEglFSCursor : public QPlatformCursor
+class QEglFSCursor : public QPlatformCursor, public QOpenGLFunctions
 {
 public:
     QEglFSCursor(QEglFSScreen *screen);
@@ -69,6 +69,8 @@ public:
 
     virtual void paintOnScreen();
 
+    void resetResources();
+
 protected:
 #ifndef QT_NO_CURSOR
     bool setCurrentCursor(QCursor *cursor);
@@ -76,11 +78,14 @@ protected:
     void draw(const QRectF &rect);
     void update(const QRegion &region);
 
+    GLuint createShader(GLenum shaderType, const char *program);
+    GLuint createProgram(GLuint vshader, GLuint fshader);
+
     QEglFSScreen *m_screen;
 
     // current cursor information
     struct Cursor {
-        Cursor() : texture(0), shape(Qt::BlankCursor), customCursorTexture(0) { }
+        Cursor() : texture(0), shape(Qt::BlankCursor), customCursorTexture(0), customCursorPending(false) { }
         uint texture; // a texture from 'image' or the atlas
         Qt::CursorShape shape;
         QRectF textureRect; // normalized rect inside texture
@@ -89,6 +94,7 @@ protected:
         QImage customCursorImage;
         QPoint pos; // current cursor position
         uint customCursorTexture;
+        bool customCursorPending;
     } m_cursor;
 
 private:

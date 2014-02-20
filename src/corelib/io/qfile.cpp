@@ -143,7 +143,7 @@ QAbstractFileEngine *QFilePrivate::engine() const
     The size of the file is returned by size(). You can get the
     current file position using pos(), or move to a new file position
     using seek(). If you've reached the end of the file, atEnd()
-    returns true.
+    returns \c true.
 
     \section1 Reading Files Directly
 
@@ -403,8 +403,8 @@ QFile::setFileName(const QString &name)
 /*!
     \overload
 
-    Returns true if the file specified by fileName() exists; otherwise
-    returns false.
+    Returns \c true if the file specified by fileName() exists; otherwise
+    returns \c false.
 
     \sa fileName(), setFileName()
 */
@@ -419,14 +419,17 @@ QFile::exists() const
 }
 
 /*!
-    Returns true if the file specified by \a fileName exists; otherwise
-    returns false.
+    Returns \c true if the file specified by \a fileName exists; otherwise
+    returns \c false.
+
+    \note If \a fileName is a symlink that points to a non-existing
+    file, false is returned.
 */
 
 bool
 QFile::exists(const QString &fileName)
 {
-    return QFileInfo(fileName).exists();
+    return QFileInfo::exists(fileName);
 }
 
 /*!
@@ -439,7 +442,7 @@ QFile::exists(const QString &fileName)
     link.
 
     This name may not represent an existing file; it is only a string.
-    QFile::exists() returns true if the symlink points to an existing file.
+    QFile::exists() returns \c true if the symlink points to an existing file.
 
     \sa fileName(), setFileName()
 */
@@ -465,7 +468,7 @@ QFile::readLink() const
     empty string if the \a fileName does not correspond to a symbolic link.
 
     This name may not represent an existing file; it is only a string.
-    QFile::exists() returns true if the symlink points to an existing file.
+    QFile::exists() returns \c true if the symlink points to an existing file.
 */
 
 /*!
@@ -480,8 +483,8 @@ QFile::readLink(const QString &fileName)
 }
 
 /*!
-    Removes the file specified by fileName(). Returns true if successful;
-    otherwise returns false.
+    Removes the file specified by fileName(). Returns \c true if successful;
+    otherwise returns \c false.
 
     The file is closed before it is removed.
 
@@ -513,7 +516,7 @@ QFile::remove()
 
     Removes the file specified by the \a fileName given.
 
-    Returns true if successful; otherwise returns false.
+    Returns \c true if successful; otherwise returns \c false.
 
     \sa remove()
 */
@@ -526,9 +529,9 @@ QFile::remove(const QString &fileName)
 
 /*!
     Renames the file currently specified by fileName() to \a newName.
-    Returns true if successful; otherwise returns false.
+    Returns \c true if successful; otherwise returns \c false.
 
-    If a file with the name \a newName already exists, rename() returns false
+    If a file with the name \a newName already exists, rename() returns \c false
     (i.e., QFile will not overwrite it).
 
     The file is closed before it is renamed.
@@ -568,6 +571,8 @@ QFile::rename(const QString &newName)
             d->setError(QFile::RenameError, tr("Destination file exists"));
             return false;
         }
+#ifndef QT_NO_TEMPORARYFILE
+        // This #ifndef disables the workaround it encloses. Therefore, this configuration is not recommended.
 #ifdef Q_OS_LINUX
         // rename() on Linux simply does nothing when renaming "foo" to "Foo" on a case-insensitive
         // FS, such as FAT32. Move the file away and rename in 2 steps to work around.
@@ -595,7 +600,8 @@ QFile::rename(const QString &newName)
                         arg(QDir::toNativeSeparators(tempFile.fileName()), tempFile.errorString()));
         }
         return false;
-#endif
+#endif // Q_OS_LINUX
+#endif // QT_NO_TEMPORARYFILE
     }
     unsetError();
     close();
@@ -657,10 +663,10 @@ QFile::rename(const QString &newName)
 /*!
     \overload
 
-    Renames the file \a oldName to \a newName. Returns true if
-    successful; otherwise returns false.
+    Renames the file \a oldName to \a newName. Returns \c true if
+    successful; otherwise returns \c false.
 
-    If a file with the name \a newName already exists, rename() returns false
+    If a file with the name \a newName already exists, rename() returns \c false
     (i.e., QFile will not overwrite it).
 
     \sa rename()
@@ -676,8 +682,8 @@ QFile::rename(const QString &oldName, const QString &newName)
 
     Creates a link named \a linkName that points to the file currently specified by
     fileName().  What a link is depends on the underlying filesystem (be it a
-    shortcut on Windows or a symbolic link on Unix). Returns true if successful;
-    otherwise returns false.
+    shortcut on Windows or a symbolic link on Unix). Returns \c true if successful;
+    otherwise returns \c false.
 
     This function will not overwrite an already existing entity in the file system;
     in this case, \c link() will return false and set \l{QFile::}{error()} to
@@ -710,8 +716,8 @@ QFile::link(const QString &linkName)
 
     Creates a link named \a linkName that points to the file \a fileName. What a link is
     depends on the underlying filesystem (be it a shortcut on Windows
-    or a symbolic link on Unix). Returns true if successful; otherwise
-    returns false.
+    or a symbolic link on Unix). Returns \c true if successful; otherwise
+    returns \c false.
 
     \sa link()
 */
@@ -724,10 +730,10 @@ QFile::link(const QString &fileName, const QString &linkName)
 
 /*!
     Copies the file currently specified by fileName() to a file called
-    \a newName.  Returns true if successful; otherwise returns false.
+    \a newName.  Returns \c true if successful; otherwise returns \c false.
 
     Note that if a file with the name \a newName already exists,
-    copy() returns false (i.e. QFile will not overwrite it).
+    copy() returns \c false (i.e. QFile will not overwrite it).
 
     The source file is closed before it is copied.
 
@@ -827,10 +833,10 @@ QFile::copy(const QString &newName)
 /*!
     \overload
 
-    Copies the file \a fileName to \a newName. Returns true if successful;
-    otherwise returns false.
+    Copies the file \a fileName to \a newName. Returns \c true if successful;
+    otherwise returns \c false.
 
-    If a file with the name \a newName already exists, copy() returns false
+    If a file with the name \a newName already exists, copy() returns \c false
     (i.e., QFile will not overwrite it).
 
     \sa rename()
@@ -891,7 +897,7 @@ bool QFile::open(OpenMode mode)
 
     Opens the existing file handle \a fh in the given \a mode.
     \a handleFlags may be used to specify additional options.
-    Returns true if successful; otherwise returns false.
+    Returns \c true if successful; otherwise returns \c false.
 
     Example:
     \snippet code/src_corelib_io_qfile.cpp 3
@@ -963,7 +969,7 @@ bool QFile::open(FILE *fh, OpenMode mode, FileHandleFlags handleFlags)
 
     Opens the existing file descriptor \a fd in the given \a mode.
     \a handleFlags may be used to specify additional options.
-    Returns true if successful; otherwise returns false.
+    Returns \c true if successful; otherwise returns \c false.
 
     When a QFile is opened using this function, behaviour of close() is
     controlled by the AutoCloseHandle flag.
@@ -1028,7 +1034,7 @@ bool QFile::resize(qint64 sz)
 /*!
     \overload
 
-    Sets \a fileName to size (in bytes) \a sz. Returns true if the file if
+    Sets \a fileName to size (in bytes) \a sz. Returns \c true if the file if
     the resize succeeds; false otherwise. If \a sz is larger than \a
     fileName currently is the new bytes will be set to 0, if \a sz is
     smaller the file is simply truncated.
@@ -1065,7 +1071,7 @@ QFile::permissions(const QString &fileName)
 
 /*!
     Sets the permissions for the file to the \a permissions specified.
-    Returns true if successful, or false if the permissions cannot be
+    Returns \c true if successful, or false if the permissions cannot be
     modified.
 
     \sa permissions(), setFileName()

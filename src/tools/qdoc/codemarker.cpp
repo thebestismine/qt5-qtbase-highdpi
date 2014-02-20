@@ -94,7 +94,7 @@ void CodeMarker::terminateMarker()
  */
 void CodeMarker::initialize(const Config& config)
 {
-    defaultLang = config.getString(QLatin1String(CONFIG_LANGUAGE));
+    defaultLang = config.getString(CONFIG_LANGUAGE);
     QList<CodeMarker *>::ConstIterator m = markers.constBegin();
     while (m != markers.constEnd()) {
         (*m)->initializeMarker(config);
@@ -459,7 +459,7 @@ void CodeMarker::insert(FastSection &fastSection,
 }
 
 /*!
-  Returns true if \a node represents a reimplemented member
+  Returns \c true if \a node represents a reimplemented member
   function in the class of the FastSection \a fs. If it is
   a reimplemented function, then it is inserted into the
   reimplemented member map in \a fs. The test is performed

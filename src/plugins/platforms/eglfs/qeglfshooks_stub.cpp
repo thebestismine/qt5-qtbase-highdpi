@@ -41,6 +41,7 @@
 
 #include "qeglfshooks.h"
 #include "qeglfscursor.h"
+#include <QtCore/QRegularExpression>
 
 #include <fcntl.h>
 #include <unistd.h>
@@ -56,17 +57,34 @@ QT_BEGIN_NAMESPACE
 // this is a global static to keep the QEglFSHooks interface as clean as possible
 static int framebuffer = -1;
 
-const char *QEglFSHooks::fbDeviceName() const
+QByteArray QEglFSHooks::fbDeviceName() const
 {
-    return "/dev/fb0";
+    QByteArray fbDev = qgetenv("QT_QPA_EGLFS_FB");
+    if (fbDev.isEmpty())
+        fbDev = QByteArrayLiteral("/dev/fb0");
+
+    return fbDev;
+}
+
+int QEglFSHooks::framebufferIndex() const
+{
+    int fbIndex = 0;
+    QRegularExpression fbIndexRx(QLatin1String("fb(\\d+)"));
+    QRegularExpressionMatch match = fbIndexRx.match(fbDeviceName());
+    if (match.hasMatch())
+        fbIndex = match.captured(1).toInt();
+
+    return fbIndex;
 }
 
 void QEglFSHooks::platformInit()
 {
-    framebuffer = qt_safe_open(fbDeviceName(), O_RDONLY);
+    QByteArray fbDev = fbDeviceName();
+
+    framebuffer = qt_safe_open(fbDev, O_RDONLY);
 
     if (framebuffer == -1)
-        qWarning("EGLFS: Failed to open %s", fbDeviceName());
+        qWarning("EGLFS: Failed to open %s", qPrintable(fbDev));
 }
 
 void QEglFSHooks::platformDestroy()
@@ -192,6 +210,16 @@ QDpi QEglFSHooks::logicalDpi() const
                 25.4 * s.height() / ps.height());
 }
 
+Qt::ScreenOrientation QEglFSHooks::nativeOrientation() const
+{
+    return Qt::PrimaryOrientation;
+}
+
+Qt::ScreenOrientation QEglFSHooks::orientation() const
+{
+    return Qt::PrimaryOrientation;
+}
+
 int QEglFSHooks::screenDepth() const
 {
     static int depth = qgetenv("QT_QPA_EGLFS_DEPTH").toInt();
@@ -234,8 +262,11 @@ bool QEglFSHooks::filterConfig(EGLDisplay, EGLConfig) const
     return true;
 }
 
-EGLNativeWindowType QEglFSHooks::createNativeWindow(const QSize &size, const QSurfaceFormat &format)
+EGLNativeWindowType QEglFSHooks::createNativeWindow(QPlatformWindow *platformWindow,
+                                                    const QSize &size,
+                                                    const QSurfaceFormat &format)
 {
+    Q_UNUSED(platformWindow);
     Q_UNUSED(size);
     Q_UNUSED(format);
     return 0;

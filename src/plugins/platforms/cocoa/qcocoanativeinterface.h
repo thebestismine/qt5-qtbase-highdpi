@@ -45,6 +45,7 @@
 #include <ApplicationServices/ApplicationServices.h>
 
 #include <qpa/qplatformnativeinterface.h>
+#include <QtGui/qpixmap.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -91,6 +92,11 @@ private:
         Needed by the native print dialog in the Qt Print Support module.
     */
     Q_INVOKABLE void *NSPrintInfoForPrintEngine(QPrintEngine *printEngine);
+    /*
+        Function to return the default background pixmap.
+        Needed by QWizard in the Qt widget module.
+    */
+    Q_INVOKABLE QPixmap defaultBackgroundPixmapForQWizard();
 
     // QMacPastebardMime support. The mac pasteboard void pointers are
     // QMacPastebardMime instances from the cocoa plugin or qtmacextras
@@ -126,6 +132,9 @@ private:
     // touch events, which then will be delivered until the widget
     // deregisters.
     static void registerTouchWindow(QWindow *window,  bool enable);
+
+    // Request a unified title and toolbar look for the window.
+    static void setContentBorderThickness(QWindow *window, int topThickness, int bottomThickness);
 };
 
 #endif // QCOCOANATIVEINTERFACE_H

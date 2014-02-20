@@ -81,6 +81,8 @@ QT_BEGIN_NAMESPACE
     Values are strictly typed internally and contrary to QVariant will not attempt to do any implicit type
     conversions. This implies that converting to a type that is not stored in the value will return a default
     constructed return value.
+
+    \sa {JSON Support in Qt}, {JSON Save Game Example}
 */
 
 /*!
@@ -269,13 +271,13 @@ QJsonValue &QJsonValue::operator =(const QJsonValue &other)
 /*!
     \fn bool QJsonValue::isNull() const
 
-    Returns true if the value is null.
+    Returns \c true if the value is null.
 */
 
 /*!
     \fn bool QJsonValue::isBool() const
 
-    Returns true if the value contains a boolean.
+    Returns \c true if the value contains a boolean.
 
     \sa toBool()
  */
@@ -283,7 +285,7 @@ QJsonValue &QJsonValue::operator =(const QJsonValue &other)
 /*!
     \fn bool QJsonValue::isDouble() const
 
-    Returns true if the value contains a double.
+    Returns \c true if the value contains a double.
 
     \sa toDouble()
  */
@@ -291,7 +293,7 @@ QJsonValue &QJsonValue::operator =(const QJsonValue &other)
 /*!
     \fn bool QJsonValue::isString() const
 
-    Returns true if the value contains a string.
+    Returns \c true if the value contains a string.
 
     \sa toString()
  */
@@ -299,7 +301,7 @@ QJsonValue &QJsonValue::operator =(const QJsonValue &other)
 /*!
     \fn bool QJsonValue::isArray() const
 
-    Returns true if the value contains an array.
+    Returns \c true if the value contains an array.
 
     \sa toArray()
  */
@@ -307,7 +309,7 @@ QJsonValue &QJsonValue::operator =(const QJsonValue &other)
 /*!
     \fn bool QJsonValue::isObject() const
 
-    Returns true if the value contains an object.
+    Returns \c true if the value contains an object.
 
     \sa toObject()
  */
@@ -315,7 +317,7 @@ QJsonValue &QJsonValue::operator =(const QJsonValue &other)
 /*!
     \fn bool QJsonValue::isUndefined() const
 
-    Returns true if the value is undefined. This can happen in certain
+    Returns \c true if the value is undefined. This can happen in certain
     error cases as e.g. accessing a non existing key in a QJsonObject.
  */
 
@@ -449,6 +451,19 @@ bool QJsonValue::toBool(bool defaultValue) const
 }
 
 /*!
+    Converts the value to an int and returns it.
+
+    If type() is not Double or the value is not a whole number,
+    the \a defaultValue will be returned.
+ */
+int QJsonValue::toInt(int defaultValue) const
+{
+    if (t == Double && int(dbl) == dbl)
+        return dbl;
+    return defaultValue;
+}
+
+/*!
     Converts the value to a double and returns it.
 
     If type() is not Double, the \a defaultValue will be returned.
@@ -525,7 +540,7 @@ QJsonObject QJsonValue::toObject() const
 }
 
 /*!
-    Returns true if the value is equal to \a other.
+    Returns \c true if the value is equal to \a other.
  */
 bool QJsonValue::operator==(const QJsonValue &other) const
 {
@@ -561,7 +576,7 @@ bool QJsonValue::operator==(const QJsonValue &other) const
 }
 
 /*!
-    Returns true if the value is not equal to \a other.
+    Returns \c true if the value is not equal to \a other.
  */
 bool QJsonValue::operator!=(const QJsonValue &other) const
 {
@@ -646,7 +661,7 @@ QJsonValue QJsonValueRef::toValue() const
     return o->valueAt(index);
 }
 
-#ifndef QT_NO_DEBUG_STREAM
+#if !defined(QT_NO_DEBUG_STREAM) && !defined(QT_JSON_READONLY)
 QDebug operator<<(QDebug dbg, const QJsonValue &o)
 {
     switch (o.t) {

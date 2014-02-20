@@ -221,7 +221,7 @@ QLibraryInfo::QLibraryInfo()
 QString
 QLibraryInfo::licensee()
 {
-    const char *str = QT_CONFIGURE_LICENSEE;
+    const char * volatile str = QT_CONFIGURE_LICENSEE;
     return QString::fromLocal8Bit(str);
 }
 
@@ -234,7 +234,7 @@ QLibraryInfo::licensee()
 QString
 QLibraryInfo::licensedProducts()
 {
-    const char *str = QT_CONFIGURE_LICENSED_PRODUCTS;
+    const char * volatile str = QT_CONFIGURE_LICENSED_PRODUCTS;
     return QString::fromLatin1(str);
 }
 
@@ -253,7 +253,7 @@ QLibraryInfo::buildDate()
 
 /*!
     \since 5.0
-    Returns true if this build of Qt was built with debugging enabled, or
+    Returns \c true if this build of Qt was built with debugging enabled, or
     false if it was built in release mode.
 */
 bool
@@ -320,7 +320,7 @@ QLibraryInfo::location(LibraryLocation loc)
     QString ret = rawLocation(loc, FinalPaths);
 
     // Automatically prepend the sysroot to target paths
-    if (loc < SysrootPath || loc > LastHostPath) {
+    if ((loc < SysrootPath || loc > LastHostPath) && qt_sysrootify_prefix[12] == 'y') {
         QString sysroot = rawLocation(SysrootPath, FinalPaths);
         if (!sysroot.isEmpty() && ret.length() > 2 && ret.at(1) == QLatin1Char(':')
             && (ret.at(2) == QLatin1Char('/') || ret.at(2) == QLatin1Char('\\')))
@@ -442,7 +442,11 @@ QLibraryInfo::rawLocation(LibraryLocation loc, PathGroup group)
                     QCFType<CFURLRef> urlRef = CFBundleCopyBundleURL(bundleRef);
                     if (urlRef) {
                         QCFString path = CFURLCopyFileSystemPath(urlRef, kCFURLPOSIXPathStyle);
+#ifdef Q_OS_MACX
                         return QDir::cleanPath(QString(path) + QLatin1String("/Contents/") + ret);
+#else
+                        return QDir::cleanPath(QString(path) + QLatin1Char('/') + ret); // iOS
+#endif
                     }
                 }
 #endif

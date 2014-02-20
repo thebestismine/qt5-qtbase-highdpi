@@ -55,6 +55,77 @@
 
 QT_BEGIN_NAMESPACE
 
+QString ConfigStrings::ALIAS = QStringLiteral("alias");
+QString ConfigStrings::BASE = QStringLiteral("base");
+QString ConfigStrings::BASEDIR = QStringLiteral("basedir");
+QString ConfigStrings::BUILDVERSION = QStringLiteral("buildversion");
+QString ConfigStrings::CODEINDENT = QStringLiteral("codeindent");
+QString ConfigStrings::CPPCLASSESPAGE = QStringLiteral("cppclassespage");
+QString ConfigStrings::DEFINES = QStringLiteral("defines");
+QString ConfigStrings::DEPENDS = QStringLiteral("depends");
+QString ConfigStrings::DESCRIPTION = QStringLiteral("description");
+QString ConfigStrings::EDITION = QStringLiteral("edition");
+QString ConfigStrings::ENDHEADER = QStringLiteral("endheader");
+QString ConfigStrings::EXAMPLEDIRS = QStringLiteral("exampledirs");
+QString ConfigStrings::EXAMPLES = QStringLiteral("examples");
+QString ConfigStrings::EXAMPLESINSTALLPATH = QStringLiteral("examplesinstallpath");
+QString ConfigStrings::EXCLUDEDIRS = QStringLiteral("excludedirs");
+QString ConfigStrings::EXCLUDEFILES = QStringLiteral("excludefiles");
+QString ConfigStrings::EXTRAIMAGES = QStringLiteral("extraimages");
+QString ConfigStrings::FALSEHOODS = QStringLiteral("falsehoods");
+QString ConfigStrings::FORMATTING = QStringLiteral("formatting");
+QString ConfigStrings::GENERATEINDEX = QStringLiteral("generateindex");
+QString ConfigStrings::HEADERDIRS = QStringLiteral("headerdirs");
+QString ConfigStrings::HEADERS = QStringLiteral("headers");
+QString ConfigStrings::HEADERSCRIPTS = QStringLiteral("headerscripts");
+QString ConfigStrings::HEADERSTYLES = QStringLiteral("headerstyles");
+QString ConfigStrings::HOMEPAGE = QStringLiteral("homepage");
+QString ConfigStrings::IGNOREDIRECTIVES = QStringLiteral("ignoredirectives");
+QString ConfigStrings::IGNORETOKENS = QStringLiteral("ignoretokens");
+QString ConfigStrings::IMAGEDIRS = QStringLiteral("imagedirs");
+QString ConfigStrings::IMAGES = QStringLiteral("images");
+QString ConfigStrings::INDEXES = QStringLiteral("indexes");
+QString ConfigStrings::LANDINGPAGE = QStringLiteral("landingpage");
+QString ConfigStrings::LANGUAGE = QStringLiteral("language");
+QString ConfigStrings::MACRO = QStringLiteral("macro");
+QString ConfigStrings::MANIFESTMETA = QStringLiteral("manifestmeta");
+QString ConfigStrings::NATURALLANGUAGE = QStringLiteral("naturallanguage");
+QString ConfigStrings::NAVIGATION = QStringLiteral("navigation");
+QString ConfigStrings::NOLINKERRORS = QStringLiteral("nolinkerrors");
+QString ConfigStrings::OBSOLETELINKS = QStringLiteral("obsoletelinks");
+QString ConfigStrings::OUTPUTDIR = QStringLiteral("outputdir");
+QString ConfigStrings::OUTPUTENCODING = QStringLiteral("outputencoding");
+QString ConfigStrings::OUTPUTLANGUAGE = QStringLiteral("outputlanguage");
+QString ConfigStrings::OUTPUTFORMATS = QStringLiteral("outputformats");
+QString ConfigStrings::OUTPUTPREFIXES = QStringLiteral("outputprefixes");
+QString ConfigStrings::PROJECT = QStringLiteral("project");
+QString ConfigStrings::REDIRECTDOCUMENTATIONTODEVNULL = QStringLiteral("redirectdocumentationtodevnull");
+QString ConfigStrings::QHP = QStringLiteral("qhp");
+QString ConfigStrings::QUOTINGINFORMATION = QStringLiteral("quotinginformation");
+QString ConfigStrings::SCRIPTDIRS = QStringLiteral("scriptdirs");
+QString ConfigStrings::SCRIPTS = QStringLiteral("scripts");
+QString ConfigStrings::SHOWINTERNAL = QStringLiteral("showinternal");
+QString ConfigStrings::SOURCEDIRS = QStringLiteral("sourcedirs");
+QString ConfigStrings::SOURCEENCODING = QStringLiteral("sourceencoding");
+QString ConfigStrings::SOURCES = QStringLiteral("sources");
+QString ConfigStrings::SPURIOUS = QStringLiteral("spurious");
+QString ConfigStrings::STYLEDIRS = QStringLiteral("styledirs");
+QString ConfigStrings::STYLE = QStringLiteral("style");
+QString ConfigStrings::STYLES = QStringLiteral("styles");
+QString ConfigStrings::STYLESHEETS = QStringLiteral("stylesheets");
+QString ConfigStrings::SYNTAXHIGHLIGHTING = QStringLiteral("syntaxhighlighting");
+QString ConfigStrings::TEMPLATEDIR = QStringLiteral("templatedir");
+QString ConfigStrings::TABSIZE = QStringLiteral("tabsize");
+QString ConfigStrings::TAGFILE = QStringLiteral("tagfile");
+QString ConfigStrings::TRANSLATORS = QStringLiteral("translators");
+QString ConfigStrings::URL = QStringLiteral("url");
+QString ConfigStrings::VERSION = QStringLiteral("version");
+QString ConfigStrings::VERSIONSYM = QStringLiteral("versionsym");
+QString ConfigStrings::FILEEXTENSIONS = QStringLiteral("fileextensions");
+QString ConfigStrings::IMAGEEXTENSIONS = QStringLiteral("imageextensions");
+QString ConfigStrings::QMLONLY = QStringLiteral("qmlonly");
+QString ConfigStrings::QMLTYPESPAGE = QStringLiteral("qmltypespage");
+
 /*!
   An entry in a stack, where each entry is a list
   of string values.
@@ -125,8 +196,7 @@ void MetaStack::process(QChar ch, const Location& location)
     if (ch == QLatin1Char('{')) {
         push(MetaStackEntry());
         top().open();
-    }
-    else if (ch == QLatin1Char('}')) {
+    } else if (ch == QLatin1Char('}')) {
         if (count() == 1)
             location.fatal(tr("Unexpected '}'"));
 
@@ -144,12 +214,10 @@ void MetaStack::process(QChar ch, const Location& location)
             }
             ++pre;
         }
-    }
-    else if (ch == QLatin1Char(',') && count() > 1) {
+    } else if (ch == QLatin1Char(',') && count() > 1) {
         top().close();
         top().open();
-    }
-    else {
+    } else {
         /*
           This is where all the processing is done.
          */
@@ -181,6 +249,7 @@ QSet<QString> Config::overrideOutputFormats;
 QMap<QString, QString> Config::extractedDirs;
 int Config::numInstances;
 QStack<QString> Config::workingDirs_;
+QMap<QString, QStringList> Config::includeFilesMap_;
 
 /*!
   \class Config
@@ -201,6 +270,7 @@ Config::Config(const QString& programName)
     lastLocation_ = Location::null;
     configVars_.clear();
     numInstances++;
+    includeFilesMap_.clear();
 }
 
 /*!
@@ -208,6 +278,7 @@ Config::Config(const QString& programName)
  */
 Config::~Config()
 {
+    includeFilesMap_.clear();
 }
 
 /*!
@@ -222,12 +293,10 @@ Config::~Config()
 void Config::load(const QString& fileName)
 {
     load(Location::null, fileName);
-    if (loc.isEmpty()) {
+    if (loc.isEmpty())
         loc = Location(fileName);
-    }
-    else {
+    else
         loc.setEtc(true);
-    }
     lastLocation_ = Location::null;
 }
 
@@ -281,7 +350,7 @@ QString Config::getOutputDir() const
 {
     QString t;
     if (overrideOutputDir.isNull())
-        t = getString(QLatin1String(CONFIG_OUTPUTDIR));
+        t = getString(CONFIG_OUTPUTDIR);
     else
         t = overrideOutputDir;
     if (!Generator::useOutputSubdirs()) {
@@ -302,7 +371,7 @@ QString Config::getOutputDir() const
 QSet<QString> Config::getOutputFormats() const
 {
     if (overrideOutputFormats.isEmpty())
-        return getStringSet(QLatin1String(CONFIG_OUTPUTFORMATS));
+        return getStringSet(CONFIG_OUTPUTFORMATS);
     else
         return overrideOutputFormats;
 }
@@ -398,9 +467,8 @@ QStringList Config::getCanonicalPathList(const QString& var) const
             const ConfigVar& cv = configVars[i];
             if (!cv.location_.isEmpty())
                 (Location&) lastLocation_ = cv.location_;
-            if (!cv.plus_) {
+            if (!cv.plus_)
                 t.clear();
-            }
             const QString d = cv.currentPath_;
             const QStringList& sl = cv.values_;
             if (!sl.isEmpty()) {
@@ -589,6 +657,33 @@ void Config::subVarsAndValues(const QString& var, ConfigVarMultimap& t) const
 }
 
 /*!
+  Get all .qdocinc files.
+ */
+QString Config::getIncludeFilePath(const QString& fileName) const
+{
+    QString ext = fileName.mid(fileName.lastIndexOf('.'));
+    ext.prepend('*');
+
+    if (!includeFilesMap_.contains(ext)) {
+        QSet<QString> t;
+        QStringList result;
+        QStringList dirs = getCanonicalPathList(CONFIG_SOURCEDIRS);
+        QStringList::ConstIterator d = dirs.constBegin();
+        while (d != dirs.constEnd()) {
+            result += getFilesHere(*d, ext, location(), t, t);
+            ++d;
+        }
+        includeFilesMap_.insert(ext, result);
+    }
+    const QStringList& paths = (*includeFilesMap_.find(ext));
+    for (int i=0; i<paths.size(); ++i) {
+        if (paths[i].endsWith(fileName))
+            return paths[i];
+    }
+    return QString();
+}
+
+/*!
   Builds and returns a list of file pathnames for the file
   type specified by \a filesVar (e.g. "headers" or "sources").
   The files are found in the directories specified by
@@ -602,10 +697,10 @@ QStringList Config::getAllFiles(const QString &filesVar,
                                 const QSet<QString> &excludedDirs,
                                 const QSet<QString> &excludedFiles)
 {
-    QStringList result = getStringList(filesVar);
+    QStringList result = getCanonicalPathList(filesVar);
     QStringList dirs = getCanonicalPathList(dirsVar);
 
-    QString nameFilter = getString(filesVar + dot + QLatin1String(CONFIG_FILEEXTENSIONS));
+    QString nameFilter = getString(filesVar + dot + CONFIG_FILEEXTENSIONS);
 
     QStringList::ConstIterator d = dirs.constBegin();
     while (d != dirs.constEnd()) {
@@ -635,7 +730,7 @@ QStringList Config::getExampleImageFiles(const QSet<QString> &excludedDirs,
 {
     QStringList result;
     QStringList dirs = getCanonicalPathList("exampledirs");
-    QString nameFilter = getString(CONFIG_EXAMPLES + dot + QLatin1String(CONFIG_IMAGEEXTENSIONS));
+    QString nameFilter = getString(CONFIG_EXAMPLES + dot + CONFIG_IMAGEEXTENSIONS);
 
     QStringList::ConstIterator d = dirs.constBegin();
     while (d != dirs.constEnd()) {
@@ -685,9 +780,8 @@ QString Config::findFile(const Location& location,
         QStringList::ConstIterator d = dirs.constBegin();
         while (d != dirs.constEnd()) {
             fileInfo.setFile(QDir(*d), firstComponent);
-            if (fileInfo.exists()) {
+            if (fileInfo.exists())
                 break;
-            }
             ++d;
         }
     }
@@ -707,9 +801,9 @@ QString Config::findFile(const Location& location,
             QString extracted = extractedDirs[fileInfo.filePath()];
             ++c;
             fileInfo.setFile(QDir(extracted), *c);
-        }
-        else
+        } else {
             break;
+        }
 
         userFriendlyFilePath += QLatin1Char('?');
     }
@@ -775,9 +869,8 @@ QString Config::copyFile(const Location& location,
 
     char buffer[1024];
     int len;
-    while ((len = inFile.read(buffer, sizeof(buffer))) > 0) {
+    while ((len = inFile.read(buffer, sizeof(buffer))) > 0)
         outFile.write(buffer, len);
-    }
     return outFileName;
 }
 
@@ -831,7 +924,7 @@ bool Config::removeDirContents(const QString& dir)
 }
 
 /*!
-  Returns true if \a ch is a letter, number, '_', '.',
+  Returns \c true if \a ch is a letter, number, '_', '.',
   '{', '}', or ','.
  */
 bool Config::isMetaKeyChar(QChar ch)
@@ -901,17 +994,15 @@ void Config::load(Location location, const QString& fileName)
     QChar c = text.at(0);
     uint cc = c.unicode();
     while (i < (int) text.length()) {
-        if (cc == 0)
+        if (cc == 0) {
             ++i;
-        else if (c.isSpace()) {
+        } else if (c.isSpace()) {
             SKIP_CHAR();
-        }
-        else if (cc == '#') {
+        } else if (cc == '#') {
             do {
                 SKIP_CHAR();
             } while (cc != '\n');
-        }
-        else if (isMetaKeyChar(c)) {
+        } else if (isMetaKeyChar(c)) {
             Location keyLoc = location;
             bool plus = false;
             QString stringValue;
@@ -1083,15 +1174,13 @@ void Config::load(Location location, const QString& fileName)
                     ++key;
                 }
             }
-        }
-        else {
+        } else {
             location.fatal(tr("Unexpected character '%1' at beginning of line").arg(c));
         }
     }
     popWorkingDir();
-    if (!workingDirs_.isEmpty()) {
+    if (!workingDirs_.isEmpty())
         QDir::setCurrent(workingDirs_.top());
-    }
 }
 
 QStringList Config::getFilesHere(const QString& uncleanDir,
@@ -1118,9 +1207,8 @@ QStringList Config::getFilesHere(const QString& uncleanDir,
         if (!fn->startsWith(QLatin1Char('~'))) {
             QString s = dirInfo.filePath(*fn);
             QString c = QDir::cleanPath(s);
-            if (!excludedFiles.contains(c)) {
+            if (!excludedFiles.contains(c))
                 result.append(c);
-            }
         }
         ++fn;
     }
@@ -1150,9 +1238,9 @@ void Config::pushWorkingDir(const QString& dir)
  */
 QString Config::popWorkingDir()
 {
-    if (!workingDirs_.isEmpty()) {
+    if (!workingDirs_.isEmpty())
         return workingDirs_.pop();
-    }
+
     qDebug() << "RETURNED EMPTY WORKING DIR";
     return QString();
 }

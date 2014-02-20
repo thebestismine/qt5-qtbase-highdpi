@@ -41,17 +41,19 @@
 
 #include "qiosapplicationdelegate.h"
 
+#include "qiosintegration.h"
+#include "qiosservices.h"
 #include "qiosviewcontroller.h"
 #include "qioswindow.h"
 
-#include <QtCore/QtCore>
+#include <QtGui/private/qguiapplication_p.h>
+#include <qpa/qplatformintegration.h>
 
-extern int qt_user_main(int argc, char *argv[]);
+#include <QtCore/QtCore>
 
 @implementation QIOSApplicationDelegate
 
 @synthesize window;
-@synthesize qiosViewController;
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions
 {
@@ -59,42 +61,49 @@ extern int qt_user_main(int argc, char *argv[]);
     Q_UNUSED(launchOptions);
 
     self.window = [[[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]] autorelease];
-    self.qiosViewController = [[[QIOSViewController alloc] init] autorelease];
-    self.window.rootViewController = self.qiosViewController;
+    self.window.rootViewController = [[[QIOSViewController alloc] init] autorelease];
 
-#ifdef QT_DEBUG
-    self.window.backgroundColor = [UIColor cyanColor];
+#if QT_IOS_DEPLOYMENT_TARGET_BELOW(__IPHONE_7_0)
+    QSysInfo::MacVersion iosVersion = QSysInfo::MacintoshVersion;
+
+    // We prefer to keep the root viewcontroller in fullscreen layout, so that
+    // we don't have to compensate for the viewcontroller position. This also
+    // gives us the same behavior on iOS 5/6 as on iOS 7, where full screen layout
+    // is the only way.
+    if (iosVersion < QSysInfo::MV_IOS_7_0)
+        self.window.rootViewController.wantsFullScreenLayout = YES;
+
+    // Use translucent statusbar by default on iOS6 iPhones (unless the user changed
+    // the default in the Info.plist), so that windows placed under the stausbar are
+    // still visible, just like on iOS7.
+    if (iosVersion >= QSysInfo::MV_IOS_6_0 && iosVersion < QSysInfo::MV_IOS_7_0
+        && [UIDevice currentDevice].userInterfaceIdiom == UIUserInterfaceIdiomPhone
+        && [UIApplication sharedApplication].statusBarStyle == UIStatusBarStyleDefault)
+        [[UIApplication sharedApplication] setStatusBarStyle:UIStatusBarStyleBlackTranslucent];
 #endif
 
-    [self.window makeKeyAndVisible];
-
-    // We schedule the main-redirection for the next eventloop pass so that we
-    // can return from this function and let UIApplicationMain finish its job.
-    [NSTimer scheduledTimerWithTimeInterval:.01f target:self
-        selector:@selector(runUserMain) userInfo:nil repeats:NO];
+    self.window.hidden = NO;
 
     return YES;
 }
 
-- (void)runUserMain
+- (BOOL)application:(UIApplication *)application openURL:(NSURL *)url sourceApplication:(NSString *)sourceApplication annotation:(id)annotation
 {
-    NSArray *arguments = [[NSProcessInfo processInfo] arguments];
-    int argc = arguments.count;
-    char **argv = new char*[argc];
-    for (int i = 0; i < argc; ++i) {
-        NSString *arg = [arguments objectAtIndex:i];
-        argv[i] = reinterpret_cast<char *>(malloc([arg lengthOfBytesUsingEncoding:[NSString defaultCStringEncoding]]));
-        strcpy(argv[i], [arg cStringUsingEncoding:[NSString defaultCStringEncoding]]);
-    }
+    Q_UNUSED(application);
+    Q_UNUSED(sourceApplication);
+    Q_UNUSED(annotation);
 
-    qt_user_main(argc, argv);
-    delete[] argv;
+    if (!QGuiApplication::instance())
+        return NO;
+
+    QIOSIntegration *iosIntegration = static_cast<QIOSIntegration *>(QGuiApplicationPrivate::platformIntegration());
+    QIOSServices *iosServices = static_cast<QIOSServices *>(iosIntegration->services());
+
+    return iosServices->handleUrl(QUrl::fromNSURL(url));
 }
-
 
 - (void)dealloc
 {
-    [qiosViewController release];
     [window release];
     [super dealloc];
 }

@@ -57,6 +57,8 @@
 #include <qstyle.h>
 #include <qstyleoption.h>
 #include <qtextdocument.h>
+#include <qwindow.h>
+#include <private/qwindowcontainer_p.h>
 #include <QtCore/qvarlengtharray.h>
 
 #ifdef Q_OS_MAC
@@ -235,7 +237,7 @@ QToolButton *QAccessibleToolButton::toolButton() const
 }
 
 /*!
-    Returns true if this tool button is a split button.
+    Returns \c true if this tool button is a split button.
 */
 bool QAccessibleToolButton::isSplitButton() const
 {
@@ -474,16 +476,16 @@ QSize QAccessibleDisplay::imageSize() const
 }
 
 /*! \internal */
-QRect QAccessibleDisplay::imagePosition() const
+QPoint QAccessibleDisplay::imagePosition() const
 {
     QLabel *label = qobject_cast<QLabel *>(widget());
     if (!label)
-        return QRect();
+        return QPoint();
     const QPixmap *pixmap = label->pixmap();
     if (!pixmap)
-        return QRect();
+        return QPoint();
 
-    return QRect(label->mapToGlobal(label->pos()), label->size());
+    return QPoint(label->mapToGlobal(label->pos()));
 }
 
 #ifndef QT_NO_GROUPBOX
@@ -505,8 +507,10 @@ QString QAccessibleGroupBox::text(QAccessible::Text t) const
         switch (t) {
         case QAccessible::Name:
             txt = qt_accStripAmp(groupBox()->title());
+            break;
         case QAccessible::Description:
-            txt = qt_accStripAmp(groupBox()->title());
+            txt = qt_accStripAmp(groupBox()->toolTip());
+            break;
         default:
             break;
         }
@@ -605,7 +609,7 @@ QString QAccessibleLineEdit::text(QAccessible::Text t) const
         break;
     }
     if (str.isEmpty())
-        str = QAccessibleWidget::text(t);;
+        str = QAccessibleWidget::text(t);
     return qt_accStripAmp(str);
 }
 
@@ -845,7 +849,38 @@ QProgressBar *QAccessibleProgressBar::progressBar() const
 }
 #endif
 
+
+QAccessibleWindowContainer::QAccessibleWindowContainer(QWidget *w)
+    : QAccessibleWidget(w)
+{
+}
+
+int QAccessibleWindowContainer::childCount() const
+{
+    if (container()->containedWindow())
+        return 1;
+    return 0;
+}
+
+int QAccessibleWindowContainer::indexOfChild(const QAccessibleInterface *child) const
+{
+    if (child->object() == container()->containedWindow())
+        return 0;
+    return -1;
+}
+
+QAccessibleInterface *QAccessibleWindowContainer::child(int i) const
+{
+    if (i == 0)
+        return QAccessible::queryAccessibleInterface(container()->containedWindow());
+    return 0;
+}
+
+QWindowContainer *QAccessibleWindowContainer::container() const
+{
+    return static_cast<QWindowContainer *>(widget());
+}
+
 #endif // QT_NO_ACCESSIBILITY
 
 QT_END_NAMESPACE
-

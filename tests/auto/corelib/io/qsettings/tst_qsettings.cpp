@@ -106,6 +106,7 @@ private slots:
     void testThreadSafety();
     void testEmptyData();
     void testResourceFiles();
+    void testRegistryShortRootNames();
 #ifdef Q_OS_MAC
     void fileName();
 #endif
@@ -506,32 +507,26 @@ void tst_QSettings::ctor()
         QCOMPARE(settings1.value("%General/%General").toInt(), 11);
 
         /*
-            Test that the organization and product parameters is
-            case-insensitive on Windows and Mac, case-sensitive on
-            Unix.
+            Test that the organization and product parameters are
+            case-insensitive on case-insensitive file systems.
         */
         QSettings settings5(format, QSettings::UserScope, "SoftWare.ORG", "killerApp");
+
+        bool caseSensitive = true;
+#if defined(Q_OS_MAC)
         if (format == QSettings::NativeFormat) {
-#if defined(Q_OS_WIN) || defined(Q_OS_DARWIN)
-# ifdef Q_OS_MACX
-            if (QSysInfo::MacintoshVersion == QSysInfo::MV_10_8)
-                QEXPECT_FAIL("native", "See QTBUG-32655", Continue);
-# endif // Q_OS_MACX
-            QCOMPARE(settings5.value("key 1").toString(), QString("gurgle"));
-#else
-            QVERIFY(!settings5.contains("key 1"));
-#endif
+            // more details in QMacSettingsPrivate::QMacSettingsPrivate(), organization was comify()-ed
+            caseSensitive = settings5.fileName().contains("SoftWare.ORG");;
         } else {
-#if defined(Q_OS_WIN) || defined(Q_OS_DARWIN)
-# ifdef Q_OS_MACX
-            if (QSysInfo::MacintoshVersion == QSysInfo::MV_10_8)
-                QEXPECT_FAIL("", "See QTBUG-32655", Continue);
-# endif // Q_OS_MACX
-            QCOMPARE(settings5.value("key 1").toString(), QString("gurgle"));
-#else
-            QVERIFY(!settings5.contains("key 1"));
-#endif
+            caseSensitive = pathconf(QDir::currentPath().toLatin1().constData(), _PC_CASE_SENSITIVE);
         }
+#elif defined(Q_OS_WIN32)
+        caseSensitive = false;
+#endif
+        if (caseSensitive)
+            QVERIFY(!settings5.contains("key 1"));
+        else
+            QVERIFY(settings5.contains("key 1"));
     }
 
     {
@@ -1949,6 +1944,18 @@ void tst_QSettings::testResourceFiles()
     QCOMPARE(settings.value("Field 1/Bottom").toInt(), 90);
 }
 
+void tst_QSettings::testRegistryShortRootNames()
+{
+#ifndef Q_OS_WIN
+    QSKIP("This test is specific to the Windows registry only.");
+#else
+    QVERIFY(QSettings("HKEY_CURRENT_USER", QSettings::NativeFormat).childGroups() == QSettings("HKCU", QSettings::NativeFormat).childGroups());
+    QVERIFY(QSettings("HKEY_LOCAL_MACHINE", QSettings::NativeFormat).childGroups() == QSettings("HKLM", QSettings::NativeFormat).childGroups());
+    QVERIFY(QSettings("HKEY_CLASSES_ROOT", QSettings::NativeFormat).childGroups() == QSettings("HKCR", QSettings::NativeFormat).childGroups());
+    QVERIFY(QSettings("HKEY_USERS", QSettings::NativeFormat).childGroups() == QSettings("HKU", QSettings::NativeFormat).childGroups());
+#endif
+}
+
 void tst_QSettings::fromFile_data()
 {
     populateWithFormats();
@@ -2467,7 +2474,7 @@ void tst_QSettings::testEscapes()
         QString s = QSettingsPrivate::variantToString(v); \
         QCOMPARE(s, escStr); \
         QCOMPARE(QVariant(QSettingsPrivate::stringToVariant(escStr)), v); \
-        QVERIFY(val == v.func()); \
+        QVERIFY((val) == v.func());                                     \
     }
 
 #define testBadEscape(escStr, vStr) \
@@ -3155,6 +3162,11 @@ void tst_QSettings::rainersSyncBugOnMac()
 {
     QFETCH(QSettings::Format, format);
 
+#ifdef Q_OS_OSX
+    if (format == QSettings::NativeFormat)
+        QSKIP("OSX does not support direct reads from and writes to .plist files, due to caching and background syncing. See QTBUG-34899.");
+#endif
+
     QString fileName;
 
     {
@@ -3170,10 +3182,6 @@ void tst_QSettings::rainersSyncBugOnMac()
 
     {
         QSettings s3(format, QSettings::UserScope, "software.org", "KillerAPP");
-#ifdef Q_OS_MACX
-        if (QSysInfo::MacintoshVersion == QSysInfo::MV_10_8)
-            QEXPECT_FAIL("native", "See QTBUG-32655", Continue);
-#endif
         QCOMPARE(s3.value("key1", 30).toInt(), 25);
     }
 }

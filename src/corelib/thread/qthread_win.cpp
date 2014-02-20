@@ -101,11 +101,11 @@ void QThreadData::clearCurrentThreadData()
     TlsSetValue(qt_current_thread_data_tls_index, 0);
 }
 
-QThreadData *QThreadData::current()
+QThreadData *QThreadData::current(bool createIfNecessary)
 {
     qt_create_tls();
     QThreadData *threadData = reinterpret_cast<QThreadData *>(TlsGetValue(qt_current_thread_data_tls_index));
-    if (!threadData) {
+    if (!threadData && createIfNecessary) {
         threadData = new QThreadData;
         // This needs to be called prior to new AdoptedThread() to
         // avoid recursion.
@@ -182,7 +182,7 @@ void qt_watch_adopted_thread(const HANDLE adoptedThreadHandle, QThread *qthread)
             qt_adopted_thread_handles.prepend(qt_adopted_thread_wakeup);
         }
 
-        CreateThread(0, 0, qt_adopted_thread_watcher_function, 0, 0, &qt_adopted_thread_watcher_id);
+        CloseHandle(CreateThread(0, 0, qt_adopted_thread_watcher_function, 0, 0, &qt_adopted_thread_watcher_id));
     } else {
         SetEvent(qt_adopted_thread_wakeup);
     }
@@ -208,7 +208,11 @@ DWORD WINAPI qt_adopted_thread_watcher_function(LPVOID)
         qt_adopted_thread_watcher_mutex.unlock();
 
         DWORD ret = WAIT_TIMEOUT;
-        int loops = (handlesCopy.count() / MAXIMUM_WAIT_OBJECTS) + 1, offset, count;
+        int count;
+        int offset;
+        int loops = handlesCopy.size() / MAXIMUM_WAIT_OBJECTS;
+        if (handlesCopy.size() % MAXIMUM_WAIT_OBJECTS)
+            ++loops;
         if (loops == 1) {
             // no need to loop, no timeout
             offset = 0;
@@ -377,6 +381,7 @@ void QThreadPrivate::finish(void *arg, bool lockAnyway)
     d->running = false;
     d->finished = true;
     d->isInFinish = false;
+    d->interruptionRequested = false;
 
     if (!d->waiters) {
         CloseHandle(d->handle);
@@ -446,6 +451,7 @@ void QThread::start(Priority priority)
     d->finished = false;
     d->exited = false;
     d->returnCode = 0;
+    d->interruptionRequested = false;
 
     /*
       NOTE: we create the thread in the suspended state, set the

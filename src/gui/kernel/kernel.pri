@@ -56,6 +56,7 @@ HEADERS += \
         kernel/qpalette.h \
         kernel/qshortcutmap_p.h \
         kernel/qsessionmanager.h \
+        kernel/qsessionmanager_p.h \
         kernel/qwindowdefs.h \
         kernel/qscreen.h \
         kernel/qscreen_p.h \
@@ -67,7 +68,8 @@ HEADERS += \
         kernel/qplatformservices.h \
         kernel/qplatformscreenpageflipper.h \
         kernel/qplatformsystemtrayicon.h \
-        kernel/qhighdpiscaling_p.h
+        kernel/qhighdpiscaling_p.h \
+        kernel/qplatformsessionmanager.h
 
 SOURCES += \
         kernel/qclipboard_qpa.cpp \
@@ -120,7 +122,8 @@ SOURCES += \
         kernel/qplatformservices.cpp \
         kernel/qplatformscreenpageflipper.cpp \
         kernel/qplatformsystemtrayicon_qpa.cpp \
-        kernel/qhighdpiscaling.cpp
+        kernel/qhighdpiscaling.cpp \
+        kernel/qplatformsessionmanager.cpp
 
 contains(QT_CONFIG, opengl)|contains(QT_CONFIG, opengles2) {
     HEADERS += \

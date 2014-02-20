@@ -30,7 +30,7 @@ CFLAGS_EXTRA      = /Zc:wchar_t-
 CFLAGS_EXTRA      = /MP
 !endif
 
-CFLAGS_BARE = -c -Fo./ \
+CFLAGS_BARE = -c -Fo./ -Fdqmake.pdb \
               -W3 -nologo -O1 \
               $(CFLAGS_EXTRA) \
               -I$(QMKSRC) -I$(QMKSRC)\library -I$(QMKSRC)\generators -I$(QMKSRC)\generators\unix -I$(QMKSRC)\generators\win32 -I$(QMKSRC)\generators\mac -I$(QMKSRC)\generators\integrity \
@@ -41,7 +41,7 @@ CFLAGS_BARE = -c -Fo./ \
               -DQT_BUILD_QMAKE -DQT_BOOTSTRAPPED -DPROEVALUATOR_FULL \
               -DQT_NO_TEXTCODEC -DQT_NO_UNICODETABLES -DQT_NO_COMPONENT -DQT_NO_COMPRESS \
               -DQT_NO_THREAD -DQT_NO_QOBJECT -DQT_NO_GEOM_VARIANT -DQT_NO_DATASTREAM \
-              -DUNICODE
+              -DUNICODE -DQT_CRYPTOGRAPHICHASH_ONLY_SHA1 -DQT_JSON_READONLY
 CFLAGS   = -Yuqmake_pch.h -FIqmake_pch.h -Fpqmake_pch.pch $(CFLAGS_BARE) $(CFLAGS) $(EXTRA_CPPFLAGS)
 
 CXXFLAGS_BARE = $(CFLAGS_BARE)
@@ -50,7 +50,7 @@ CXXFLAGS = $(CFLAGS)
 LFLAGS	    =
 LIBS	    = ole32.lib advapi32.lib
 LINKQMAKE   = $(LINKER) $(LFLAGS) -OUT:qmake.exe $(OBJS) $(QTOBJS) $(LIBS)
-ADDCLEAN    = vc60.pdb vc70.pdb qmake.pdb qmake.ilk
+ADDCLEAN    = qmake.pdb qmake.ilk
 
 !ELSE
 !ERROR Unsupported compiler for this Makefile
@@ -120,7 +120,13 @@ QTOBJS= \
 	qxmlstream.obj \
 	qxmlutils.obj \
 	qnumeric.obj \
-	qlogging.obj
+	qlogging.obj \
+	qjson.obj \
+	qjsondocument.obj \
+	qjsonparser.obj \
+	qjsonarray.obj \
+	qjsonobject.obj \
+	qjsonvalue.obj
 
 first all: qmake.exe
 
@@ -134,8 +140,6 @@ clean::
 	-del qmake_pch.obj
 	-del qmake_pch.pch
 	-del qsystemlibrary.obj
-	-del vc60.pdb
-	-del vc70.pdb
 	-del qmake.pdb
 	-del qmake.ilk
 	-del qmake.tds
@@ -158,6 +162,8 @@ distclean:: clean
 $(OBJS): qmake_pch.obj
 
 $(QTOBJS): qmake_pch.obj
+
+qlibraryinfo.obj: $(BUILD_PATH)\src\corelib\global\qconfig.cpp
 
 qmake_pch.obj:
 	$(CXX) $(CXXFLAGS_BARE) -c -Yc -Fpqmake_pch.pch -TP $(QMKSRC)\qmake_pch.h
@@ -205,6 +211,9 @@ qmake_pch.obj:
 	$(CXX) $(CXXFLAGS) $<
 
 {$(SOURCE_PATH)\src\corelib\xml}.cpp{}.obj::
+	$(CXX) $(CXXFLAGS) $<
+
+{$(SOURCE_PATH)\src\corelib\json}.cpp{}.obj::
 	$(CXX) $(CXXFLAGS) $<
 
 {$(SOURCE_PATH)\tools\shared\windows}.cpp{}.obj::

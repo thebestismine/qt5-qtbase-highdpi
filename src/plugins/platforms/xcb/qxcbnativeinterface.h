@@ -62,7 +62,6 @@ public:
         EglDisplay,
         Connection,
         Screen,
-        GraphicsDevice,
         EglContext,
         GLXContext,
         AppTime,
@@ -70,7 +69,8 @@ public:
         ScreenHintStyle,
         StartupId,
         TrayWindow,
-        GetTimestamp
+        GetTimestamp,
+        X11Screen
     };
 
     QXcbNativeInterface();
@@ -89,11 +89,11 @@ public:
     void *eglDisplayForWindow(QWindow *window);
     void *connectionForWindow(QWindow *window);
     void *screenForWindow(QWindow *window);
-    void *graphicsDeviceForWindow(QWindow *window);
     void *appTime(const QXcbScreen *screen);
     void *appUserTime(const QXcbScreen *screen);
     void *getTimestamp(const QXcbScreen *screen);
     void *startupId();
+    void *x11Screen();
     static void setAppTime(QScreen *screen, xcb_timestamp_t time);
     static void setAppUserTime(QScreen *screen, xcb_timestamp_t time);
     static void *eglContextForContext(QOpenGLContext *context);

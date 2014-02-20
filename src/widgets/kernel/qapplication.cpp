@@ -111,13 +111,10 @@ extern bool qt_wince_is_pocket_pc();  //qguifunctions_wince.cpp
 static void initResources()
 {
 #if defined(Q_OS_WINCE)
-    Q_INIT_RESOURCE_EXTERN(qstyle_wince)
     Q_INIT_RESOURCE(qstyle_wince);
 #else
-    Q_INIT_RESOURCE_EXTERN(qstyle)
     Q_INIT_RESOURCE(qstyle);
 #endif
-    Q_INIT_RESOURCE_EXTERN(qmessagebox)
     Q_INIT_RESOURCE(qmessagebox);
 
 }
@@ -1073,7 +1070,10 @@ void QApplication::setStyle(QStyle *style)
     if (QApplicationPrivate::set_pal) {
         QApplication::setPalette(*QApplicationPrivate::set_pal);
     } else if (QApplicationPrivate::sys_pal) {
+        clearSystemPalette();
+        initSystemPalette();
         QApplicationPrivate::initializeWidgetPaletteHash();
+        QApplicationPrivate::initializeWidgetFontHash();
         QApplicationPrivate::setPalette_helper(*QApplicationPrivate::sys_pal, /*className=*/0, /*clearWidgetPaletteHash=*/false);
     } else if (!QApplicationPrivate::sys_pal) {
         // Initialize the sys_pal if it hasn't happened yet...
@@ -1888,13 +1888,28 @@ bool QApplication::event(QEvent *e)
     \obsolete
 */
 
+// ### FIXME: topLevelWindows does not contain QWidgets without a parent
+// until create_sys is called. So we have to override the
+// QGuiApplication::notifyLayoutDirectionChange
+// to do the right thing.
 void QApplicationPrivate::notifyLayoutDirectionChange()
 {
-    QWidgetList list = QApplication::topLevelWidgets();
+    const QWidgetList list = QApplication::topLevelWidgets();
+    QWindowList windowList = QGuiApplication::topLevelWindows();
+
+    // send to all top-level QWidgets
     for (int i = 0; i < list.size(); ++i) {
         QWidget *w = list.at(i);
+        windowList.removeAll(w->windowHandle());
         QEvent ev(QEvent::ApplicationLayoutDirectionChange);
         QCoreApplication::sendEvent(w, &ev);
+    }
+
+    // in case there are any plain QWindows in this QApplication-using
+    // application, also send the notification to them
+    for (int i = 0; i < windowList.size(); ++i) {
+        QEvent ev(QEvent::ApplicationLayoutDirectionChange);
+        QCoreApplication::sendEvent(windowList.at(i), &ev);
     }
 }
 
@@ -2235,7 +2250,7 @@ Q_WIDGETS_EXPORT bool qt_tryModalHelper(QWidget *widget, QWidget **rettop)
 }
 
 /*! \internal
-    Returns true if \a widget is blocked by a modal window.
+    Returns \c true if \a widget is blocked by a modal window.
  */
 bool QApplicationPrivate::isBlockedByModal(QWidget *widget)
 {
@@ -2364,7 +2379,7 @@ bool QApplicationPrivate::isWindowBlocked(QWindow *window, QWindow **blockingWin
 
 /*!\internal
 
-  Called from qapplication_\e{platform}.cpp, returns true
+  Called from qapplication_\e{platform}.cpp, returns \c true
   if the widget should accept the event.
  */
 bool QApplicationPrivate::tryModalHelper(QWidget *widget, QWidget **rettop)
@@ -2644,7 +2659,7 @@ void QApplication::setStartDragDistance(int l)
     and the current position (e.g. in the mouse move event) is \c currentPos,
     you can find out if a drag should be started with code like this:
 
-    \snippet code/src_gui_kernel_qapplication.cpp 7
+    \snippet code/src_gui_kernel_qapplication.cpp 6
 
     Qt uses this value internally, e.g. in QFileDialog.
 
@@ -3536,7 +3551,7 @@ void QApplication::setKeypadNavigationEnabled(bool enable)
 }
 
 /*!
-    Returns true if Qt is set to use keypad navigation; otherwise returns
+    Returns \c true if Qt is set to use keypad navigation; otherwise returns
     false.  The default value is false.
 
     This feature is available in Qt for Embedded Linux, and Windows CE only.
@@ -3683,7 +3698,7 @@ int QApplication::keyboardInputInterval()
 /*!
     \fn bool QApplication::isEffectEnabled(Qt::UIEffect effect)
 
-    Returns true if \a effect is enabled; otherwise returns false.
+    Returns \c true if \a effect is enabled; otherwise returns \c false.
 
     By default, Qt will try to use the desktop settings. To prevent this, call
     setDesktopSettingsAware(false).
@@ -3761,6 +3776,16 @@ void QApplicationPrivate::giveFocusAccordingToFocusPolicy(QWidget *widget, QEven
         }
         if (focusWidget->isWindow())
             break;
+
+        // find out whether this widget (or its proxy) already has focus
+        QWidget *f = focusWidget;
+        if (focusWidget->d_func()->extra && focusWidget->d_func()->extra->focus_proxy)
+            f = focusWidget->d_func()->extra->focus_proxy;
+        // if it has, stop here.
+        // otherwise a click on the focused widget would remove its focus if ClickFocus isn't set
+        if (f->hasFocus())
+            break;
+
         localPos += focusWidget->pos();
         focusWidget = focusWidget->parentWidget();
     }

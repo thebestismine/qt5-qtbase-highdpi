@@ -52,12 +52,17 @@ class QIOSWindow;
 
 @interface UIView (QIOS)
 @property(readonly) QWindow *qwindow;
+@property(readonly) UIViewController *viewController;
 @end
 
 QT_BEGIN_NAMESPACE
 
-class QIOSWindow : public QPlatformWindow
+@class QUIView;
+
+class QIOSWindow : public QObject, public QPlatformWindow
 {
+    Q_OBJECT
+
 public:
     explicit QIOSWindow(QWindow *window);
     ~QIOSWindow();
@@ -69,25 +74,28 @@ public:
     void handleContentOrientationChange(Qt::ScreenOrientation orientation);
     void setVisible(bool visible);
 
+    bool isExposed() const Q_DECL_OVERRIDE;
+
     void raise() { raiseOrLower(true); }
     void lower() { raiseOrLower(false); }
     void requestActivateWindow();
 
     qreal devicePixelRatio() const;
-    int effectiveWidth() const;
-    int effectiveHeight() const;
 
     bool setMouseGrabEnabled(bool grab) { return grab; }
     bool setKeyboardGrabEnabled(bool grab) { return grab; }
 
     WId winId() const { return WId(m_view); };
 
-private:
-    UIView *m_view;
+    QWindow *topLevelWindow() const;
 
-    QRect m_requestedGeometry;
+private:
+    void applyGeometry(const QRect &rect);
+
+    QUIView *m_view;
+
+    QRect m_normalGeometry;
     int m_windowLevel;
-    qreal m_devicePixelRatio;
 
     void raiseOrLower(bool raise);
     void updateWindowLevel();
@@ -95,6 +103,8 @@ private:
 
     inline Qt::WindowType windowType() { return static_cast<Qt::WindowType>(int(window()->flags() & Qt::WindowType_Mask)); }
     inline bool windowIsPopup() { return windowType() & Qt::Popup & ~Qt::Window; }
+
+    friend class QIOSScreen;
 };
 
 QT_END_NAMESPACE

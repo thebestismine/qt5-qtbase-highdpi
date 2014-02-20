@@ -229,8 +229,7 @@ void QSystemSemaphore::setKey(const QString &key, int initialValue, AccessMode m
 {
     if (key == d->key && mode == Open)
         return;
-    d->error = NoError;
-    d->errorString = QString();
+    d->clearError();
 #if !defined(Q_OS_WIN)
     // optimization to not destroy/create the file & semaphore
     if (key == d->key && mode == Create && d->createdSemaphore && d->createdFile) {
@@ -261,7 +260,7 @@ QString QSystemSemaphore::key() const
 
 /*!
   Acquires one of the resources guarded by this semaphore, if there is
-  one available, and returns true. If all the resources guarded by this
+  one available, and returns \c true. If all the resources guarded by this
   semaphore have already been acquired, the call blocks until one of
   them is released by another process or thread having a semaphore
   with the same key.
@@ -278,7 +277,7 @@ bool QSystemSemaphore::acquire()
 }
 
 /*!
-  Releases \a n resources guarded by the semaphore. Returns true
+  Releases \a n resources guarded by the semaphore. Returns \c true
   unless there is a system error.
 
   Example: Create a system semaphore having five resources; acquire

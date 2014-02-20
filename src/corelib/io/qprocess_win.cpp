@@ -73,10 +73,11 @@ static void qt_create_pipe(Q_PIPE *pipe, bool isInputPipe)
     // Anomymous pipes do not support asynchronous I/O. Thus we
     // create named pipes for redirecting stdout, stderr and stdin.
 
+    // The write handle must be non-inheritable for input pipes.
+    // The read handle must be non-inheritable for output pipes.
     SECURITY_ATTRIBUTES secAtt = { sizeof(SECURITY_ATTRIBUTES), 0, false };
-    secAtt.bInheritHandle = isInputPipe;    // The read handle must be non-inheritable for output pipes.
 
-    HANDLE hRead;
+    HANDLE hServer;
     wchar_t pipeName[256];
     unsigned int attempts = 1000;
     forever {
@@ -85,19 +86,29 @@ static void qt_create_pipe(Q_PIPE *pipe, bool isInputPipe)
         _snwprintf(pipeName, sizeof(pipeName) / sizeof(pipeName[0]),
                 L"\\\\.\\pipe\\qt-%X", qrand());
 
+        DWORD dwOpenMode = FILE_FLAG_OVERLAPPED;
+        DWORD dwOutputBufferSize = 0;
+        DWORD dwInputBufferSize = 0;
+        const DWORD dwPipeBufferSize = 1024 * 1024;
+        if (isInputPipe) {
+            dwOpenMode |= PIPE_ACCESS_OUTBOUND;
+            dwOutputBufferSize = dwPipeBufferSize;
+        } else {
+            dwOpenMode |= PIPE_ACCESS_INBOUND;
+            dwInputBufferSize = dwPipeBufferSize;
+        }
         DWORD dwPipeFlags = PIPE_TYPE_BYTE | PIPE_WAIT;
         if (QSysInfo::windowsVersion() >= QSysInfo::WV_VISTA)
             dwPipeFlags |= PIPE_REJECT_REMOTE_CLIENTS;
-        const DWORD dwPipeBufferSize = 1024 * 1024;
-        hRead = CreateNamedPipe(pipeName,
-                                PIPE_ACCESS_INBOUND | FILE_FLAG_OVERLAPPED,
-                                dwPipeFlags,
-                                1,                      // only one pipe instance
-                                0,                      // output buffer size
-                                dwPipeBufferSize,       // input buffer size
-                                0,
-                                &secAtt);
-        if (hRead != INVALID_HANDLE_VALUE)
+        hServer = CreateNamedPipe(pipeName,
+                                  dwOpenMode,
+                                  dwPipeFlags,
+                                  1,                      // only one pipe instance
+                                  dwOutputBufferSize,
+                                  dwInputBufferSize,
+                                  0,
+                                  &secAtt);
+        if (hServer != INVALID_HANDLE_VALUE)
             break;
         DWORD dwError = GetLastError();
         if (dwError != ERROR_PIPE_BUSY || !--attempts) {
@@ -106,28 +117,31 @@ static void qt_create_pipe(Q_PIPE *pipe, bool isInputPipe)
         }
     }
 
-    // The write handle must be non-inheritable for input pipes.
-    secAtt.bInheritHandle = !isInputPipe;
-
-    HANDLE hWrite = INVALID_HANDLE_VALUE;
-    hWrite = CreateFile(pipeName,
-                        GENERIC_WRITE,
-                        0,
-                        &secAtt,
-                        OPEN_EXISTING,
-                        FILE_FLAG_OVERLAPPED,
-                        NULL);
-    if (hWrite == INVALID_HANDLE_VALUE) {
+    secAtt.bInheritHandle = TRUE;
+    const HANDLE hClient = CreateFile(pipeName,
+                                      (isInputPipe ? (GENERIC_READ | FILE_WRITE_ATTRIBUTES)
+                                                   : GENERIC_WRITE),
+                                      0,
+                                      &secAtt,
+                                      OPEN_EXISTING,
+                                      FILE_FLAG_OVERLAPPED,
+                                      NULL);
+    if (hClient == INVALID_HANDLE_VALUE) {
         qErrnoWarning("QProcess: CreateFile failed.");
-        CloseHandle(hRead);
+        CloseHandle(hServer);
         return;
     }
 
     // Wait until connection is in place.
-    ConnectNamedPipe(hRead, NULL);
+    ConnectNamedPipe(hServer, NULL);
 
-    pipe[0] = hRead;
-    pipe[1] = hWrite;
+    if (isInputPipe) {
+        pipe[0] = hClient;
+        pipe[1] = hServer;
+    } else {
+        pipe[0] = hServer;
+        pipe[1] = hClient;
+    }
 }
 
 static void duplicateStdWriteChannel(Q_PIPE *pipe, DWORD nStdHandle)
@@ -155,28 +169,43 @@ bool QProcessPrivate::createChannel(Channel &channel)
 
     if (channel.type == Channel::Normal) {
         // we're piping this channel to our own process
-        const bool isStdInChannel = (&channel == &stdinChannel);
-        if (isStdInChannel || processChannelMode != QProcess::ForwardedChannels)
-            qt_create_pipe(channel.pipe, isStdInChannel);
-        else
-            duplicateStdWriteChannel(channel.pipe, (&channel == &stdoutChannel) ? STD_OUTPUT_HANDLE : STD_ERROR_HANDLE);
-
-        if (processChannelMode != QProcess::ForwardedChannels) {
+        if (&channel == &stdinChannel) {
+            if (inputChannelMode != QProcess::ForwardedInputChannel) {
+                qt_create_pipe(channel.pipe, true);
+            } else {
+                channel.pipe[1] = INVALID_Q_PIPE;
+                HANDLE hStdReadChannel = GetStdHandle(STD_INPUT_HANDLE);
+                HANDLE hCurrentProcess = GetCurrentProcess();
+                DuplicateHandle(hCurrentProcess, hStdReadChannel, hCurrentProcess,
+                                &channel.pipe[0], 0, TRUE, DUPLICATE_SAME_ACCESS);
+            }
+        } else {
             QWindowsPipeReader *pipeReader = 0;
             if (&channel == &stdoutChannel) {
-                if (!stdoutReader) {
-                    stdoutReader = new QWindowsPipeReader(q);
-                    q->connect(stdoutReader, SIGNAL(readyRead()), SLOT(_q_canReadStandardOutput()));
+                if (processChannelMode != QProcess::ForwardedChannels
+                        && processChannelMode != QProcess::ForwardedOutputChannel) {
+                    if (!stdoutReader) {
+                        stdoutReader = new QWindowsPipeReader(q);
+                        q->connect(stdoutReader, SIGNAL(readyRead()), SLOT(_q_canReadStandardOutput()));
+                    }
+                    pipeReader = stdoutReader;
+                } else {
+                    duplicateStdWriteChannel(channel.pipe, STD_OUTPUT_HANDLE);
                 }
-                pipeReader = stdoutReader;
-            } else if (&channel == &stderrChannel) {
-                if (!stderrReader) {
-                    stderrReader = new QWindowsPipeReader(q);
-                    q->connect(stderrReader, SIGNAL(readyRead()), SLOT(_q_canReadStandardError()));
+            } else /* if (&channel == &stderrChannel) */ {
+                if (processChannelMode != QProcess::ForwardedChannels
+                        && processChannelMode != QProcess::ForwardedErrorChannel) {
+                    if (!stderrReader) {
+                        stderrReader = new QWindowsPipeReader(q);
+                        q->connect(stderrReader, SIGNAL(readyRead()), SLOT(_q_canReadStandardError()));
+                    }
+                    pipeReader = stderrReader;
+                } else {
+                    duplicateStdWriteChannel(channel.pipe, STD_ERROR_HANDLE);
                 }
-                pipeReader = stderrReader;
             }
             if (pipeReader) {
+                qt_create_pipe(channel.pipe, false);
                 pipeReader->setHandle(channel.pipe[0]);
                 pipeReader->startAsyncRead();
             }
@@ -479,9 +508,12 @@ void QProcessPrivate::startProcess()
     qDebug("   pass environment : %s", environment.isEmpty() ? "no" : "yes");
 #endif
 
-    // Forwarded channels must not set the CREATE_NO_WINDOW flag because this
-    // will render the stdout/stderr handles we're passing useless.
-    DWORD dwCreationFlags = (processChannelMode == QProcess::ForwardedChannels ? 0 : CREATE_NO_WINDOW);
+    // We cannot unconditionally set the CREATE_NO_WINDOW flag, because this
+    // will render the stdout/stderr handles connected to a console useless
+    // (this typically affects ForwardedChannels mode).
+    // However, we also do not want console tools launched from a GUI app to
+    // create new console windows (behavior consistent with UNIX).
+    DWORD dwCreationFlags = (GetConsoleWindow() ? 0 : CREATE_NO_WINDOW);
     dwCreationFlags |= CREATE_UNICODE_ENVIRONMENT;
     STARTUPINFOW startupInfo = { sizeof( STARTUPINFO ), 0, 0, 0,
                                  (ulong)CW_USEDEFAULT, (ulong)CW_USEDEFAULT,
@@ -636,11 +668,11 @@ bool QProcessPrivate::drainOutputPipes()
         bool readOperationActive = false;
         if (stdoutReader) {
             readyReadEmitted |= stdoutReader->waitForReadyRead(0);
-            readOperationActive = stdoutReader->isReadOperationActive();
+            readOperationActive = stdoutReader && stdoutReader->isReadOperationActive();
         }
         if (stderrReader) {
             readyReadEmitted |= stderrReader->waitForReadyRead(0);
-            readOperationActive |= stderrReader->isReadOperationActive();
+            readOperationActive |= stderrReader && stderrReader->isReadOperationActive();
         }
         someReadyReadEmitted |= readyReadEmitted;
         if (!readOperationActive || !readyReadEmitted)
@@ -663,9 +695,8 @@ bool QProcessPrivate::waitForReadyRead(int msecs)
         if (pipeWriter && pipeWriter->waitForWrite(0))
             timer.resetIncrements();
 
-        if (processChannelMode != QProcess::ForwardedChannels
-                && ((stdoutReader && stdoutReader->waitForReadyRead(0))
-                    || (stderrReader && stderrReader->waitForReadyRead(0))))
+        if ((stdoutReader && stdoutReader->waitForReadyRead(0))
+            || (stderrReader && stderrReader->waitForReadyRead(0)))
             return true;
 
         if (!pid)

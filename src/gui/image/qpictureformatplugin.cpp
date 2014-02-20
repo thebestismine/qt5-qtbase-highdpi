@@ -79,8 +79,6 @@ QT_BEGIN_NAMESPACE
 
     Installs a QPictureIO picture I/O handler for the picture format \a
     format. Returns \c true on success.
-
-    \sa keys()
 */
 
 
@@ -106,8 +104,8 @@ QPictureFormatPlugin::~QPictureFormatPlugin()
 
 /*!
     Loads the picture stored in the file called \a fileName, with the
-    given \a format, into *\a picture. Returns true on success;
-    otherwise returns false.
+    given \a format, into *\a picture. Returns \c true on success;
+    otherwise returns \c false.
 
     \sa savePicture()
 */
@@ -121,8 +119,8 @@ bool QPictureFormatPlugin::loadPicture(const QString &format, const QString &fil
 
 /*!
     Saves the given \a picture into the file called \a fileName,
-    using the specified \a format. Returns true on success; otherwise
-    returns false.
+    using the specified \a format. Returns \c true on success; otherwise
+    returns \c false.
 
     \sa loadPicture()
 */

@@ -49,21 +49,13 @@ class QMinimalEglIntegrationPlugin : public QPlatformIntegrationPlugin
     Q_OBJECT
     Q_PLUGIN_METADATA(IID "org.qt-project.Qt.QPA.QPlatformIntegrationFactoryInterface.5.2" FILE "minimalegl.json")
 public:
-    QStringList keys() const;
     QPlatformIntegration *create(const QString&, const QStringList&);
 };
-
-QStringList QMinimalEglIntegrationPlugin::keys() const
-{
-    QStringList list;
-    list << "MinimalEgl";
-    return list;
-}
 
 QPlatformIntegration* QMinimalEglIntegrationPlugin::create(const QString& system, const QStringList& paramList)
 {
     Q_UNUSED(paramList);
-    if (system.toLower() == "minimalegl")
+    if (!system.compare(QLatin1String("minimalegl"), Qt::CaseInsensitive))
         return new QMinimalEglIntegration;
 
     return 0;

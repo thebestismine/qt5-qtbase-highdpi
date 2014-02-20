@@ -56,6 +56,7 @@
 #include <QtGui/QScreen>
 #include <QtGui/QWindow>
 #include <QtGui/QRegion>
+#include <private/qsystemlibrary_p.h>
 #include <private/qwindow_p.h>
 #include <private/qguiapplication_p.h>
 #include <qpa/qwindowsysteminterface.h>
@@ -203,6 +204,69 @@ static inline QSize clientSize(HWND hwnd)
     return qSizeOfRect(rect);
 }
 
+static bool applyBlurBehindWindow(HWND hwnd)
+{
+#ifdef Q_OS_WINCE
+    Q_UNUSED(hwnd);
+    return false;
+#else
+    enum { dwmBbEnable = 0x1, dwmBbBlurRegion = 0x2 };
+
+    struct DwmBlurBehind {
+        DWORD dwFlags;
+        BOOL  fEnable;
+        HRGN  hRgnBlur;
+        BOOL  fTransitionOnMaximized;
+    };
+
+    typedef HRESULT (WINAPI *PtrDwmEnableBlurBehindWindow)(HWND, const DwmBlurBehind*);
+    typedef HRESULT (WINAPI *PtrDwmIsCompositionEnabled)(BOOL *);
+
+    // DWM API is available only from Windows Vista
+    if (QSysInfo::windowsVersion() < QSysInfo::WV_VISTA)
+        return false;
+
+    static bool functionPointersResolved = false;
+    static PtrDwmEnableBlurBehindWindow dwmBlurBehind = 0;
+    static PtrDwmIsCompositionEnabled dwmIsCompositionEnabled = 0;
+
+    if (Q_UNLIKELY(!functionPointersResolved)) {
+        QSystemLibrary library(QStringLiteral("dwmapi"));
+        if (library.load()) {
+            dwmBlurBehind = (PtrDwmEnableBlurBehindWindow)(library.resolve("DwmEnableBlurBehindWindow"));
+            dwmIsCompositionEnabled = (PtrDwmIsCompositionEnabled)(library.resolve("DwmIsCompositionEnabled"));
+        }
+
+        functionPointersResolved = true;
+    }
+
+    if (Q_UNLIKELY(!dwmBlurBehind || !dwmIsCompositionEnabled))
+        return false;
+
+    BOOL compositionEnabled;
+    if (dwmIsCompositionEnabled(&compositionEnabled) != S_OK)
+        return false;
+
+    DwmBlurBehind blurBehind = {0, 0, 0, 0};
+
+    if (compositionEnabled) {
+        blurBehind.dwFlags = dwmBbEnable | dwmBbBlurRegion;
+        blurBehind.fEnable = TRUE;
+        blurBehind.hRgnBlur = CreateRectRgn(0, 0, -1, -1);
+    } else {
+        blurBehind.dwFlags = dwmBbEnable;
+        blurBehind.fEnable = FALSE;
+    }
+
+    const bool result = dwmBlurBehind(hwnd, &blurBehind) == S_OK;
+
+    if (blurBehind.hRgnBlur)
+        DeleteObject(blurBehind.hRgnBlur);
+
+    return result;
+#endif // Q_OS_WINCE
+}
+
 // from qwidget_win.cpp, pass flags separately in case they have been "autofixed".
 static bool shouldShowMaximizeButton(const QWindow *w, Qt::WindowFlags flags)
 {
@@ -241,7 +305,7 @@ bool QWindowsWindow::setWindowLayered(HWND hwnd, Qt::WindowFlags flags, bool has
 #endif // Q_OS_WINCE
 }
 
-static void setWindowOpacity(HWND hwnd, Qt::WindowFlags flags, bool hasAlpha, qreal level)
+static void setWindowOpacity(HWND hwnd, Qt::WindowFlags flags, bool hasAlpha, bool openGL, qreal level)
 {
 #ifdef Q_OS_WINCE // WINCE does not support that feature and microsoft explicitly warns to use those calls
     Q_UNUSED(hwnd);
@@ -250,7 +314,8 @@ static void setWindowOpacity(HWND hwnd, Qt::WindowFlags flags, bool hasAlpha, qr
     Q_UNUSED(level);
 #else
     if (QWindowsWindow::setWindowLayered(hwnd, flags, hasAlpha, level)) {
-        if (flags & Qt::FramelessWindowHint) {
+        if (hasAlpha && !openGL && (flags & Qt::FramelessWindowHint)) {
+            // Non-GL windows with alpha: Use blend function to update.
             BLENDFUNCTION blend = {AC_SRC_OVER, 0, (BYTE)(255.0 * level), AC_SRC_ALPHA};
             QWindowsContext::user32dll.updateLayeredWindow(hwnd, NULL, NULL, NULL, NULL, NULL, 0, &blend, ULW_ALPHA);
         } else {
@@ -485,6 +550,18 @@ QWindowsWindow::WindowData
             qDebug().nospace() << "Created desktop window " << w << result.hwnd;
         return result;
     }
+    if ((flags & Qt::WindowType_Mask) == Qt::ForeignWindow) {
+        result.hwnd = reinterpret_cast<HWND>(w->winId());
+        Q_ASSERT(result.hwnd);
+        const LONG_PTR style = GetWindowLongPtr(result.hwnd, GWL_STYLE);
+        const LONG_PTR exStyle = GetWindowLongPtr(result.hwnd, GWL_EXSTYLE);
+        result.geometry = frameGeometry(result.hwnd, !GetParent(result.hwnd));
+        result.frame = QWindowsGeometryHint::frame(style, exStyle);
+        result.embedded = false;
+        if (QWindowsContext::verboseWindows)
+            qDebug() << "Foreign window: " << w << result.hwnd << result.geometry << result.frame;
+        return result;
+    }
 
     const HINSTANCE appinst = (HINSTANCE)GetModuleHandle(0);
 
@@ -531,6 +608,10 @@ QWindowsWindow::WindowData
     result.frame = context->margins;
     result.embedded = embedded;
     result.customMargins = context->customMargins;
+
+    if (isGL && hasAlpha)
+        applyBlurBehindWindow(result.hwnd);
+
     return result;
 }
 
@@ -580,7 +661,7 @@ void WindowCreationData::initialize(HWND hwnd, bool frameChange, qreal opacityLe
                 EnableMenuItem(systemMenu, SC_CLOSE, MF_BYCOMMAND|MF_GRAYED);
         }
 
-        setWindowOpacity(hwnd, flags, hasAlpha, opacityLevel);
+        setWindowOpacity(hwnd, flags, hasAlpha, isGL, opacityLevel);
     } else { // child.
         SetWindowPos(hwnd, HWND_TOP, 0, 0, 0, 0, swpFlags);
     }
@@ -848,6 +929,7 @@ QWindowsWindow::QWindowsWindow(QWindow *aWindow, const WindowData &data) :
 
 QWindowsWindow::~QWindowsWindow()
 {
+    setFlag(WithinDestroy);
 #ifndef Q_OS_WINCE
     if (testFlag(TouchRegistered))
         QWindowsContext::user32dll.unregisterTouchWindow(m_data.hwnd);
@@ -894,7 +976,7 @@ void QWindowsWindow::destroyWindow()
             }
         }
 #endif // !Q_OS_WINCE
-        if (m_data.hwnd != GetDesktopWindow())
+        if (m_data.hwnd != GetDesktopWindow() && window()->type() != Qt::ForeignWindow)
             DestroyWindow(m_data.hwnd);
         context->removeWindow(m_data.hwnd);
         m_data.hwnd = 0;
@@ -975,9 +1057,10 @@ void QWindowsWindow::setVisible(bool visible)
             // When the window is layered, we won't get WM_PAINT, and "we" are in control
             // over the rendering of the window
             // There is nobody waiting for this, so we don't need to flush afterwards.
-            QWindow *w = window();
-            if (w->format().hasAlpha() || qFuzzyCompare(w->opacity(), qreal(1)))
+            if (isLayered()) {
+                QWindow *w = window();
                 fireExpose(QRect(0, 0, w->width(), w->height()));
+            }
 
         } else {
             if (hasMouseCapture())
@@ -1040,6 +1123,8 @@ QPoint QWindowsWindow::mapFromGlobal(const QPoint &pos) const
 void QWindowsWindow::updateTransientParent() const
 {
 #ifndef Q_OS_WINCE
+    if (window()->type() == Qt::Popup)
+        return; // QTBUG-34503, // a popup stays on top, no parent, see also WindowCreationData::fromWindow().
     // Update transient parent.
     const HWND oldTransientParent =
         GetAncestor(m_data.hwnd, GA_PARENT) == GetDesktopWindow() ? GetAncestor(m_data.hwnd, GA_ROOTOWNER) : HWND(0);
@@ -1085,7 +1170,12 @@ void QWindowsWindow::show_sys() const
     if (type == Qt::Popup || type == Qt::ToolTip || type == Qt::Tool)
         sm = SW_SHOWNOACTIVATE;
 
+    if (w->windowState() & Qt::WindowMaximized)
+        setFlag(WithinMaximize); // QTBUG-8361
+
     ShowWindow(m_data.hwnd, sm);
+
+    clearFlag(WithinMaximize);
 
     if (fakedMaximize) {
         setStyle(style() & ~WS_MAXIMIZEBOX);
@@ -1155,6 +1245,13 @@ void QWindowsWindow::handleHidden()
     fireExpose(QRegion());
 }
 
+void QWindowsWindow::handleCompositionSettingsChanged()
+{
+    const QWindow *w = window();
+    if (w->surfaceType() == QWindow::OpenGLSurface && w->format().hasAlpha())
+        applyBlurBehindWindow(handle());
+}
+
 void QWindowsWindow::setGeometry(const QRect &rectIn)
 {
     QRect rect = rectIn;
@@ -1172,11 +1269,11 @@ void QWindowsWindow::setGeometry(const QRect &rectIn)
         const QWindowsGeometryHint hint(window(), m_data.customMargins);
         if (!hint.validSize(newSize)) {
             qWarning("%s: Attempt to set a size (%dx%d) violating the constraints"
-                     "(%dx%d - %dx%d) on window '%s'.", __FUNCTION__,
+                     "(%dx%d - %dx%d) on window %s/'%s'.", __FUNCTION__,
                      newSize.width(), newSize.height(),
                      hint.minimumSize.width(), hint.minimumSize.height(),
                      hint.maximumSize.width(), hint.maximumSize.height(),
-                     qPrintable(window()->objectName()));
+                     window()->metaObject()->className(), qPrintable(window()->objectName()));
         }
     }
     if (m_data.hwnd) {
@@ -1185,13 +1282,13 @@ void QWindowsWindow::setGeometry(const QRect &rectIn)
         // notify and warn.
         setGeometry_sys(rect);
         if (m_data.geometry != rect) {
-            qWarning("%s: Unable to set geometry %dx%d+%d+%d on '%s'."
+            qWarning("%s: Unable to set geometry %dx%d+%d+%d on %s/'%s'."
                      " Resulting geometry:  %dx%d+%d+%d "
                      "(frame: %d, %d, %d, %d, custom margin: %d, %d, %d, %d"
                      ", minimum size: %dx%d, maximum size: %dx%d).",
                      __FUNCTION__,
                      rect.width(), rect.height(), rect.x(), rect.y(),
-                     qPrintable(window()->objectName()),
+                     window()->metaObject()->className(), qPrintable(window()->objectName()),
                      m_data.geometry.width(), m_data.geometry.height(),
                      m_data.geometry.x(), m_data.geometry.y(),
                      m_data.frame.left(), m_data.frame.top(),
@@ -1408,14 +1505,29 @@ void QWindowsWindow::handleWindowStateChange(Qt::WindowState state)
         handleHidden();
         QWindowSystemInterface::flushWindowSystemEvents(); // Tell QQuickWindow to stop rendering now.
         break;
-    case Qt::WindowNoState:
+    case Qt::WindowMaximized:
+    case Qt::WindowFullScreen:
+    case Qt::WindowNoState: {
         // QTBUG-17548: We send expose events when receiving WM_Paint, but for
-        // layered windows, we won't receive any WM_Paint.
-        if (GetWindowLongPtr(m_data.hwnd, GWL_EXSTYLE) & WS_EX_LAYERED) {
-            fireExpose(QRegion(0, 0, window()->width(), window()->height()));
-            if (!QWindowsContext::instance()->asyncExpose())
-                QWindowSystemInterface::flushWindowSystemEvents();
+        // layered windows and transient children, we won't receive any WM_Paint.
+        QWindow *w = window();
+        bool exposeEventsSent = false;
+        if (isLayered()) {
+            fireExpose(QRegion(0, 0, w->width(), w->height()));
+            exposeEventsSent = true;
         }
+        foreach (QWindow *child, QGuiApplication::allWindows()) {
+            if (child != w && child->isVisible() && child->transientParent() == w) {
+                QWindowsWindow *platformWindow = QWindowsWindow::baseWindowOf(child);
+                if (platformWindow->isLayered()) {
+                    platformWindow->fireExpose(QRegion(0, 0, child->width(), child->height()));
+                    exposeEventsSent = true;
+                }
+            }
+        }
+        if (exposeEventsSent && !QWindowsContext::instance()->asyncExpose())
+            QWindowSystemInterface::flushWindowSystemEvents();
+    }
         break;
     default:
         break;
@@ -1446,7 +1558,7 @@ static const QScreen *effectiveScreen(const QWindow *w)
 
 bool QWindowsWindow::isFullScreen_sys() const
 {
-    return geometry_sys() == effectiveScreen(window())->geometry();
+    return window()->isTopLevel() && geometry_sys() == effectiveScreen(window())->geometry();
 }
 
 /*!
@@ -1475,8 +1587,11 @@ void QWindowsWindow::setWindowState_sys(Qt::WindowState newState)
     setFlag(FrameDirty);
 
     if ((oldState == Qt::WindowMaximized) != (newState == Qt::WindowMaximized)) {
-        if (visible && !(newState == Qt::WindowMinimized))
+        if (visible && !(newState == Qt::WindowMinimized)) {
+            setFlag(WithinMaximize);
             ShowWindow(m_data.hwnd, (newState == Qt::WindowMaximized) ? SW_MAXIMIZE : SW_SHOWNOACTIVATE);
+            clearFlag(WithinMaximize);
+        }
     }
 
     if ((oldState == Qt::WindowFullScreen) != (newState == Qt::WindowFullScreen)) {
@@ -1643,7 +1758,9 @@ void QWindowsWindow::setOpacity(qreal level)
     if (m_opacity != level) {
         m_opacity = level;
         if (m_data.hwnd)
-            setWindowOpacity(m_data.hwnd, m_data.flags, window()->format().hasAlpha(), level);
+            setWindowOpacity(m_data.hwnd, m_data.flags,
+                             window()->format().hasAlpha(), testFlag(OpenGLSurface),
+                             level);
     }
 }
 
@@ -1737,8 +1854,9 @@ bool QWindowsWindow::setMouseGrabEnabled(bool grab)
         return false;
     }
     if (!isVisible() && grab) {
-        qWarning("%s: Not setting mouse grab for invisible window %s",
-                 __FUNCTION__, qPrintable(window()->objectName()));
+        qWarning("%s: Not setting mouse grab for invisible window %s/'%s'",
+                 __FUNCTION__, window()->metaObject()->className(),
+                 qPrintable(window()->objectName()));
         return false;
     }
     // release grab or an explicit grab overriding autocapture: Clear flag.
@@ -1793,9 +1911,69 @@ void QWindowsWindow::getSizeHints(MINMAXINFO *mmi) const
 {
     const QWindowsGeometryHint hint(window(), m_data.customMargins);
     hint.applyToMinMaxInfo(m_data.hwnd, mmi);
+
+    if ((testFlag(WithinMaximize) || (window()->windowState() == Qt::WindowMinimized))
+            && (m_data.flags & Qt::FramelessWindowHint)) {
+        // This block fixes QTBUG-8361: Frameless windows shouldn't cover the
+        // taskbar when maximized
+        if (const QScreen *screen = effectiveScreen(window())) {
+            mmi->ptMaxSize.y = screen->availableGeometry().height();
+
+            // Width, because you can have the taskbar on the sides too.
+            mmi->ptMaxSize.x = screen->availableGeometry().width();
+
+            // If you have the taskbar on top, or on the left you don't want it at (0,0):
+            mmi->ptMaxPosition.x = screen->availableGeometry().x();
+            mmi->ptMaxPosition.y = screen->availableGeometry().y();
+        } else {
+            qWarning() << "Invalid screen";
+        }
+    }
+
     if (QWindowsContext::verboseWindows)
         qDebug() << __FUNCTION__ << window() << *mmi;
 }
+
+bool QWindowsWindow::handleNonClientHitTest(const QPoint &globalPos, LRESULT *result) const
+{
+    // QTBUG-32663, suppress resize cursor for fixed size windows.
+    const QWindow *w = window();
+    if (!w->isTopLevel() // Task 105852, minimized windows need to respond to user input.
+        || (m_windowState != Qt::WindowNoState && m_windowState != Qt::WindowActive)
+        || (m_data.flags & Qt::FramelessWindowHint)) {
+        return false;
+    }
+    const QSize minimumSize = w->minimumSize();
+    if (minimumSize.isEmpty())
+        return false;
+    const QSize maximumSize = w->maximumSize();
+    const bool fixedWidth = minimumSize.width() == maximumSize.width();
+    const bool fixedHeight = minimumSize.height() == maximumSize.height();
+    if (!fixedWidth && !fixedHeight)
+        return false;
+    const QPoint localPos = w->mapFromGlobal(globalPos);
+    const QSize size = w->size();
+    if (fixedHeight) {
+        if (localPos.y() >= size.height()) {
+            *result = HTBORDER; // Unspecified border, no resize cursor.
+            return true;
+        }
+        if (localPos.y() < 0) {
+            const QMargins margins = frameMargins();
+            const int topResizeBarPos = margins.left() - margins.top();
+            if (localPos.y() < topResizeBarPos) {
+                *result = HTCAPTION; // Extend caption over top resize bar, let's user move the window.
+                return true;
+            }
+        }
+    }
+    if (fixedWidth && (localPos.x() < 0 || localPos.x() >= size.width())) {
+        *result = HTBORDER; // Unspecified border, no resize cursor.
+        return true;
+    }
+    return false;
+}
+
 #endif // !Q_OS_WINCE
 
 #ifndef QT_NO_CURSOR
@@ -1949,8 +2127,10 @@ EGLSurface QWindowsWindow::ensureEglSurfaceHandle(const QWindowsWindow::QWindows
         m_staticEglContext = staticContext;
         m_eglSurface = eglCreateWindowSurface(staticContext->display(), config, (EGLNativeWindowType)m_data.hwnd, NULL);
         if (m_eglSurface == EGL_NO_SURFACE)
-            qWarning("%s: Could not create the egl surface (eglCreateWindowSurface failed): error = 0x%x\n",
-                     Q_FUNC_INFO, eglGetError());
+            qWarning("%s: Could not create the egl surface for %s/'%s' (eglCreateWindowSurface failed): error = 0x%x\n",
+                     Q_FUNC_INFO, window()->metaObject()->className(),
+                     qPrintable(window()->objectName()), eglGetError());
+
         if (QWindowsContext::verboseGL)
             qDebug("%s: Created EGL surface %p, this = %p",
                    __FUNCTION__, m_eglSurface, this);

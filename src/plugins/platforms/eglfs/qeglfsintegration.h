@@ -65,8 +65,10 @@ public:
     QPlatformNativeInterface *nativeInterface() const;
 
     QPlatformFontDatabase *fontDatabase() const;
+    QPlatformServices *services() const;
 
-    QAbstractEventDispatcher *guiThreadEventDispatcher() const;
+    QAbstractEventDispatcher *createEventDispatcher() const;
+    void initialize();
 
     QVariant styleHint(QPlatformIntegration::StyleHint hint) const;
 
@@ -84,12 +86,18 @@ public:
 
     QPlatformInputContext *inputContext() const { return mInputContext; }
 
+protected:
+    virtual QEglFSScreen *createScreen() const;
+
 private:
+    void createInputHandlers();
+
     EGLDisplay mDisplay;
-    QAbstractEventDispatcher *mEventDispatcher;
-    QPlatformFontDatabase *mFontDb;
-    QPlatformScreen *mScreen;
+    QScopedPointer<QPlatformFontDatabase> mFontDb;
+    QScopedPointer<QPlatformServices> mServices;
+    QEglFSScreen *mScreen;
     QPlatformInputContext *mInputContext;
+    bool mDisableInputHandlers;
 };
 
 QT_END_NAMESPACE

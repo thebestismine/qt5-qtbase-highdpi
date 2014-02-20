@@ -40,8 +40,7 @@
 ****************************************************************************/
 #include "qcocoaaccessibility.h"
 #include "qcocoaaccessibilityelement.h"
-#include <qaccessible.h>
-#include <QtGui/private/qaccessible2_p.h>
+#include <QtGui/qaccessible.h>
 #include <private/qcore_mac_p.h>
 
 QCocoaAccessibility::QCocoaAccessibility()
@@ -56,12 +55,8 @@ QCocoaAccessibility::~QCocoaAccessibility()
 
 void QCocoaAccessibility::notifyAccessibilityUpdate(QAccessibleEvent *event)
 {
-    QObject *object = event->object();
-    if (!object)
-        return;
-
-    QAccessibleInterface *interface = event->accessibleInterface();
-    if (!interface)
+    QAccessible::Id interfaceId = event->uniqueId();
+    if (!interfaceId)
         return;
 
     switch (event->type()) {
@@ -69,7 +64,7 @@ void QCocoaAccessibility::notifyAccessibilityUpdate(QAccessibleEvent *event)
         case QAccessible::TextInserted :
         case QAccessible::TextRemoved :
         case QAccessible::TextUpdated : {
-            QCocoaAccessibleElement *element = [QCocoaAccessibleElement createElementWithId : QAccessible::uniqueId(interface) parent : nil];
+            QCocoaAccessibleElement *element = [QCocoaAccessibleElement createElementWithId : interfaceId parent : nil];
             [element autorelease];
             NSAccessibilityPostNotification(element, NSAccessibilityValueChangedNotification);
         break; }
@@ -231,8 +226,7 @@ NSArray *unignoredChildren(id parentObject, QAccessibleInterface *interface)
     NSMutableArray *kids = [NSMutableArray arrayWithCapacity:numKids];
     for (int i = 0; i < numKids; ++i) {
         QAccessibleInterface *child = interface->child(i);
-        Q_ASSERT(child);
-        if (child->state().invalid || child->state().invisible)
+        if (!child || !child->isValid() || child->state().invalid || child->state().invisible)
             continue;
 
         QAccessible::Id childId = QAccessible::uniqueId(child);

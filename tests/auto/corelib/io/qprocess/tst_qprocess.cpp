@@ -93,6 +93,7 @@ private slots:
     void echoTest2();
 #ifdef Q_OS_WIN
     void echoTestGui();
+    void testSetNamedPipeHandleState();
     void batFiles_data();
     void batFiles();
 #endif
@@ -107,8 +108,8 @@ private slots:
     void softExitInSlots_data();
     void softExitInSlots();
     void mergedChannels();
+    void forwardedChannels_data();
     void forwardedChannels();
-    void forwardedChannelsOutput();
     void atEnd();
     void atEnd2();
     void waitForFinishedWithTimeout();
@@ -122,6 +123,7 @@ private slots:
     void setStandardInputFile();
     void setStandardOutputFile_data();
     void setStandardOutputFile();
+    void setStandardOutputFile2();
     void setStandardOutputProcess_data();
     void setStandardOutputProcess();
     void removeFileWhileProcessIsRunning();
@@ -537,7 +539,6 @@ void tst_QProcess::echoTest2()
 #endif
 
 #if defined(Q_OS_WIN) && !defined(Q_OS_WINCE)
-//Batch files are not supported on Winfows CE
 // Reading and writing to a process is not supported on Qt/CE
 //-----------------------------------------------------------------------------
 void tst_QProcess::echoTestGui()
@@ -555,11 +556,22 @@ void tst_QProcess::echoTestGui()
     QCOMPARE(process.readAllStandardOutput(), QByteArray("Hello"));
     QCOMPARE(process.readAllStandardError(), QByteArray("Hello"));
 }
+
+void tst_QProcess::testSetNamedPipeHandleState()
+{
+    QProcess process;
+    process.setProcessChannelMode(QProcess::SeparateChannels);
+    process.start("testSetNamedPipeHandleState/testSetNamedPipeHandleState");
+    QVERIFY2(process.waitForStarted(5000), qPrintable(process.errorString()));
+    QVERIFY(process.waitForFinished(5000));
+    QCOMPARE(process.exitCode(), 0);
+    QCOMPARE(process.exitStatus(), QProcess::NormalExit);
+}
 #endif // !Q_OS_WINCE && Q_OS_WIN
 
 //-----------------------------------------------------------------------------
 #if defined(Q_OS_WIN) && !defined(Q_OS_WINCE)
-//Batch files are not supported on Winfows CE
+// Batch files are not supported on Windows CE
 void tst_QProcess::batFiles_data()
 {
     QTest::addColumn<QString>("batFile");
@@ -1089,36 +1101,55 @@ void tst_QProcess::mergedChannels()
 //-----------------------------------------------------------------------------
 #ifndef Q_OS_WINCE
 // Reading and writing to a process is not supported on Qt/CE
+
+void tst_QProcess::forwardedChannels_data()
+{
+    QTest::addColumn<int>("mode");
+    QTest::addColumn<int>("inmode");
+    QTest::addColumn<QByteArray>("outdata");
+    QTest::addColumn<QByteArray>("errdata");
+
+    QTest::newRow("separate") << int(QProcess::SeparateChannels) << int(QProcess::ManagedInputChannel)
+                              << QByteArray() << QByteArray();
+    QTest::newRow("forwarded") << int(QProcess::ForwardedChannels) << int(QProcess::ManagedInputChannel)
+                               << QByteArray("forwarded") << QByteArray("forwarded");
+    QTest::newRow("stdout") << int(QProcess::ForwardedOutputChannel) << int(QProcess::ManagedInputChannel)
+                            << QByteArray("forwarded") << QByteArray();
+    QTest::newRow("stderr") << int(QProcess::ForwardedErrorChannel) << int(QProcess::ManagedInputChannel)
+                            << QByteArray() << QByteArray("forwarded");
+    QTest::newRow("fwdinput") << int(QProcess::ForwardedErrorChannel) << int(QProcess::ForwardedInputChannel)
+                            << QByteArray() << QByteArray("input");
+}
+
 void tst_QProcess::forwardedChannels()
 {
+    QFETCH(int, mode);
+    QFETCH(int, inmode);
+    QFETCH(QByteArray, outdata);
+    QFETCH(QByteArray, errdata);
+
     QProcess process;
-    process.setReadChannelMode(QProcess::ForwardedChannels);
-    QCOMPARE(process.readChannelMode(), QProcess::ForwardedChannels);
-
-    process.start("testProcessEcho2/testProcessEcho2");
-
+    process.start("testForwarding/testForwarding", QStringList() << QString::number(mode) << QString::number(inmode));
     QVERIFY(process.waitForStarted(5000));
-    QCOMPARE(process.write("forwarded\n"), qlonglong(10));
-    QVERIFY(!process.waitForReadyRead(250));
-    QCOMPARE(process.bytesAvailable(), qlonglong(0));
-
+    QCOMPARE(process.write("input"), 5);
     process.closeWriteChannel();
     QVERIFY(process.waitForFinished(5000));
-}
-#endif
-
-#ifndef Q_OS_WINCE
-// Reading and writing to a process is not supported on Qt/CE
-void tst_QProcess::forwardedChannelsOutput()
-{
-    QProcess process;
-    process.start("testForwarding/testForwarding");
-    QVERIFY(process.waitForStarted(5000));
-    QVERIFY(process.waitForFinished(5000));
-    QVERIFY(!process.exitCode());
-    QByteArray data = process.readAll();
-    QVERIFY(!data.isEmpty());
-    QVERIFY(data.contains("forwarded"));
+    const char *err;
+    switch (process.exitCode()) {
+    case 0: err = "ok"; break;
+    case 1: err = "processChannelMode is wrong"; break;
+    case 11: err = "inputChannelMode is wrong"; break;
+    case 2: err = "failed to start"; break;
+    case 3: err = "failed to write"; break;
+    case 4: err = "did not finish"; break;
+    case 5: err = "unexpected stdout"; break;
+    case 6: err = "unexpected stderr"; break;
+    case 13: err = "parameter error"; break;
+    default: err = "unknown exit code"; break;
+    }
+    QVERIFY2(!process.exitCode(), err);
+    QCOMPARE(process.readAllStandardOutput(), outdata);
+    QCOMPARE(process.readAllStandardError(), errdata);
 }
 #endif
 
@@ -1868,6 +1899,13 @@ void tst_QProcess::setStandardInputFile()
         QByteArray all = process.readAll();
     QCOMPARE(all.size(), int(sizeof data) - 1); // testProcessEcho drops the ending \0
     QVERIFY(all == data);
+
+    QProcess process2;
+    process2.setStandardInputFile(QProcess::nullDevice());
+    process2.start("testProcessEcho/testProcessEcho");
+    QPROCESS_VERIFY(process2, waitForFinished());
+    all = process2.readAll();
+    QCOMPARE(all.size(), 0);
 }
 #endif
 
@@ -1901,6 +1939,23 @@ void tst_QProcess::setStandardOutputFile_data()
                                    << int(QProcess::MergedChannels)
                                    << true;
 }
+
+//-----------------------------------------------------------------------------
+#ifndef Q_OS_WINCE
+void tst_QProcess::setStandardOutputFile2()
+{
+    static const char testdata[] = "Test data.";
+
+    QProcess process;
+    process.setStandardOutputFile(QProcess::nullDevice());
+    process.start("testProcessEcho2/testProcessEcho2");
+    process.write(testdata, sizeof testdata);
+    QPROCESS_VERIFY(process,waitForFinished());
+    QVERIFY(!process.bytesAvailable());
+
+    QVERIFY(!QFileInfo(QProcess::nullDevice()).isFile());
+}
+#endif
 
 void tst_QProcess::setStandardOutputFile()
 {

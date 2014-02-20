@@ -150,7 +150,7 @@ QXcbScreen::QXcbScreen(QXcbConnection *connection, xcb_screen_t *scr,
     if (!sync_reply || !sync_reply->present)
         m_syncRequestSupported = false;
     else
-        m_syncRequestSupported = m_windowManagerName != QLatin1String("KWin");
+        m_syncRequestSupported = true;
 
     m_clientLeader = xcb_generate_id(xcb_connection());
     Q_XCB_CALL2(xcb_create_window(xcb_connection(),
@@ -162,6 +162,18 @@ QXcbScreen::QXcbScreen(QXcbConnection *connection, xcb_screen_t *scr,
                                   XCB_WINDOW_CLASS_INPUT_OUTPUT,
                                   screen()->root_visual,
                                   0, 0), connection);
+#ifndef QT_NO_DEBUG
+    QByteArray ba("Qt client leader window for screen ");
+    ba += m_outputName.toUtf8();
+    Q_XCB_CALL2(xcb_change_property(xcb_connection(),
+                                   XCB_PROP_MODE_REPLACE,
+                                   m_clientLeader,
+                                   atom(QXcbAtom::_NET_WM_NAME),
+                                   atom(QXcbAtom::UTF8_STRING),
+                                   8,
+                                   ba.length(),
+                                   ba.constData()), connection);
+#endif
 
     Q_XCB_CALL2(xcb_change_property(xcb_connection(),
                                     XCB_PROP_MODE_REPLACE,
@@ -365,9 +377,9 @@ void QXcbScreen::handleScreenChange(xcb_randr_screen_change_notify_event_t *chan
     QWindowSystemInterface::handleScreenGeometryChange(QPlatformScreen::screen(), geometry());
     QWindowSystemInterface::handleScreenAvailableGeometryChange(QPlatformScreen::screen(), availableGeometry());
     QWindowSystemInterface::handleScreenOrientationChange(QPlatformScreen::screen(), m_orientation);
-    QWindowSystemInterface::handleScreenLogicalDotsPerInchChange(QPlatformScreen::screen(),
-        Q_MM_PER_INCH * m_virtualSize.width() / m_virtualSizeMillimeters.width(),
-        Q_MM_PER_INCH * m_virtualSize.height() / m_virtualSizeMillimeters.height());
+
+    QDpi ldpi = logicalDpi();
+    QWindowSystemInterface::handleScreenLogicalDotsPerInchChange(QPlatformScreen::screen(), ldpi.first, ldpi.second);
 }
 
 void QXcbScreen::updateGeometry(xcb_timestamp_t timestamp)

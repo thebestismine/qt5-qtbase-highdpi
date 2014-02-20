@@ -84,6 +84,7 @@ static inline QCocoaMenuLoader *getMenuLoader()
 }
 
 - (id) initWithMenu:(QCocoaMenu*) m;
+- (BOOL)hasShortcut:(NSMenu *)menu forKey:(NSString *)key forModifiers:(NSUInteger)modifier;
 
 @end
 
@@ -457,23 +458,29 @@ void QCocoaMenu::showPopup(const QWindow *parentWindow, QPoint pos, const QPlatf
         // Else, we need to transform 'pos' to window or screen coordinates.
         NSPoint nsPos = NSMakePoint(pos.x() - 1, pos.y());
         if (view) {
+            // Flip y-coordinate first, the convert to content view space.
             nsPos.y = view.frame.size.height - nsPos.y;
+            nsPos = [view convertPoint:nsPos toView:view.window.contentView];
         } else if (!QGuiApplication::screens().isEmpty()) {
             QScreen *screen = QGuiApplication::screens().at(0);
             nsPos.y = screen->availableVirtualSize().height() - nsPos.y;
         }
 
-        // Finally, we need to synthesize an event.
-        NSEvent *menuEvent = [NSEvent mouseEventWithType:NSRightMouseDown
-                location:nsPos
-                modifierFlags:0
-                timestamp:0
-                windowNumber:view ? view.window.windowNumber : 0
-                                    context:nil
-                                    eventNumber:0
-                                    clickCount:1
-                                    pressure:1.0];
-        [NSMenu popUpContextMenu:m_nativeMenu withEvent:menuEvent forView:view];
+        if (view) {
+            // Finally, we need to synthesize an event.
+            NSEvent *menuEvent = [NSEvent mouseEventWithType:NSRightMouseDown
+                    location:nsPos
+                    modifierFlags:0
+                    timestamp:0
+                    windowNumber:view ? view.window.windowNumber : 0
+                                        context:nil
+                                        eventNumber:0
+                                        clickCount:1
+                                        pressure:1.0];
+            [NSMenu popUpContextMenu:m_nativeMenu withEvent:menuEvent forView:view];
+        } else {
+            [m_nativeMenu popUpMenuPositioningItem:nsItem atLocation:nsPos inView:0];
+        }
     }
 
     // The calls above block, and also swallow any mouse release event,

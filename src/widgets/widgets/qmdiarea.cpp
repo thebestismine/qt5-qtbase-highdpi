@@ -178,6 +178,8 @@
 #include <qmath.h>
 #include <private/qlayoutengine_p.h>
 
+#include <algorithm>
+
 QT_BEGIN_NAMESPACE
 
 using namespace QMdi;
@@ -352,11 +354,6 @@ void SimpleCascader::rearrange(QList<QWidget *> &widgets, const QRect &domain) c
     QStyleOptionTitleBar options;
     options.initFrom(widgets.at(0));
     int titleBarHeight = widgets.at(0)->style()->pixelMetric(QStyle::PM_TitleBarHeight, &options, widgets.at(0));
-#if defined(Q_WS_MAC) && !defined(QT_NO_STYLE_MAC)
-    // ### Remove this after the mac style has been fixed
-    if (qobject_cast<QMacStyle *>(widgets.at(0)->style()))
-        titleBarHeight -= 4;
-#endif
     const QFontMetrics fontMetrics = QFontMetrics(QApplication::font("QMdiSubWindowTitleBar"));
     const int dy = qMax(titleBarHeight - (titleBarHeight - fontMetrics.height()) / 2, 1);
 
@@ -465,9 +462,9 @@ void MinOverlapPlacer::getCandidatePlacements(const QSize &size, const QList<QRe
     }
 
     QList<int> xlist = xset.values();
-    qSort(xlist.begin(), xlist.end());
+    std::sort(xlist.begin(), xlist.end());
     QList<int> ylist = yset.values();
-    qSort(ylist.begin(), ylist.end());
+    std::sort(ylist.begin(), ylist.end());
 
     foreach (int y, ylist)
         foreach (int x, xlist)
@@ -2043,7 +2040,7 @@ void QMdiArea::setBackground(const QBrush &brush)
     if (d->background != brush) {
         d->background = brush;
         d->viewport->setAttribute(Qt::WA_OpaquePaintEvent, brush.isOpaque());
-        update();
+        d->viewport->update();
     }
 }
 
@@ -2088,7 +2085,7 @@ void QMdiArea::setOption(AreaOption option, bool on)
 }
 
 /*!
-    Returns true if \a option is enabled; otherwise returns false.
+    Returns \c true if \a option is enabled; otherwise returns \c false.
 
     \sa AreaOption, setOption()
 */

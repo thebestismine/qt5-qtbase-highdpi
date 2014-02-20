@@ -330,7 +330,8 @@ public:
     enum NumberMode { IntegerMode, DoubleStandardMode, DoubleScientificMode };
     bool validateChars(const QString &str, NumberMode numMode, QByteArray *buff, int decDigits = -1) const;
 
-    QString dateTimeToString(const QString &format, const QDate *date, const QTime *time,
+    QString dateTimeToString(const QString &format, const QDateTime &datetime,
+                             const QDate &dateOnly, const QTime &timeOnly,
                              const QLocale *q) const;
 
     const QLocaleData *m_data;
@@ -359,10 +360,10 @@ inline char QLocalePrivate::digitToCLocale(QChar in) const
     if (in.unicode() >= '0' && in.unicode() <= '9')
         return in.toLatin1();
 
-    if (in == plus())
+    if (in == plus() || in == QLatin1Char('+'))
         return '+';
 
-    if (in == minus())
+    if (in == minus() || in == QLatin1Char('-') || in == QChar(0x2212))
         return '-';
 
     if (in == decimal())

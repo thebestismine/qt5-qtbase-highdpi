@@ -55,8 +55,7 @@ extern "C" {
 
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
-#include <GLES2/gl2.h>
-#include <GLES2/gl2ext.h>
+#include <QtGui/qopengl.h>
 
 #include <qpa/qplatformscreen.h>
 
@@ -112,7 +111,6 @@ private:
     drmModeCrtcPtr m_oldCrtc;
 
     QKmsCursor *m_cursor;
-    unsigned int m_refreshTime;
 
     gbm_surface *m_gbmSurface;
     EGLSurface m_eglWindowSurface;

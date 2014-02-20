@@ -50,6 +50,7 @@
 
 #include <qbytearray.h>
 #include <qwindow.h>
+#include <qpixmap.h>
 #include <qpa/qplatformwindow.h>
 #include "qsurfaceformat.h"
 #include <qpa/qplatformopenglcontext.h>
@@ -122,6 +123,8 @@ QPlatformNativeInterface::NativeResourceForIntegrationFunction QCocoaNativeInter
         return NativeResourceForIntegrationFunction(QCocoaNativeInterface::registerTouchWindow);
     if (resource.toLower() == "setembeddedinforeignview")
         return NativeResourceForIntegrationFunction(QCocoaNativeInterface::setEmbeddedInForeignView);
+    if (resource.toLower() == "setcontentborderthickness")
+        return NativeResourceForIntegrationFunction(QCocoaNativeInterface::setContentBorderThickness);
 
     return 0;
 }
@@ -133,7 +136,7 @@ void QCocoaNativeInterface::beep()
 
 QPlatformPrinterSupport *QCocoaNativeInterface::createPlatformPrinterSupport()
 {
-#ifndef QT_NO_WIDGETS
+#if !defined(QT_NO_WIDGETS) && !defined(QT_NO_PRINTER)
     return new QCocoaPrinterSupport();
 #else
     qFatal("Printing is not supported when Qt is configured with -no-widgets");
@@ -143,7 +146,7 @@ QPlatformPrinterSupport *QCocoaNativeInterface::createPlatformPrinterSupport()
 
 void *QCocoaNativeInterface::NSPrintInfoForPrintEngine(QPrintEngine *printEngine)
 {
-#ifndef QT_NO_WIDGETS
+#if !defined(QT_NO_WIDGETS) && !defined(QT_NO_PRINTER)
     QMacPrintEnginePrivate *macPrintEnginePriv = static_cast<QMacPrintEngine *>(printEngine)->d_func();
     if (macPrintEnginePriv->state == QPrinter::Idle && !macPrintEnginePriv->isPrintSessionInitialized())
         macPrintEnginePriv->initialize();
@@ -152,6 +155,31 @@ void *QCocoaNativeInterface::NSPrintInfoForPrintEngine(QPrintEngine *printEngine
     qFatal("Printing is not supported when Qt is configured with -no-widgets");
     return 0;
 #endif
+}
+
+QPixmap QCocoaNativeInterface::defaultBackgroundPixmapForQWizard()
+{
+    QCFType<CFURLRef> url;
+    const int ExpectedImageWidth = 242;
+    const int ExpectedImageHeight = 414;
+    if (LSFindApplicationForInfo(kLSUnknownCreator, CFSTR("com.apple.KeyboardSetupAssistant"),
+                                 0, 0, &url) == noErr) {
+        QCFType<CFBundleRef> bundle = CFBundleCreate(kCFAllocatorDefault, url);
+        if (bundle) {
+            url = CFBundleCopyResourceURL(bundle, CFSTR("Background"), CFSTR("png"), 0);
+            if (url) {
+                QCFType<CGImageSourceRef> imageSource = CGImageSourceCreateWithURL(url, 0);
+                QCFType<CGImageRef> image = CGImageSourceCreateImageAtIndex(imageSource, 0, 0);
+                if (image) {
+                    int width = CGImageGetWidth(image);
+                    int height = CGImageGetHeight(image);
+                    if (width == ExpectedImageWidth && height == ExpectedImageHeight)
+                        return QPixmap::fromImage(qt_mac_toQImage(image));
+                }
+            }
+        }
+    }
+    return QPixmap();
 }
 
 void QCocoaNativeInterface::onAppFocusWindowChanged(QWindow *window)
@@ -181,12 +209,12 @@ void *QCocoaNativeInterface::nsOpenGLContextForContext(QOpenGLContext* context)
 
 void QCocoaNativeInterface::addToMimeList(void *macPasteboardMime)
 {
-    qt_mac_addToGlobalMimeList(reinterpret_cast<QMacPasteboardMime *>(macPasteboardMime));
+    qt_mac_addToGlobalMimeList(reinterpret_cast<QMacInternalPasteboardMime *>(macPasteboardMime));
 }
 
 void QCocoaNativeInterface::removeFromMimeList(void *macPasteboardMime)
 {
-    qt_mac_removeFromGlobalMimeList(reinterpret_cast<QMacPasteboardMime *>(macPasteboardMime));
+    qt_mac_removeFromGlobalMimeList(reinterpret_cast<QMacInternalPasteboardMime *>(macPasteboardMime));
 }
 
 void QCocoaNativeInterface::registerDraggedTypes(const QStringList &types)
@@ -242,14 +270,19 @@ void QCocoaNativeInterface::registerTouchWindow(QWindow *window,  bool enable)
     if (!window)
         return;
 
-    // Make sure the QCocoaWindow is created when enabling. Disabling might
-    // happen on window destruction, don't (re)create the QCocoaWindow then.
-    if (enable)
-        window->create();
-
     QCocoaWindow *cocoaWindow = static_cast<QCocoaWindow *>(window->handle());
     if (cocoaWindow)
         cocoaWindow->registerTouch(enable);
+}
+
+void QCocoaNativeInterface::setContentBorderThickness(QWindow *window, int topThickness, int bottomThickness)
+{
+    if (!window)
+        return;
+
+    QCocoaWindow *cocoaWindow = static_cast<QCocoaWindow *>(window->handle());
+    if (cocoaWindow)
+        cocoaWindow->setContentBorderThickness(topThickness, bottomThickness);
 }
 
 QT_END_NAMESPACE

@@ -67,6 +67,7 @@
     \value AlignTop Aligns with the top.
     \value AlignBottom Aligns with the bottom.
     \value AlignVCenter Centers vertically in the available space.
+    \value AlignBaseline Aligns with the baseline.
 
     You can use only one of the horizontal flags at a time. There is
     one two-dimensional flag:
@@ -508,15 +509,14 @@
     delivery at a later time.
 
     \value AutoConnection
-           (default) If the signal is emitted from a different thread than the
-           receiving object, the signal is queued, behaving as
-           Qt::QueuedConnection. Otherwise, the slot is invoked directly,
-           behaving as Qt::DirectConnection. The type of connection is
+           \b (Default) If the receiver \l{QObject#Thread Affinity}{lives in} the
+           thread that emits the signal, Qt::DirectConnection is used. Otherwise,
+           Qt::QueuedConnection is used. The connection type is
            determined when the signal is emitted.
 
     \value DirectConnection
-           The slot is invoked immediately, when the signal is
-           emitted.
+           The slot is invoked immediately when the signal is
+           emitted. The slot is executed in the signalling thread.
 
     \value QueuedConnection
            The slot is invoked when control returns to the event loop
@@ -524,11 +524,10 @@
            receiver's thread.
 
     \value BlockingQueuedConnection
-           Same as QueuedConnection, except the current thread blocks
-           until the slot returns. This connection type should only be
-           used where the emitter and receiver are in different
-           threads.  \note Violating this rule can cause your
-           application to deadlock.
+           Same as Qt::QueuedConnection, except that the signalling thread blocks
+           until the slot returns. This connection must \e not be used if the
+           receiver lives in the signalling thread, or else the application
+           will deadlock.
 
     \value UniqueConnection
            This is a flag that can be combined with any one of the above
@@ -603,6 +602,7 @@
     \value LocalTime Locale dependent time (Timezones and Daylight Savings Time).
     \value UTC Coordinated Universal Time, replaces Greenwich Mean Time.
     \value OffsetFromUTC An offset in seconds from Coordinated Universal Time.
+    \value TimeZone A named time zone using a specific set of Daylight Savings rules.
 */
 
 /*!
@@ -1733,6 +1733,8 @@
     \value LeftEdge   The left edge of the rectangle.
     \value RightEdge  The right edge of the rectangle.
     \value BottomEdge The bottom edge of the rectangle.
+
+    \since 5.1
 */
 
 /*!
@@ -1996,6 +1998,10 @@
                          representing a native platform window created by
                          another process or by manually using native code.
 
+    \value CoverWindow Indicates that the window represents a cover window,
+                       which is shown when the application is minimized
+                       on the BlackBerry platform for instance.
+
     There are also a number of flags which you can use to customize
     the appearance of top-level windows. These have no effect on other
     windows:
@@ -2228,7 +2234,7 @@
         of rich text.
 
     \value AutoText The text string is interpreted as for
-        Qt::RichText if Qt::mightBeRichText() returns true, otherwise
+        Qt::RichText if Qt::mightBeRichText() returns \c true, otherwise
         as Qt::PlainText.
 */
 

@@ -43,6 +43,7 @@
 #define QBACKINGSTORE_KMS_H
 
 #include <qpa/qplatformbackingstore.h>
+#include <QtGui/QOpenGLFunctions>
 #include <QImage>
 
 QT_BEGIN_NAMESPACE
@@ -50,7 +51,7 @@ QT_BEGIN_NAMESPACE
 class QOpenGLContext;
 class QOpenGLShaderProgram;
 
-class QKmsBackingStore : public QPlatformBackingStore
+class QKmsBackingStore : public QPlatformBackingStore, public QOpenGLFunctions
 {
 public:
     QKmsBackingStore(QWindow *window);
@@ -59,7 +60,6 @@ public:
     QPaintDevice *paintDevice();
 
     void beginPaint(const QRegion &);
-    void endPaint();
 
     void flush(QWindow *window, const QRegion &region, const QPoint &offset);
     void resize(const QSize &size, const QRegion &staticContents);
@@ -70,6 +70,7 @@ private:
     uint m_texture;
     QOpenGLShaderProgram *m_program;
     QRegion m_dirty;
+    bool m_initialized;
 };
 
 QT_END_NAMESPACE

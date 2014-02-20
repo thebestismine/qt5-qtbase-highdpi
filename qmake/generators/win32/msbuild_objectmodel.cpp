@@ -44,6 +44,7 @@
 #include "msvc_objectmodel.h"
 #include "msvc_vcproj.h"
 #include "msvc_vcxproj.h"
+#include <qscopedpointer.h>
 #include <qstringlist.h>
 #include <qfileinfo.h>
 
@@ -89,6 +90,7 @@ const char _CLRUnmanagedCodeCheck[]             = "CLRUnmanagedCodeCheck";
 const char _Command[]                           = "Command";
 const char _CompileAs[]                         = "CompileAs";
 const char _CompileAsManaged[]                  = "CompileAsManaged";
+const char _CompileAsWinRT[]                    = "CompileAsWinRT";
 const char _ConfigurationType[]                 = "ConfigurationType";
 const char _CPreprocessOptions[]                = "CPreprocessOptions";
 const char _CreateHotpatchableImage[]           = "CreateHotpatchableImage";
@@ -138,6 +140,7 @@ const char _GenerateMapFile[]                   = "GenerateMapFile";
 const char _GenerateServerFiles[]               = "GenerateServerFiles";
 const char _GenerateStublessProxies[]           = "GenerateStublessProxies";
 const char _GenerateTypeLibrary[]               = "GenerateTypeLibrary";
+const char _GenerateWindowsMetadata[]           = "GenerateWindowsMetadata";
 const char _GenerateXMLDocumentationFiles[]     = "GenerateXMLDocumentationFiles";
 const char _HeaderFileName[]                    = "HeaderFileName";
 const char _HeapCommitSize[]                    = "HeapCommitSize";
@@ -145,6 +148,7 @@ const char _HeapReserveSize[]                   = "HeapReserveSize";
 const char _IgnoreAllDefaultLibraries[]         = "IgnoreAllDefaultLibraries";
 const char _IgnoreEmbeddedIDL[]                 = "IgnoreEmbeddedIDL";
 const char _IgnoreImportLibrary[]               = "IgnoreImportLibrary";
+const char _ImageHasSafeExceptionHandlers[]     = "ImageHasSafeExceptionHandlers";
 const char _IgnoreSpecificDefaultLibraries[]    = "IgnoreSpecificDefaultLibraries";
 const char _IgnoreStandardIncludePath[]         = "IgnoreStandardIncludePath";
 const char _ImportLibrary[]                     = "ImportLibrary";
@@ -254,6 +258,7 @@ const char _Version[]                           = "Version";
 const char _WarnAsError[]                       = "WarnAsError";
 const char _WarningLevel[]                      = "WarningLevel";
 const char _WholeProgramOptimization[]          = "WholeProgramOptimization";
+const char _WindowsMetadataFile[]               = "WindowsMetadataFile";
 const char _XMLDocumentationFileName[]          = "XMLDocumentationFileName";
 
 
@@ -565,6 +570,7 @@ void VCXProjectWriter::write(XmlOutput &xml, VCProjectSingleConfig &tool)
     addFilters(tempProj, xmlFilter, "Resource Files");
     addFilters(tempProj, xmlFilter, "Source Files");
     addFilters(tempProj, xmlFilter, "Translation Files");
+    addFilters(tempProj, xmlFilter, "Deployment Files");
 
     for (int x = 0; x < tempProj.ExtraCompilers.count(); ++x)
         addFilters(tempProj, xmlFilter, tempProj.ExtraCompilers.at(x));
@@ -578,6 +584,7 @@ void VCXProjectWriter::write(XmlOutput &xml, VCProjectSingleConfig &tool)
     outputFilter(tempProj, xml, xmlFilter, "Translation Files");
     outputFilter(tempProj, xml, xmlFilter, "Form Files");
     outputFilter(tempProj, xml, xmlFilter, "Resource Files");
+    outputFilter(tempProj, xml, xmlFilter, "Deployment Files");
 
     for (int x = 0; x < tempProj.ExtraCompilers.count(); ++x) {
         outputFilter(tempProj, xml, xmlFilter, tempProj.ExtraCompilers.at(x));
@@ -620,8 +627,23 @@ void VCXProjectWriter::write(XmlOutput &xml, VCProject &tool)
         << attrTag("Label", "Globals")
         << tagValue("ProjectGuid", tool.ProjectGUID)
         << tagValue("RootNamespace", tool.Name)
-        << tagValue("Keyword", tool.Keyword)
-        << closetag();
+        << tagValue("Keyword", tool.Keyword);
+
+    if (tool.SingleProjects.at(0).Configuration.WinRT) {
+        xml << tagValue("MinimumVisualStudioVersion", "11.0");
+        if (tool.SingleProjects.at(0).Configuration.WinPhone)
+            xml << tagValue("WinMDAssembly", "true");
+        else
+            xml << tagValue("AppContainerApplication", "true");
+    }
+
+    if (tool.SingleProjects.at(0).Configuration.WinPhone
+            && tool.SingleProjects.at(0).Configuration.ConfigurationType == typeApplication) {
+        xml << tagValue("XapOutputs", "true");
+        xml << tagValue("XapFilename", "$(RootNamespace)_$(Configuration)_$(Platform).xap");
+    }
+
+    xml << closetag();
 
     // config part.
     xml << import("Project", "$(VCTargetsPath)\\Microsoft.Cpp.Default.props");
@@ -772,6 +794,7 @@ void VCXProjectWriter::write(XmlOutput &xml, VCProject &tool)
     addFilters(tool, xmlFilter, "Resource Files");
     addFilters(tool, xmlFilter, "Source Files");
     addFilters(tool, xmlFilter, "Translation Files");
+    addFilters(tool, xmlFilter, "Deployment Files");
 
     for (int x = 0; x < tool.ExtraCompilers.count(); ++x)
         addFilters(tool, xmlFilter, tool.ExtraCompilers.at(x));
@@ -785,12 +808,26 @@ void VCXProjectWriter::write(XmlOutput &xml, VCProject &tool)
     outputFilter(tool, xml, xmlFilter, "Translation Files");
     outputFilter(tool, xml, xmlFilter, "Form Files");
     outputFilter(tool, xml, xmlFilter, "Resource Files");
+    outputFilter(tool, xml, xmlFilter, "Deployment Files");
     for (int x = 0; x < tool.ExtraCompilers.count(); ++x) {
         outputFilter(tool, xml, xmlFilter, tool.ExtraCompilers.at(x));
     }
     outputFilter(tool, xml, xmlFilter, "Root Files");
 
+    if (tool.SingleProjects.at(0).Configuration.WinPhone) {
+        xml << tag("ItemGroup")
+              << tag("Reference")
+                << attrTag("Include", "platform")
+                << attrTagS("IsWinMDFile", "true")
+                << attrTagS("Private", "false")
+              << closetag()
+            << closetag();
+    }
+
     xml << import("Project", "$(VCTargetsPath)\\Microsoft.Cpp.targets");
+
+    if (tool.SingleProjects.at(0).Configuration.WinPhone)
+        xml << import("Project", "$(MSBuildExtensionsPath)\\Microsoft\\WindowsPhone\\v8.0\\Microsoft.Cpp.WindowsPhone.8.0.targets");
 
     xml << tag("ImportGroup")
         << attrTag("Label", "ExtensionTargets")
@@ -873,13 +910,16 @@ static inline QString toString(compileAsManagedOptions option)
     return QString();
 }
 
-static inline QString toString(debugOption option)
+static inline QString toString(debugOption option, DotNET compilerVersion)
 {
     switch (option) {
     case debugUnknown:
-    case debugDisabled:
     case debugLineInfoOnly:
         break;
+    case debugDisabled:
+        if (compilerVersion <= NET2010)
+            break;
+        return "None";
     case debugOldStyleInfo:
         return "OldStyle";
     case debugEditAndContinue:
@@ -1344,6 +1384,17 @@ static inline triState toTriState(termSvrAwarenessType option)
     return unset;
 }
 
+static XmlOutput::xml_output fixedProgramDataBaseFileNameOutput(const VCCLCompilerTool &tool)
+{
+    if (tool.config->CompilerVersion >= NET2012
+            && tool.DebugInformationFormat == debugDisabled
+            && tool.ProgramDataBaseFileName.isEmpty()) {
+        // Force the creation of an empty tag to work-around Visual Studio bug. See QTBUG-35570.
+        return tagValue(_ProgramDataBaseFileName, tool.ProgramDataBaseFileName);
+    }
+    return attrTagS(_ProgramDataBaseFileName, tool.ProgramDataBaseFileName);
+}
+
 void VCXProjectWriter::write(XmlOutput &xml, const VCCLCompilerTool &tool)
 {
     xml
@@ -1361,8 +1412,10 @@ void VCXProjectWriter::write(XmlOutput &xml, const VCCLCompilerTool &tool)
             << attrTagS(_CallingConvention, toString(tool.CallingConvention))
             << attrTagS(_CompileAs, toString(tool.CompileAs))
             << attrTagS(_CompileAsManaged, toString(tool.CompileAsManaged))
+            << attrTagT(_CompileAsWinRT, tool.CompileAsWinRT)
             << attrTagT(_CreateHotpatchableImage, tool.CreateHotpatchableImage)
-            << attrTagS(_DebugInformationFormat, toString(tool.DebugInformationFormat))
+            << attrTagS(_DebugInformationFormat, toString(tool.DebugInformationFormat,
+                                                          tool.config->CompilerVersion))
             << attrTagT(_DisableLanguageExtensions, tool.DisableLanguageExtensions)
             << attrTagX(_DisableSpecificWarnings, tool.DisableSpecificWarnings, ";")
             << attrTagS(_EnableEnhancedInstructionSet, toString(tool.EnableEnhancedInstructionSet))
@@ -1398,7 +1451,7 @@ void VCXProjectWriter::write(XmlOutput &xml, const VCCLCompilerTool &tool)
             << attrTagS(_PreprocessOutputPath, tool.PreprocessOutputPath)
             << attrTagT(_PreprocessSuppressLineNumbers, tool.PreprocessSuppressLineNumbers)
             << attrTagT(_PreprocessToFile, toTriState(tool.GeneratePreprocessedFile))
-            << attrTagS(_ProgramDataBaseFileName, tool.ProgramDataBaseFileName)
+            << fixedProgramDataBaseFileNameOutput(tool)
             << attrTagS(_ProcessorNumber, tool.MultiProcessorCompilationProcessorCount)
             << attrTagS(_RuntimeLibrary, toString(tool.RuntimeLibrary))
             << attrTagT(_RuntimeTypeInfo, tool.RuntimeTypeInfo)
@@ -1449,12 +1502,15 @@ void VCXProjectWriter::write(XmlOutput &xml, const VCLinkerTool &tool)
             << attrTagS(_FunctionOrder, tool.FunctionOrder)
             << attrTagT(_GenerateDebugInformation, tool.GenerateDebugInformation)
             << attrTagT(_GenerateManifest, tool.GenerateManifest)
+            << attrTagT(_GenerateWindowsMetadata, tool.GenerateWindowsMetadata)
+            << attrTagS(_WindowsMetadataFile, tool.GenerateWindowsMetadata == _True ? tool.WindowsMetadataFile : QString())
             << attrTagT(_GenerateMapFile, tool.GenerateMapFile)
             << attrTagL(_HeapCommitSize, tool.HeapCommitSize, /*ifNot*/ -1)
             << attrTagL(_HeapReserveSize, tool.HeapReserveSize, /*ifNot*/ -1)
             << attrTagT(_IgnoreAllDefaultLibraries, tool.IgnoreAllDefaultLibraries)
             << attrTagT(_IgnoreEmbeddedIDL, tool.IgnoreEmbeddedIDL)
             << attrTagT(_IgnoreImportLibrary, tool.IgnoreImportLibrary)
+            << attrTagT(_ImageHasSafeExceptionHandlers, tool.ImageHasSafeExceptionHandlers)
             << attrTagX(_IgnoreSpecificDefaultLibraries, tool.IgnoreDefaultLibraryNames, ";")
             << attrTagS(_ImportLibrary, tool.ImportLibrary)
             << attrTagS(_KeyContainer, tool.KeyContainer)
@@ -1644,7 +1700,8 @@ void VCXProjectWriter::write(XmlOutput &xml, const VCConfiguration &tool)
         xml << tag("PropertyGroup")
             << attrTag("Condition", generateCondition(tool))
             << attrTag("Label", "Configuration")
-            << attrTagS(_PlatformToolSet, platformToolSetVersion(tool.CompilerVersion))
+            << attrTagS(_PlatformToolSet, platformToolSetVersion(tool.CompilerVersion,
+                                                                 tool.WinPhone))
             << attrTagS(_OutputDirectory, tool.OutputDirectory)
             << attrTagT(_ATLMinimizesCRunTimeLibraryUsage, tool.ATLMinimizesCRunTimeLibraryUsage)
             << attrTagT(_BuildBrowserInformation, tool.BuildBrowserInformation)
@@ -1693,6 +1750,8 @@ void VCXProjectWriter::addFilters(VCProject &project, XmlOutput &xmlFilter, cons
             filter = singleCfg.FormFiles;
         } else if (filtername == "Resource Files") {
             filter = singleCfg.ResourceFiles;
+        } else if (filtername == "Deployment Files") {
+            filter = singleCfg.DeploymentFiles;
         } else {
             // ExtraCompilers
             filter = project.SingleProjects[i].filterForExtraCompiler(filtername);
@@ -1712,14 +1771,11 @@ void VCXProjectWriter::addFilters(VCProject &project, XmlOutput &xmlFilter, cons
 // outputs a given filter for all existing configurations of a project
 void VCXProjectWriter::outputFilter(VCProject &project, XmlOutput &xml, XmlOutput &xmlFilter, const QString &filtername)
 {
-    XNode *root;
+    QScopedPointer<XNode> root;
     if (project.SingleProjects.at(0).flat_files)
-        root = new XFlatNode;
+        root.reset(new XFlatNode);
     else
-        root = new XTreeNode;
-
-    QString name, extfilter;
-    triState parse;
+        root.reset(new XTreeNode);
 
     for (int i = 0; i < project.SingleProjects.count(); ++i) {
         VCFilter filter;
@@ -1740,6 +1796,8 @@ void VCXProjectWriter::outputFilter(VCProject &project, XmlOutput &xml, XmlOutpu
             filter = singleCfg.FormFiles;
         } else if (filtername == "Resource Files") {
             filter = singleCfg.ResourceFiles;
+        } else if (filtername == "Deployment Files") {
+            filter = singleCfg.DeploymentFiles;
         } else {
             // ExtraCompilers
             filter = project.SingleProjects[i].filterForExtraCompiler(filtername);
@@ -1748,14 +1806,6 @@ void VCXProjectWriter::outputFilter(VCProject &project, XmlOutput &xml, XmlOutpu
         // Merge all files in this filter to root tree
         for (int x = 0; x < filter.Files.count(); ++x)
             root->addElement(filter.Files.at(x));
-
-        // Save filter setting from first filter. Next filters
-        // may differ but we cannot handle that. (ex. extfilter)
-        if (name.isEmpty()) {
-            name = filter.Name;
-            extfilter = filter.Filter;
-            parse = filter.ParseFiles;
-        }
     }
 
     if (!root->hasElements())
@@ -1791,6 +1841,8 @@ void VCXProjectWriter::outputFileConfigs(VCProject &project, XmlOutput &xml, Xml
             filter = singleCfg.FormFiles;
         } else if (filtername.startsWith("Resource Files")) {
             filter = singleCfg.ResourceFiles;
+        } else if (filtername.startsWith("Deployment Files")) {
+            filter = singleCfg.DeploymentFiles;
         } else {
             // ExtraCompilers
             filter = project.SingleProjects[i].filterForExtraCompiler(filtername);
@@ -1921,7 +1973,8 @@ bool VCXProjectWriter::outputFileConfig(VCFilter &filter, XmlOutput &xml, XmlOut
     }
 
     // Actual XML output ----------------------------------
-    if (filter.useCustomBuildTool || filter.useCompilerTool || !inBuild) {
+    if (filter.useCustomBuildTool || filter.useCompilerTool
+            || !inBuild || filtername.startsWith("Deployment Files")) {
 
         if (filter.useCustomBuildTool)
         {
@@ -1936,7 +1989,8 @@ bool VCXProjectWriter::outputFileConfig(VCFilter &filter, XmlOutput &xml, XmlOut
                 xml << tag("CustomBuild")
                     << attrTag("Include",Option::fixPathToLocalOS(filename));
 
-                if ( filtername.startsWith("Form Files") || filtername.startsWith("Generated Files") || filtername.startsWith("Resource Files") )
+                if (filtername.startsWith("Form Files") || filtername.startsWith("Generated Files")
+                        || filtername.startsWith("Resource Files") || filtername.startsWith("Deployment Files"))
                     xml << attrTagS("FileType", "Document");
             }
 
@@ -2009,12 +2063,25 @@ bool VCXProjectWriter::outputFileConfig(VCFilter &filter, XmlOutput &xml, XmlOut
                     xml << tag("ResourceCompile")
                         << attrTag("Include",Option::fixPathToLocalOS(filename));
                 }
+            } else if (filtername.startsWith("Deployment Files")) {
+                xmlFilter << tag("None")
+                          << attrTag("Include",Option::fixPathToLocalOS(filename))
+                          << attrTagS("Filter", filtername);
+
+                xml << tag("None")
+                    << attrTag("Include",Option::fixPathToLocalOS(filename));
             }
         }
 
         const QString condition = generateCondition(*filter.Config);
         if(!inBuild) {
             xml << tag("ExcludedFromBuild")
+                << attrTag("Condition", condition)
+                << valueTag("true");
+        }
+
+        if (filtername.startsWith("Deployment Files") && inBuild) {
+            xml << tag("DeploymentContent")
                 << attrTag("Condition", condition)
                 << valueTag("true");
         }
@@ -2047,16 +2114,17 @@ QString VCXProjectWriter::generateCondition(const VCConfiguration &config)
     return QStringLiteral("'$(Configuration)|$(Platform)'=='") + config.Name + QLatin1Char('\'');
 }
 
-QString VCXProjectWriter::platformToolSetVersion(const DotNET version)
+QString VCXProjectWriter::platformToolSetVersion(const DotNET version, bool winphoneBuild)
 {
     switch (version)
     {
     case NET2012:
-        return "v110";
+        return winphoneBuild ? "v110_wp80" : "v110";
     case NET2013:
         return "v120";
+    default:
+        return QString();
     }
-    return QString();
 }
 
 QT_END_NAMESPACE

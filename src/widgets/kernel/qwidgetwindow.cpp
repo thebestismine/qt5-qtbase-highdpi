@@ -49,6 +49,8 @@
 #endif
 #include <private/qwidgetbackingstore_p.h>
 #include <qpa/qwindowsysteminterface_p.h>
+#include <qpa/qplatformtheme.h>
+#include <private/qgesturemanager_p.h>
 
 QT_BEGIN_NAMESPACE
 
@@ -75,6 +77,13 @@ public:
         }
         return w;
     }
+
+    void clearFocusObject()
+    {
+        if (QApplicationPrivate::focus_widget)
+            QApplicationPrivate::focus_widget->clearFocus();
+    }
+
 };
 
 QWidgetWindow::QWidgetWindow(QWidget *widget)
@@ -83,6 +92,12 @@ QWidgetWindow::QWidgetWindow(QWidget *widget)
 {
     updateObjectName();
     connect(m_widget, &QObject::objectNameChanged, this, &QWidgetWindow::updateObjectName);
+}
+
+QWidgetWindow::~QWidgetWindow()
+{
+    if (m_widget == qt_tablet_target)
+        qt_tablet_target = 0;
 }
 
 #ifndef QT_NO_ACCESSIBILITY
@@ -220,6 +235,13 @@ bool QWidgetWindow::event(QEvent *event)
         handleTabletEvent(static_cast<QTabletEvent *>(event));
         return true;
 #endif
+
+#ifndef QT_NO_GESTURES
+    case QEvent::NativeGesture:
+        handleGestureEvent(static_cast<QNativeGestureEvent *>(event));
+        return true;
+#endif
+
 #ifndef QT_NO_CONTEXTMENU
     case QEvent::ContextMenu:
         handleContextMenuEvent(static_cast<QContextMenuEvent *>(event));
@@ -230,7 +252,9 @@ bool QWidgetWindow::event(QEvent *event)
     case QEvent::Show:
     case QEvent::Hide:
         return QWindow::event(event);
-
+    case QEvent::WindowBlocked:
+        qt_button_down = 0;
+        break;
     default:
         break;
     }
@@ -331,6 +355,9 @@ void QWidgetWindow::handleNonClientAreaMouseEvent(QMouseEvent *e)
 
 void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
 {
+    static const QEvent::Type contextMenuTrigger =
+        QGuiApplicationPrivate::platformTheme()->themeHint(QPlatformTheme::ContextMenuOnMouseRelease).toBool() ?
+        QEvent::MouseButtonRelease : QEvent::MouseButtonPress;
     if (qApp->d_func()->inPopupMode()) {
         QWidget *activePopupWidget = qApp->activePopupWidget();
         QWidget *popup = activePopupWidget;
@@ -415,7 +442,7 @@ void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
             }
             qt_replay_popup_mouse_event = false;
 #ifndef QT_NO_CONTEXTMENU
-        } else if (event->type() == QEvent::MouseButtonPress
+        } else if (event->type() == contextMenuTrigger
                    && event->button() == Qt::RightButton
                    && (openPopupCount == oldOpenPopupCount)) {
             QWidget *popupEvent = popup;
@@ -464,7 +491,7 @@ void QWidgetWindow::handleMouseEvent(QMouseEvent *event)
                                         qt_last_mouse_receiver);
 
 #ifndef QT_NO_CONTEXTMENU
-    if (event->type() == QEvent::MouseButtonPress && event->button() == Qt::RightButton) {
+    if (event->type() == contextMenuTrigger && event->button() == Qt::RightButton) {
         QContextMenuEvent e(QContextMenuEvent::Mouse, mapped, event->globalPos(), event->modifiers());
         QGuiApplication::sendSpontaneousEvent(receiver, &e);
     }
@@ -731,6 +758,25 @@ void QWidgetWindow::handleTabletEvent(QTabletEvent *event)
         qt_tablet_target = 0;
 }
 #endif // QT_NO_TABLETEVENT
+
+#ifndef QT_NO_GESTURES
+void QWidgetWindow::handleGestureEvent(QNativeGestureEvent *e)
+{
+    // copy-pasted code to find correct widget follows:
+    QObject *receiver = 0;
+    if (QApplicationPrivate::inPopupMode()) {
+        QWidget *popup = QApplication::activePopupWidget();
+        QWidget *popupFocusWidget = popup->focusWidget();
+        receiver = popupFocusWidget ? popupFocusWidget : popup;
+    }
+    if (!receiver)
+        receiver = QApplication::widgetAt(e->globalPos());
+    if (!receiver)
+        receiver = m_widget; // last resort
+
+    QApplication::sendSpontaneousEvent(receiver, e);
+}
+#endif // QT_NO_GESTURES
 
 #ifndef QT_NO_CONTEXTMENU
 void QWidgetWindow::handleContextMenuEvent(QContextMenuEvent *e)

@@ -75,11 +75,20 @@ struct QGlyphLayout;
     ((quint32)(ch4)) \
    )
 
-typedef void (*qt_destroy_func_t) (void *user_data);
+// ### this only used in getPointInOutline(), refactor it and then remove these magic numbers
+enum HB_Compat_Error {
+    Err_Ok                           = 0x0000,
+    Err_Not_Covered                  = 0xFFFF,
+    Err_Invalid_Argument             = 0x1A66,
+    Err_Invalid_SubTable_Format      = 0x157F,
+    Err_Invalid_SubTable             = 0x1570
+};
 
-class Q_GUI_EXPORT QFontEngine : public QObject
+typedef void (*qt_destroy_func_t) (void *user_data);
+typedef bool (*qt_get_font_table_func_t) (void *user_data, uint tag, uchar *buffer, uint *length);
+
+class Q_GUI_EXPORT QFontEngine
 {
-    Q_OBJECT
 public:
     enum Type {
         Box,
@@ -248,6 +257,7 @@ public:
 
     virtual int getPointInOutline(glyph_t glyph, int flags, quint32 point, QFixed *xpos, QFixed *ypos, quint32 *nPoints);
 
+    void clearGlyphCache(const void *key);
     void setGlyphCache(const void *key, QFontEngineGlyphCache *data);
     QFontEngineGlyphCache *glyphCache(const void *key, QFontEngineGlyphCache::Type type, const QTransform &transform) const;
 
@@ -271,6 +281,10 @@ public:
     mutable qt_destroy_func_t font_destroy_func;
     mutable void *face_;
     mutable qt_destroy_func_t face_destroy_func;
+    struct FaceData {
+        void *user_data;
+        qt_get_font_table_func_t get_font_table;
+    } faceData;
 
     uint cache_cost; // amount of mem used in kb by the font
     uint fsType : 16;
@@ -291,8 +305,12 @@ public:
     QImage currentlyLockedAlphaMap;
     int m_subPixelPositionCount; // Number of positions within a single pixel for this cache
 
+    inline QVariant userData() const { return m_userData; }
+
 protected:
     QFixed lastRightBearing(const QGlyphLayout &glyphs, bool round = false);
+
+    inline void setUserData(const QVariant &userData) { m_userData = userData; }
 
 private:
     struct GlyphCacheEntry {
@@ -302,6 +320,9 @@ private:
     };
 
     mutable QLinkedList<GlyphCacheEntry> m_glyphCaches;
+
+private:
+    QVariant m_userData;
 };
 
 Q_DECLARE_OPERATORS_FOR_FLAGS(QFontEngine::ShaperFlags)
@@ -359,7 +380,6 @@ private:
 
 class Q_GUI_EXPORT QFontEngineMulti : public QFontEngine
 {
-    Q_OBJECT
 public:
     explicit QFontEngineMulti(int engineCount);
     ~QFontEngineMulti();
@@ -420,8 +440,8 @@ protected:
 class QTestFontEngine : public QFontEngineBox
 {
 public:
-    QTestFontEngine(int size) : QFontEngineBox(size) {}
-    virtual Type type() const { return TestFontEngine; }
+    QTestFontEngine(int size);
+    virtual Type type() const;
 };
 
 QT_END_NAMESPACE

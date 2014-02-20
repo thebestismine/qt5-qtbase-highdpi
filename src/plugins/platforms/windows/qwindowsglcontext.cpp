@@ -49,6 +49,8 @@
 #include <QtGui/QGuiApplication>
 #include <qpa/qplatformnativeinterface.h>
 
+#include <algorithm>
+
 #include <wingdi.h>
 #include <GL/gl.h>
 
@@ -377,7 +379,7 @@ static int choosePixelFormat(HDC hdc,
         return 0;
 
     int iAttributes[attribSize];
-    qFill(iAttributes, iAttributes + attribSize, int(0));
+    std::fill(iAttributes, iAttributes + attribSize, int(0));
     int i = 0;
     iAttributes[i++] = WGL_ACCELERATION_ARB;
     iAttributes[i++] = testFlag(additional.formatFlags, QWindowsGLDirectRendering) ?
@@ -505,8 +507,8 @@ static QSurfaceFormat
         return result;
     int iAttributes[attribSize];
     int iValues[attribSize];
-    qFill(iAttributes, iAttributes + attribSize, int(0));
-    qFill(iValues, iValues + attribSize, int(0));
+    std::fill(iAttributes, iAttributes + attribSize, int(0));
+    std::fill(iValues, iValues + attribSize, int(0));
 
     int i = 0;
     const bool hasSampleBuffers = testFlag(staticContext.extensions, QOpenGLStaticContext::SampleBuffers);
@@ -567,7 +569,7 @@ static HGLRC createContext(const QOpenGLStaticContext &staticContext,
         return 0;
     int attributes[attribSize];
     int attribIndex = 0;
-    qFill(attributes, attributes + attribSize, int(0));
+    std::fill(attributes, attributes + attribSize, int(0));
 
     // We limit the requested version by the version of the static context as
     // wglCreateContextAttribsARB fails and returns NULL if the requested context
@@ -584,15 +586,17 @@ static HGLRC createContext(const QOpenGLStaticContext &staticContext,
         attributes[attribIndex++] = WGL_CONTEXT_MINOR_VERSION_ARB;
         attributes[attribIndex++] = minorVersion;
     }
+
+    int flags = 0;
+    if (format.testOption(QSurfaceFormat::DebugContext))
+        flags |= WGL_CONTEXT_DEBUG_BIT_ARB;
     if (requestedVersion >= 0x0300) {
-        attributes[attribIndex++] = WGL_CONTEXT_FLAGS_ARB;
-        attributes[attribIndex] = 0;
-        if (format.testOption(QSurfaceFormat::DeprecatedFunctions))
-             attributes[attribIndex] |= WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB;
-        if (format.testOption(QSurfaceFormat::DebugContext))
-            attributes[attribIndex] |= WGL_CONTEXT_DEBUG_BIT_ARB;
-        attribIndex++;
+        if (!format.testOption(QSurfaceFormat::DeprecatedFunctions))
+            flags |= WGL_CONTEXT_FORWARD_COMPATIBLE_BIT_ARB;
     }
+    attributes[attribIndex++] = WGL_CONTEXT_FLAGS_ARB;
+    attributes[attribIndex++] = flags;
+
     if (requestedVersion >= 0x0302) {
         switch (format.profile()) {
         case QSurfaceFormat::NoProfile:

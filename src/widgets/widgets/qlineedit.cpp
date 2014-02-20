@@ -333,8 +333,7 @@ void QLineEdit::setText(const QString& text)
     \brief the line edit's placeholder text
 
     Setting this property makes the line edit display a grayed-out
-    placeholder text as long as the text() is empty and the widget doesn't
-    have focus.
+    placeholder text as long as the text() is empty.
 
     By default, this property contains an empty string.
 
@@ -496,12 +495,13 @@ void QLineEdit::setClearButtonEnabled(bool enable)
         return;
     if (enable) {
         QAction *clearAction = new QAction(d->clearButtonIcon(), QString(), this);
+        clearAction->setEnabled(!isReadOnly());
         clearAction->setObjectName(QLatin1String(clearButtonActionNameC));
         d->addAction(clearAction, 0, QLineEdit::TrailingPosition, QLineEditPrivate::SideWidgetClearButton | QLineEditPrivate::SideWidgetFadeInWithText);
     } else {
         QAction *clearAction = findChild<QAction *>(QLatin1String(clearButtonActionNameC));
         Q_ASSERT(clearAction);
-        removeAction(clearAction);
+        d->removeAction(clearAction);
         delete clearAction;
     }
 }
@@ -909,7 +909,7 @@ void QLineEdit::end(bool mark)
     do not start out knowing what the default should be (perhaps it
     depends on other fields on the form). Start the line edit without
     the best default, and when the default is known, if modified()
-    returns false (the user hasn't entered any text), insert the
+    returns \c false (the user hasn't entered any text), insert the
     default value.
 
     Calling setText() resets the modified flag to false.
@@ -931,10 +931,10 @@ void QLineEdit::setModified(bool modified)
     \property QLineEdit::hasSelectedText
     \brief whether there is any text selected
 
-    hasSelectedText() returns true if some or all of the text has been
-    selected by the user; otherwise returns false.
+    hasSelectedText() returns \c true if some or all of the text has been
+    selected by the user; otherwise returns \c false.
 
-    By default, this property is false.
+    By default, this property is \c false.
 
     \sa selectedText()
 */
@@ -1012,7 +1012,7 @@ void QLineEdit::setSelection(int start, int length)
 
     Undo becomes available once the user has modified the text in the line edit.
 
-    By default, this property is false.
+    By default, this property is \c false.
 */
 
 bool QLineEdit::isUndoAvailable() const
@@ -1028,7 +1028,7 @@ bool QLineEdit::isUndoAvailable() const
     Redo becomes available once the user has performed one or more undo operations
     on text in the line edit.
 
-    By default, this property is false.
+    By default, this property is \c false.
 */
 
 bool QLineEdit::isRedoAvailable() const
@@ -1090,7 +1090,7 @@ void QLineEdit::setCursorMoveStyle(Qt::CursorMoveStyle style)
     \brief whether the input satisfies the inputMask and the
     validator.
 
-    By default, this property is true.
+    By default, this property is \c true.
 
     \sa setInputMask(), setValidator()
 */
@@ -1321,7 +1321,7 @@ void QLineEdit::redo()
 
     QLineEdit does not show a cursor in read-only mode.
 
-    By default, this property is false.
+    By default, this property is \c false.
 
     \sa setEnabled()
 */
@@ -1337,6 +1337,7 @@ void QLineEdit::setReadOnly(bool enable)
     Q_D(QLineEdit);
     if (d->control->isReadOnly() != enable) {
         d->control->setReadOnly(enable);
+        d->setClearButtonEnabled(!enable);
         setAttribute(Qt::WA_MacShowFocusRect, !enable);
         setAttribute(Qt::WA_InputMethodEnabled, d->shouldEnableInputMethod());
 #ifndef QT_NO_CURSOR
@@ -1440,7 +1441,7 @@ bool QLineEdit::event(QEvent * e)
                 d->setCursorVisible(true);
         }
     } else if (e->type() == QEvent::ActionRemoved) {
-        d->removeAction(static_cast<QActionEvent *>(e));
+        d->removeAction(static_cast<QActionEvent *>(e)->action());
     } else if (e->type() == QEvent::Resize) {
         d->positionSideWidgets();
     }

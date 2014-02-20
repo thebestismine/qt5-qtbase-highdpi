@@ -63,7 +63,6 @@ QT_BEGIN_NAMESPACE
 
 class QPrinter;
 class QPagePreview;
-class QCUPSSupport;
 
 class QPageSetupWidget : public QWidget {
     Q_OBJECT
@@ -79,6 +78,7 @@ public:
 private slots:
     void _q_pageOrientationChanged();
     void _q_paperSizeChanged();
+    void _q_pagesPerSheetChanged();
     void unitChanged(int item);
     void setTopMargin(double newValue);
     void setBottomMargin(double newValue);
@@ -86,6 +86,7 @@ private slots:
     void setRightMargin(double newValue);
 
 private:
+    friend class QUnixPrintWidgetPrivate;
     Ui::QPageSetupWidget widget;
     QPagePreview *m_pagePreview;
     QPrinter *m_printer;
@@ -93,10 +94,12 @@ private:
     qreal m_topMargin;
     qreal m_rightMargin;
     qreal m_bottomMargin;
-    QSizeF m_paperSize;
+    QSizeF m_paperSize; // In QPrinter::Point
     qreal m_currentMultiplier;
     bool m_blockSignals;
     bool m_cups;
+
+    void initPagesPerSheet();
 };
 
 QT_END_NAMESPACE

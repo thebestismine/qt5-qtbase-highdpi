@@ -50,10 +50,13 @@
 
 QT_BEGIN_NAMESPACE
 
+class QIOSServices;
+
 class QIOSIntegration : public QPlatformIntegration, public QPlatformNativeInterface
 {
 public:
     QIOSIntegration();
+    ~QIOSIntegration();
 
     bool hasCapability(Capability cap) const;
 
@@ -64,13 +67,16 @@ public:
 
     QPlatformFontDatabase *fontDatabase() const;
     QPlatformInputContext *inputContext() const;
+    QPlatformServices *services() const Q_DECL_OVERRIDE;
 
     QVariant styleHint(StyleHint hint) const;
 
     QStringList themeNames() const;
     QPlatformTheme *createPlatformTheme(const QString &name) const;
 
-    QAbstractEventDispatcher *guiThreadEventDispatcher() const;
+    QPlatformDrag *drag() const Q_DECL_OVERRIDE { return 0; }
+
+    QAbstractEventDispatcher *createEventDispatcher() const;
     QPlatformNativeInterface *nativeInterface() const;
 
     void *nativeResourceForWindow(const QByteArray &resource, QWindow *window);
@@ -82,6 +88,7 @@ private:
     QPlatformScreen *m_screen;
     QTouchDevice *m_touchDevice;
     QIOSApplicationState m_applicationState;
+    QIOSServices *m_platformServices;
 };
 
 QT_END_NAMESPACE

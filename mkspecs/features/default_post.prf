@@ -6,6 +6,20 @@ contains(TEMPLATE, ".*(lib|app)"):CONFIG += have_target
 
 load(resolve_config)
 
+exclusive_builds: load(exclusive_builds_post)
+
+# If the TARGET looks like a path, split it into DESTDIR and the resulting TARGET
+target_dir_part = $$dirname(TARGET)
+!isEmpty(target_dir_part) {
+    isEmpty(DESTDIR): \
+        DESTDIR = $$target_dir_part
+    else: \
+        DESTDIR = $$DESTDIR/$$target_dir_part
+
+    TARGET = $$basename(TARGET)
+    DESTDIR = $$clean_path($$DESTDIR)
+}
+
 QT_BREAKPAD_ROOT_PATH = $$(QT_BREAKPAD_ROOT_PATH)
 !isEmpty(QT_BREAKPAD_ROOT_PATH): \   # quick test first whether requested ...
         !static:release:have_target: \   # is it applicable?
@@ -14,6 +28,9 @@ QT_BREAKPAD_ROOT_PATH = $$(QT_BREAKPAD_ROOT_PATH)
     CONFIG += breakpad force_debug_info
     CONFIG -= no_debug_info separate_debug_info
 }
+
+force_debug_info|debug: \
+    CONFIG += debug_info
 
 force_debug_info {
     QMAKE_CFLAGS_RELEASE = $$QMAKE_CFLAGS_RELEASE_WITH_DEBUGINFO
@@ -53,11 +70,6 @@ silent {
     # simd.prf eg) do not handle.
     CONFIG -= silent
     CONFIG = silent $$CONFIG
-}
-
-force_debug_info:win32 {
-    load(resolve_target)
-    QMAKE_CLEAN += $$replace(QMAKE_RESOLVED_TARGET, ...$, pdb)  # for the debug case it is hardcoded in qmake
 }
 
 breakpad {

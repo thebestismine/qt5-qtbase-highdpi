@@ -240,7 +240,7 @@ static ISC_TIMESTAMP toTimeStamp(const QDateTime &dt)
 static QDateTime fromTimeStamp(char *buffer)
 {
     static const QDate bd(1858, 11, 17);
-    QTime t;
+    QTime t(0, 0);
     QDate d;
 
     // have to demangle the structure ourselves because isc_decode_time
@@ -1162,6 +1162,9 @@ bool QIBaseResult::gotoNext(QSqlCachedResult::ValueCache& row, int rowIdx)
                 case QSql::HighPrecision:
                     v.convert(QVariant::String);
                     break;
+                case QSql::LowPrecisionDouble:
+                    // no conversion
+                    break;
                 }
             }
             row[idx] = v;
@@ -1424,6 +1427,7 @@ bool QIBaseDriver::hasFeature(DriverFeature f) const
     case SimpleLocking:
     case FinishQuery:
     case MultipleResultSets:
+    case CancelQuery:
         return false;
     case Transactions:
     case PreparedQueries:
@@ -1441,7 +1445,7 @@ bool QIBaseDriver::open(const QString & db,
           const QString & user,
           const QString & password,
           const QString & host,
-          int /*port*/,
+          int port,
           const QString & connOpts)
 {
     Q_D(QIBaseDriver);
@@ -1509,9 +1513,13 @@ bool QIBaseDriver::open(const QString & db,
         i += role.length();
     }
 
+    QString portString;
+    if (port != -1)
+        portString = QStringLiteral("/%1").arg(port);
+
     QString ldb;
     if (!host.isEmpty())
-        ldb += host + QLatin1Char(':');
+        ldb += host + portString + QLatin1Char(':');
     ldb += db;
     isc_attach_database(d->status, 0, const_cast<char *>(ldb.toLocal8Bit().constData()),
                         &d->ibase, i, ba.data());
@@ -1522,6 +1530,7 @@ bool QIBaseDriver::open(const QString & db,
     }
 
     setOpen(true);
+    setOpenError(false);
     return true;
 }
 

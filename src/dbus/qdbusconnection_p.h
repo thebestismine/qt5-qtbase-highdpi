@@ -140,16 +140,24 @@ public:
     {
         typedef QVector<ObjectTreeNode> DataList;
 
-        inline ObjectTreeNode() : obj(0), flags(0), activeChildren(0) { }
+        inline ObjectTreeNode() : obj(0), flags(0) { }
         inline ObjectTreeNode(const QString &n) // intentionally implicit
-            : name(n), obj(0), flags(0), activeChildren(0) { }
+            : name(n), obj(0), flags(0) { }
         inline ~ObjectTreeNode() { }
         inline bool operator<(const QString &other) const
             { return name < other; }
         inline bool operator<(const QStringRef &other) const
             { return QStringRef(&name) < other; }
+#if defined(Q_CC_MSVC) && _MSC_VER < 1600
+        inline bool operator<(const ObjectTreeNode &other) const
+            { return name < other.name; }
+        friend inline bool operator<(const QString &str, const ObjectTreeNode &obj)
+            { return str < obj.name; }
+        friend inline bool operator<(const QStringRef &str, const ObjectTreeNode &obj)
+            { return str < QStringRef(&obj.name); }
+#endif
         inline bool isActive() const
-        { return obj || activeChildren; }
+        { return obj || !children.isEmpty(); }
 
         QString name;
         union {
@@ -157,7 +165,6 @@ public:
             QDBusVirtualObject *treeNode;
         };
         int flags;
-        int activeChildren;
 
         DataList children;
     };
@@ -171,6 +178,7 @@ public:
     typedef QMultiHash<QString, SignalHook> SignalHookHash;
     typedef QHash<QString, QDBusMetaObject* > MetaObjectHash;
     typedef QHash<QByteArray, int> MatchRefCountHash;
+    typedef QList<QDBusPendingCallPrivate*> PendingCallList;
 
     struct WatchedServiceData {
         WatchedServiceData() : refcount(0) {}
@@ -309,6 +317,7 @@ public:
     MatchRefCountHash matchRefCounts;
     ObjectTreeNode rootNode;
     MetaObjectHash cachedMetaObjects;
+    PendingCallList pendingCalls;
 
     QMutex callDeliveryMutex;
     QDBusCallDeliveryEvent *callDeliveryState; // protected by the callDeliveryMutex mutex

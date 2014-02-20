@@ -49,12 +49,16 @@
 #ifdef Q_OS_UNIX
 #include <unistd.h>
 #endif
-#if defined(Q_OS_WIN32) || defined(Q_OS_WINCE)
-#include <windows.h>
-#define sleep(X) Sleep(X)
+#if defined(Q_OS_WIN)
+#  include <qt_windows.h>
+#  ifndef Q_OS_WINRT
+#    define sleep(X) Sleep(X)
+#  else
+#    define sleep(X) WaitForSingleObjectEx(GetCurrentThread(), X, FALSE);
+#  endif
 #endif
 
-//on solaris, threads that loop one the release bool variable
+//on solaris, threads that loop on the release bool variable
 //needs to sleep more than 1 usec.
 #ifdef Q_OS_SOLARIS
 # define RWTESTSLEEP usleep(10);
@@ -416,7 +420,7 @@ void tst_QReadWriteLock::tryWriteLock()
 }
 
 bool threadDone;
-volatile bool release;
+QAtomicInt release;
 
 /*
     write-lock
@@ -466,7 +470,7 @@ public:
     void run()
     {
         testRwlock.lockForWrite();
-        while(release==false) {
+        while(release.load()==false) {
             RWTESTSLEEP
         }
         testRwlock.unlock();
@@ -486,7 +490,7 @@ public:
     void run()
     {
         testRwlock.lockForRead();
-        while(release==false) {
+        while(release.load()==false) {
             RWTESTSLEEP
         }
         testRwlock.unlock();
@@ -685,7 +689,7 @@ void tst_QReadWriteLock::multipleReadersBlockRelease()
 {
 
     QReadWriteLock testLock;
-    release=false;
+    release.store(false);
     threadDone=false;
     ReadLockReleasableThread rlt1(testLock);
     ReadLockReleasableThread rlt2(testLock);
@@ -695,7 +699,7 @@ void tst_QReadWriteLock::multipleReadersBlockRelease()
     WriteLockThread wlt(testLock);
     wlt.start();
     sleep(1);
-    release=true;
+    release.store(true);
     wlt.wait();
     rlt1.wait();
     rlt2.wait();

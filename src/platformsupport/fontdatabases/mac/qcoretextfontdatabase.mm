@@ -305,12 +305,20 @@ QFontEngine *QCoreTextFontDatabase::fontEngine(const QFontDef &f, QChar::Script 
     return NULL;
 }
 
+static void releaseFontData(void* info, const void* data, size_t size)
+{
+    Q_UNUSED(data);
+    Q_UNUSED(size);
+    delete (QByteArray*)info;
+}
+
 QFontEngine *QCoreTextFontDatabase::fontEngine(const QByteArray &fontData, qreal pixelSize, QFont::HintingPreference hintingPreference)
 {
     Q_UNUSED(hintingPreference);
 
-    QCFType<CGDataProviderRef> dataProvider = CGDataProviderCreateWithData(NULL,
-            fontData.constData(), fontData.size(), NULL);
+    QByteArray* fontDataCopy = new QByteArray(fontData);
+    QCFType<CGDataProviderRef> dataProvider = CGDataProviderCreateWithData(fontDataCopy,
+            fontDataCopy->constData(), fontDataCopy->size(), releaseFontData);
 
     CGFontRef cgFont = CGFontCreateWithDataProvider(dataProvider);
 
@@ -372,43 +380,43 @@ QStringList QCoreTextFontDatabase::fallbacksForFamily(const QString &family, QFo
 
     static QHash<QString, QStringList> fallbackLists;
 
+    if (!family.isEmpty()) {
 #if QT_MAC_PLATFORM_SDK_EQUAL_OR_ABOVE(__MAC_10_8, __IPHONE_6_0)
-  // CTFontCopyDefaultCascadeListForLanguages is available in the SDK
+      // CTFontCopyDefaultCascadeListForLanguages is available in the SDK
   #if QT_MAC_DEPLOYMENT_TARGET_BELOW(__MAC_10_8, __IPHONE_6_0)
-    // But we have to feature check at runtime
-    if (&CTFontCopyDefaultCascadeListForLanguages)
+        // But we have to feature check at runtime
+        if (&CTFontCopyDefaultCascadeListForLanguages)
   #endif
-    {
-        if (fallbackLists.contains(family))
-            return fallbackLists.value(family);
+        {
+            if (fallbackLists.contains(family))
+                return fallbackLists.value(family);
 
-        if (!familyNameToPsName.contains(family))
-            const_cast<QCoreTextFontDatabase*>(this)->populateFontDatabase();
+            if (!familyNameToPsName.contains(family))
+                const_cast<QCoreTextFontDatabase*>(this)->populateFontDatabase();
 
-        QCFType<CTFontRef> font = CTFontCreateWithName(QCFString(familyNameToPsName[family]), 12.0, NULL);
-        if (font) {
-            NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
-            NSArray *languages = [defaults stringArrayForKey: @"AppleLanguages"];
+            QCFType<CTFontRef> font = CTFontCreateWithName(QCFString(familyNameToPsName[family]), 12.0, NULL);
+            if (font) {
+                NSUserDefaults *defaults = [NSUserDefaults standardUserDefaults];
+                NSArray *languages = [defaults stringArrayForKey: @"AppleLanguages"];
 
-            QCFType<CFArrayRef> cascadeList = (CFArrayRef) CTFontCopyDefaultCascadeListForLanguages(font, (CFArrayRef) languages);
-            if (cascadeList) {
-                QStringList fallbackList;
-                const int numCascades = CFArrayGetCount(cascadeList);
-                for (int i = 0; i < numCascades; ++i) {
-                    CTFontDescriptorRef fontFallback = (CTFontDescriptorRef) CFArrayGetValueAtIndex(cascadeList, i);
-                    QCFString fallbackFamilyName = (CFStringRef) CTFontDescriptorCopyLocalizedAttribute(fontFallback, kCTFontFamilyNameAttribute, NULL);
-                    fallbackList.append(QCFString::toQString(fallbackFamilyName));
+                QCFType<CFArrayRef> cascadeList = (CFArrayRef) CTFontCopyDefaultCascadeListForLanguages(font, (CFArrayRef) languages);
+                if (cascadeList) {
+                    QStringList fallbackList;
+                    const int numCascades = CFArrayGetCount(cascadeList);
+                    for (int i = 0; i < numCascades; ++i) {
+                        CTFontDescriptorRef fontFallback = (CTFontDescriptorRef) CFArrayGetValueAtIndex(cascadeList, i);
+                        QCFString fallbackFamilyName = (CFStringRef) CTFontDescriptorCopyLocalizedAttribute(fontFallback, kCTFontFamilyNameAttribute, NULL);
+                        fallbackList.append(QCFString::toQString(fallbackFamilyName));
+                    }
+                    fallbackLists[family] = fallbackList;
                 }
-                fallbackLists[family] = fallbackList;
             }
-        }
 
-        if (fallbackLists.contains(family))
-            return fallbackLists.value(family);
-    }
-#else
-    Q_UNUSED(family);
+            if (fallbackLists.contains(family))
+                return fallbackLists.value(family);
+        }
 #endif
+    }
 
     // We were not able to find a fallback for the specific family,
     // so we fall back to the stylehint.
@@ -474,8 +482,9 @@ QStringList QCoreTextFontDatabase::addApplicationFont(const QByteArray &fontData
         CTFontRef font = NULL;
 
         if (!fontData.isEmpty()) {
-            QCFType<CGDataProviderRef> dataProvider = CGDataProviderCreateWithData(NULL,
-                fontData.constData(), fontData.size(), NULL);
+            QByteArray* fontDataCopy = new QByteArray(fontData);
+            QCFType<CGDataProviderRef> dataProvider = CGDataProviderCreateWithData(fontDataCopy,
+                    fontDataCopy->constData(), fontDataCopy->size(), releaseFontData);
             CGFontRef cgFont = CGFontCreateWithDataProvider(dataProvider);
             if (cgFont) {
                 CFErrorRef error;
@@ -517,8 +526,9 @@ QStringList QCoreTextFontDatabase::addApplicationFont(const QByteArray &fontData
             CFRelease(font);
             return families;
         }
-    } else {
-#else
+    } else
+#endif
+    {
     ATSFontContainerRef fontContainer;
     OSStatus e;
 
@@ -557,10 +567,7 @@ QStringList QCoreTextFontDatabase::addApplicationFont(const QByteArray &fontData
         m_applicationFonts.append(fontContainer);
         return families;
     }
-#endif
-#if MAC_OS_X_VERSION_MAX_ALLOWED >= MAC_OS_X_VERSION_10_8
     }
-#endif
 
     return QStringList();
 }
@@ -600,13 +607,14 @@ void QCoreTextFontDatabase::removeApplicationFonts()
         for (int i = 0; i < m_applicationURLFonts.count(); ++i)
             CTFontManagerUnregisterFontsForURL(m_applicationURLFonts[i], kCTFontManagerScopeProcess, &error);
         m_applicationURLFonts.clear();
-    }
-#else
+    } else
+#endif
+    {
     for (int i = 0; i < m_applicationFonts.count(); ++i)
         ATSFontDeactivate(m_applicationFonts[i], 0, kATSOptionFlagsDoNotNotify);
     m_applicationFonts.clear();
     ATSFontNotify(kATSFontNotifyActionFontsChanged, 0);
-#endif
+    }
 #endif
 }
 

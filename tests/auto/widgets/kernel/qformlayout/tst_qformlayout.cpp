@@ -47,6 +47,7 @@
 #include <qproxystyle.h>
 #include <qsizepolicy.h>
 
+#include <QtWidgets/QCheckBox>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QLineEdit>
 #include <QtWidgets/QPushButton>
@@ -122,6 +123,7 @@ private slots:
     void itemAt();
     void takeAt();
     void layoutAlone();
+    void replaceWidget();
 /*
     void setGeometry(const QRect &rect);
     QSize minimumSize() const;
@@ -345,6 +347,19 @@ void tst_QFormLayout::spacing()
     //QCOMPARE(fl->spacing(), -1);
     style->hspacing = 20;
     //QCOMPARE(fl->spacing(), 20);
+
+
+
+    // Do not assert if spacings are negative (QTBUG-34731)
+    style->vspacing = -1;
+    style->hspacing = -1;
+    QLabel *label = new QLabel(tr("Asserts"));
+    QCheckBox *checkBox = new QCheckBox(tr("Yes"));
+    fl->setWidget(0, QFormLayout::LabelRole, label);
+    fl->setWidget(1, QFormLayout::FieldRole, checkBox);
+    w->resize(200, 100);
+    w->show();
+    QVERIFY(QTest::qWaitForWindowExposed(w));
 
     delete w;
     delete style;
@@ -932,6 +947,54 @@ void tst_QFormLayout::taskQTBUG_27420_takeAtShouldUnparentLayout()
         delete item; // success: a taken item/layout should not be deleted when the old parent is deleted
     else
         QVERIFY(!inner.isNull());
+}
+
+void tst_QFormLayout::replaceWidget()
+{
+    QWidget w;
+    QFormLayout *layout = new QFormLayout();
+    w.setLayout(layout);
+    QLineEdit *edit1 = new QLineEdit();
+    QLineEdit *edit2 = new QLineEdit();
+    QLineEdit *edit3 = new QLineEdit();
+    QLabel *label1 = new QLabel();
+    QLabel *label2 = new QLabel();
+
+    layout->addRow("Label", edit1);
+    layout->addRow(label1, edit2);
+
+    // Verify controls not in layout
+    QCOMPARE(layout->indexOf(edit3), -1);
+    QCOMPARE(layout->indexOf(label2), -1);
+
+    // Verify controls in layout
+    int editIndex = layout->indexOf(edit1);
+    int labelIndex = layout->indexOf(label1);
+    QVERIFY(editIndex > 0);
+    QVERIFY(labelIndex > 0);
+    int rownum;
+    QFormLayout::ItemRole role;
+
+    // replace editor
+    layout->replaceWidget(edit1, edit3);
+    edit1->hide(); // Not strictly needed for the test, but for normal usage it is.
+    QCOMPARE(layout->indexOf(edit1), -1);
+    QCOMPARE(layout->indexOf(edit3), editIndex);
+    QCOMPARE(layout->indexOf(label1), labelIndex);
+    rownum = -1;
+    role = QFormLayout::SpanningRole;
+    layout->getWidgetPosition(edit3, &rownum, &role);
+    QCOMPARE(rownum, 0);
+    QCOMPARE(role, QFormLayout::FieldRole);
+
+    layout->replaceWidget(label1, label2);
+    label1->hide();
+    QCOMPARE(layout->indexOf(label1), -1);
+    QCOMPARE(layout->indexOf(label2), labelIndex);
+    layout->getWidgetPosition(label2, &rownum, &role);
+    QCOMPARE(rownum, 1);
+    QCOMPARE(role, QFormLayout::LabelRole);
+
 }
 
 QTEST_MAIN(tst_QFormLayout)

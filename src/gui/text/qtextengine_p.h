@@ -668,7 +668,10 @@ private:
     void setBoundary(int strPos) const;
     void addRequiredBoundaries() const;
     void shapeText(int item) const;
-    int shapeTextWithHarfbuzz(QScriptItem &si, const ushort *string, int itemLength, QFontEngine *fontEngine, bool kerningEnabled) const;
+#ifdef QT_ENABLE_HARFBUZZ_NG
+    int shapeTextWithHarfbuzzNG(const QScriptItem &si, const ushort *string, int itemLength, QFontEngine *fontEngine, const QVector<uint> &itemBoundaries, bool kerningEnabled) const;
+#endif
+    int shapeTextWithHarfbuzz(const QScriptItem &si, const ushort *string, int itemLength, QFontEngine *fontEngine, const QVector<uint> &itemBoundaries, bool kerningEnabled) const;
     void splitItem(int item, int pos) const;
 
     int endOfLine(int lineNum);

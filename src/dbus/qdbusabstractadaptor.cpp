@@ -195,8 +195,8 @@ void QDBusAbstractAdaptor::setAutoRelaySignals(bool enable)
 }
 
 /*!
-    Returns true if automatic signal relaying from the real object (see object()) is enabled,
-    otherwiser returns false.
+    Returns \c true if automatic signal relaying from the real object (see object()) is enabled,
+    otherwiser returns \c false.
 
     \sa setAutoRelaySignals()
 */
@@ -274,7 +274,7 @@ void QDBusAdaptorConnector::polish()
     }
 
     // sort the adaptor list
-    qSort(adaptors);
+    std::sort(adaptors.begin(), adaptors.end());
 }
 
 void QDBusAdaptorConnector::relaySlot(void **argv)

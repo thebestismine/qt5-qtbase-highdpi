@@ -91,12 +91,6 @@ typedef struct {
     quint16 stringOffset;
 } NAME_RECORD;
 
-static inline bool scriptRequiresOpenType(int script)
-{
-    return ((script >= QChar::Script_Syriac && script <= QChar::Script_Sinhala)
-            || script == QChar::Script_Khmer || script == QChar::Script_Nko);
-}
-
 void QBasicFontDatabase::populateFontDatabase()
 {
     QString fontpath = fontDir();
@@ -109,7 +103,8 @@ void QBasicFontDatabase::populateFontDatabase()
     QDir dir(fontpath);
     dir.setNameFilters(QStringList() << QLatin1String("*.ttf")
                        << QLatin1String("*.ttc") << QLatin1String("*.pfa")
-                       << QLatin1String("*.pfb"));
+                       << QLatin1String("*.pfb")
+                       << QLatin1String("*.otf"));
     dir.refresh();
     for (int i = 0; i < int(dir.count()); ++i) {
         const QByteArray file = QFile::encodeName(dir.absoluteFilePath(dir[i]));
@@ -137,11 +132,10 @@ QFontEngine *QBasicFontDatabase::fontEngine(const QFontDef &fontDef, QChar::Scri
     if (engine->invalid()) {
         delete engine;
         engine = 0;
-    } else if (scriptRequiresOpenType(script)) {
-        if (!engine->supportsScript(script)) {
-            delete engine;
-            engine = 0;
-        }
+    } else if (!engine->supportsScript(script)) {
+        qWarning("  OpenType support missing for script %d", int(script));
+        delete engine;
+        engine = 0;
     }
 
     return engine;

@@ -664,7 +664,7 @@ int QTextEdit::fontWeight() const
 }
 
 /*!
-    Returns true if the font of the current format is underlined; otherwise returns
+    Returns \c true if the font of the current format is underlined; otherwise returns
     false.
 
     \sa setFontUnderline()
@@ -676,7 +676,7 @@ bool QTextEdit::fontUnderline() const
 }
 
 /*!
-    Returns true if the font of the current format is italic; otherwise returns
+    Returns \c true if the font of the current format is italic; otherwise returns
     false.
 
     \sa setFontItalic()
@@ -755,8 +755,8 @@ Qt::Alignment QTextEdit::alignment() const
 
     \note The editor \e{does not take ownership of the document} unless it
     is the document's parent object. The parent object of the provided document
-    remains the owner of the object. The editor does not delete any previously
-    assigned document, even if it is a child of the editor.
+    remains the owner of the object. If the previously assigned document is a
+    child of the editor then it will be deleted.
 */
 void QTextEdit::setDocument(QTextDocument *document)
 {
@@ -1513,6 +1513,14 @@ void QTextEditPrivate::paint(QPainter *p, QPaintEvent *e)
 
     if (layout)
         layout->setViewport(QRect());
+
+    if (!placeholderText.isEmpty() && doc->isEmpty()) {
+        QColor col = control->palette().text().color();
+        col.setAlpha(128);
+        p->setPen(col);
+        const int margin = int(doc->documentMargin());
+        p->drawText(viewport->rect().adjusted(margin, margin, -margin, -margin), Qt::AlignTop | Qt::TextWordWrap, placeholderText);
+    }
 }
 
 /*! \fn void QTextEdit::paintEvent(QPaintEvent *event)
@@ -1528,13 +1536,6 @@ void QTextEdit::paintEvent(QPaintEvent *e)
     Q_D(QTextEdit);
     QPainter p(d->viewport);
     d->paint(&p, e);
-    if (!d->placeholderText.isEmpty() && d->control->document()->isEmpty()) {
-        QColor col = palette().text().color();
-        col.setAlpha(128);
-        p.setPen(col);
-        const int margin = int(document()->documentMargin());
-        p.drawText(d->viewport->rect().adjusted(margin, margin, -margin, -margin), Qt::AlignTop | Qt::TextWordWrap, d->placeholderText);
-    }
 }
 
 void QTextEditPrivate::_q_currentCharFormatChanged(const QTextCharFormat &fmt)
@@ -1906,11 +1907,11 @@ QString QTextEdit::anchorAt(const QPoint& pos) const
    As with many text editors, the text editor widget can be configured
    to insert or overwrite existing text with new text entered by the user.
 
-   If this property is true, existing text is overwritten, character-for-character
+   If this property is \c true, existing text is overwritten, character-for-character
    by new text; otherwise, text is inserted at the cursor position, displacing
    existing text.
 
-   By default, this property is false (new text does not overwrite existing text).
+   By default, this property is \c false (new text does not overwrite existing text).
 */
 
 bool QTextEdit::overwriteMode() const
@@ -2041,7 +2042,7 @@ QList<QTextEdit::ExtraSelection> QTextEdit::extraSelections() const
     This function returns a new MIME data object to represent the contents
     of the text edit's current selection. It is called when the selection needs
     to be encapsulated into a new QMimeData object; for example, when a drag
-    and drop operation is started, or when data is copyied to the clipboard.
+    and drop operation is started, or when data is copied to the clipboard.
 
     If you reimplement this function, note that the ownership of the returned
     QMimeData object is passed to the caller. The selection can be retrieved
@@ -2054,7 +2055,7 @@ QMimeData *QTextEdit::createMimeDataFromSelection() const
 }
 
 /*!
-    This function returns true if the contents of the MIME data object, specified
+    This function returns \c true if the contents of the MIME data object, specified
     by \a source, can be decoded and inserted into the document. It is called
     for example when during a drag operation the mouse enters this widget and it
     is necessary to determine whether it is possible to accept the drag and drop
@@ -2445,8 +2446,8 @@ void QTextEdit::setWordWrapMode(QTextOption::WrapMode mode)
 
 /*!
     Finds the next occurrence of the string, \a exp, using the given
-    \a options. Returns true if \a exp was found and changes the
-    cursor to select the match; otherwise returns false.
+    \a options. Returns \c true if \a exp was found and changes the
+    cursor to select the match; otherwise returns \c false.
 */
 bool QTextEdit::find(const QString &exp, QTextDocument::FindFlags options)
 {

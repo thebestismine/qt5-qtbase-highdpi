@@ -81,6 +81,7 @@ QDataStream &operator>>(QDataStream &in, QHeaderViewPrivate::SectionItem &sectio
 #endif // QT_NO_DATASTREAM
 
 static const int maxSizeSection = 1048575; // since section size is in a bitfield (uint 20). See qheaderview_p.h
+                                           // if this is changed then the docs in maximumSectionSize should be changed.
 
 /*!
     \class QHeaderView
@@ -293,7 +294,7 @@ static const int maxSizeSection = 1048575; // since section size is in a bitfiel
     \property QHeaderView::highlightSections
     \brief whether the sections containing selected items are highlighted
 
-    By default, this property is false.
+    By default, this property is \c false.
 */
 
 /*!
@@ -569,7 +570,7 @@ void QHeaderView::setVisible(bool v)
 /*!
     Returns a suitable size hint for the section specified by \a logicalIndex.
 
-    \sa sizeHint(), defaultSectionSize(), minimumSectionSize(),
+    \sa sizeHint(), defaultSectionSize(), minimumSectionSize(), maximumSectionSize()
     Qt::SizeHintRole
 */
 
@@ -587,7 +588,7 @@ int QHeaderView::sectionSizeHint(int logicalIndex) const
     else
         size = sectionSizeFromContents(logicalIndex);
     int hint = d->orientation == Qt::Horizontal ? size.width() : size.height();
-    return qMax(minimumSectionSize(), hint);
+    return qBound(minimumSectionSize(), hint, maximumSectionSize());
 }
 
 /*!
@@ -981,8 +982,8 @@ void QHeaderView::resizeSections(QHeaderView::ResizeMode mode)
 */
 
 /*!
-    Returns true if the section specified by \a logicalIndex is explicitly
-    hidden from the user; otherwise returns false.
+    Returns \c true if the section specified by \a logicalIndex is explicitly
+    hidden from the user; otherwise returns \c false.
 
     \sa hideSection(), showSection(), setSectionHidden(), hiddenSectionCount()
 */
@@ -1138,7 +1139,7 @@ void QHeaderView::setSectionsMovable(bool movable)
 /*!
     \since 5.0
 
-    Returns true if the header can be moved by the user; otherwise returns
+    Returns \c true if the header can be moved by the user; otherwise returns
     false.
 
     \sa setSectionsMovable()
@@ -1188,7 +1189,7 @@ void QHeaderView::setSectionsClickable(bool clickable)
 /*!
     \since 5.0
 
-    Returns true if the header is clickable; otherwise returns false. A
+    Returns \c true if the header is clickable; otherwise returns \c false. A
     clickable header could be set up to allow the user to change the
     representation of the data in the view related to the header.
 
@@ -1336,18 +1337,13 @@ QHeaderView::ResizeMode QHeaderView::sectionResizeMode(int logicalIndex) const
    and QTreeView::sizeHintForColumn(). Reimplementing these functions can make this
    function not having an effect.
 
-   If \a resizeSectionsNow is set to true (default) it will do adjustment of sections by calling
-   resizeSections().  (regardless if the precision was changed).
-
     \sa resizeContentsPrecision(), setSectionResizeMode(), resizeSections(), QTableView::sizeHintForColumn(), QTableView::sizeHintForRow(), QTreeView::sizeHintForColumn()
 */
 
-void QHeaderView::setResizeContentsPrecision(int precision, bool resizeSectionsNow)
+void QHeaderView::setResizeContentsPrecision(int precision)
 {
     Q_D(QHeaderView);
     d->resizeContentsPrecision = precision;
-    if (resizeSectionsNow)
-        resizeSections();
 }
 
 /*!
@@ -1394,7 +1390,7 @@ int QHeaderView::stretchSectionCount() const
   \property QHeaderView::showSortIndicator
   \brief whether the sort indicator is shown
 
-  By default, this property is false.
+  By default, this property is \c false.
 
   \sa setSectionsClickable()
 */
@@ -1603,10 +1599,50 @@ int QHeaderView::minimumSectionSize() const
 void QHeaderView::setMinimumSectionSize(int size)
 {
     Q_D(QHeaderView);
-    if (size < 0 || size > maxSizeSection)
+    if (size < -1 || size > maxSizeSection)
         return;
     d->minimumSectionSize = size;
+    if (d->minimumSectionSize > maximumSectionSize())
+        d->maximumSectionSize = size;
 }
+
+/*!
+    \since 5.2
+    \property QHeaderView::maximumSectionSize
+    \brief the maximum size of the header sections.
+
+    The maximum section size is the largest section size allowed.
+    The default value for this property is 1048575, which is also the largest
+    possible size for a section. Setting maximum to -1 will reset the value to
+    the largest section size.
+
+    With exception of stretch this property is honored by all \l{ResizeMode}{resize modes}
+
+    \sa setSectionResizeMode(), defaultSectionSize
+*/
+int QHeaderView::maximumSectionSize() const
+{
+    Q_D(const QHeaderView);
+    if (d->maximumSectionSize == -1)
+        return maxSizeSection;
+    return d->maximumSectionSize;
+}
+
+void QHeaderView::setMaximumSectionSize(int size)
+{
+    Q_D(QHeaderView);
+    if (size == -1) {
+        d->maximumSectionSize = maxSizeSection;
+        return;
+    }
+    if (size < 0 || size > maxSizeSection)
+        return;
+    if (minimumSectionSize() > size)
+        d->minimumSectionSize = size;
+
+    d->maximumSectionSize = size;
+}
+
 
 /*!
     \since 4.1
@@ -1640,7 +1676,7 @@ void QHeaderView::doItemsLayout()
 }
 
 /*!
-    Returns true if sections in the header has been moved; otherwise returns
+    Returns \c true if sections in the header has been moved; otherwise returns
     false;
 
     \sa moveSection()
@@ -1654,7 +1690,7 @@ bool QHeaderView::sectionsMoved() const
 /*!
     \since 4.1
 
-    Returns true if sections in the header has been hidden; otherwise returns
+    Returns \c true if sections in the header has been hidden; otherwise returns
     false;
 
     \sa setSectionHidden()
@@ -2417,7 +2453,8 @@ void QHeaderView::mouseMoveEvent(QMouseEvent *e)
                 d->cascadingResize(visual, d->headerSectionSize(visual) + delta);
             } else {
                 int delta = d->reverse() ? d->firstPos - pos : pos - d->firstPos;
-                resizeSection(d->section, qMax(d->originalSize + delta, minimumSectionSize()));
+                int newsize = qBound(minimumSectionSize(), d->originalSize + delta, maximumSectionSize());
+                resizeSection(d->section, newsize);
             }
             d->lastPos = pos;
             return;
@@ -2711,11 +2748,13 @@ void QHeaderView::paintSection(QPainter *painter, const QRect &rect, int logical
     // the section position
     int visual = visualIndex(logicalIndex);
     Q_ASSERT(visual != -1);
-    if (count() == 1)
+    bool first = d->isFirstVisibleSection(visual);
+    bool last = d->isLastVisibleSection(visual);
+    if (first && last)
         opt.position = QStyleOptionHeader::OnlyOneSection;
-    else if (visual == 0)
+    else if (first)
         opt.position = QStyleOptionHeader::Beginning;
-    else if (visual == count() - 1)
+    else if (last)
         opt.position = QStyleOptionHeader::End;
     else
         opt.position = QStyleOptionHeader::Middle;
@@ -3138,6 +3177,22 @@ bool QHeaderViewPrivate::isSectionSelected(int section) const
     return s;
 }
 
+bool QHeaderViewPrivate::isFirstVisibleSection(int section) const
+{
+    if (sectionStartposRecalc)
+        recalcSectionStartPos();
+    const SectionItem &item = sectionItems.at(section);
+    return item.size > 0 && item.calculated_startpos == 0;
+}
+
+bool QHeaderViewPrivate::isLastVisibleSection(int section) const
+{
+    if (sectionStartposRecalc)
+        recalcSectionStartPos();
+    const SectionItem &item = sectionItems.at(section);
+    return item.size > 0 && item.calculatedEndPos() == length;
+}
+
 /*!
     \internal
     Returns the last visible (ie. not hidden) visual index
@@ -3218,6 +3273,8 @@ void QHeaderViewPrivate::resizeSections(QHeaderView::ResizeMode globalMode, bool
             int logicalIndex = q->logicalIndex(i);
             sectionSize = qMax(viewSectionSizeHint(logicalIndex),
                                q->sectionSizeHint(logicalIndex));
+            if (sectionSize > q->maximumSectionSize())
+                sectionSize = q->maximumSectionSize();
         }
         section_sizes.append(sectionSize);
         lengthToStretch -= sectionSize;
@@ -3631,8 +3688,7 @@ void QHeaderViewPrivate::write(QDataStream &out) const
     out << int(globalResizeMode);
 
     out << sectionItems;
-    if (out.version() >= QDataStream::Qt_5_2)
-        out << resizeContentsPrecision;
+    out << resizeContentsPrecision;
 }
 
 bool QHeaderViewPrivate::read(QDataStream &in)
@@ -3685,8 +3741,10 @@ bool QHeaderViewPrivate::read(QDataStream &in)
     sectionItems = newSectionItems;
     recalcSectionStartPos();
 
-    if (in.version() >= QDataStream::Qt_5_2)
-        in >> resizeContentsPrecision;
+    int tmpint;
+    in >> tmpint;
+    if (in.status() == QDataStream::Ok)  // we haven't read past end
+        resizeContentsPrecision = tmpint;
 
     return true;
 }

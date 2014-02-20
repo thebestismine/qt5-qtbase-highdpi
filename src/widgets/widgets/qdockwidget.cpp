@@ -455,14 +455,6 @@ int QDockWidgetLayout::titleHeight() const
                             perp(verticalTitleBar, floatSize));
 
     QFontMetrics titleFontMetrics = q->fontMetrics();
-#ifdef Q_WS_MAC
-    if (qobject_cast<QMacStyle *>(q->style())) {
-        //### this breaks on proxy styles.  (But is this code still called?)
-        QFont font = qt_app_fonts_hash()->value("QToolButton", q->font());
-        titleFontMetrics = QFontMetrics(font);
-    }
-#endif
-
     int mw = q->style()->pixelMetric(QStyle::PM_DockWidgetTitleMargin, 0, q);
 
     return qMax(buttonHeight + 2, titleFontMetrics.height() + 2*mw);
@@ -674,12 +666,18 @@ void QDockWidgetPrivate::updateButtons()
         = qobject_cast<QAbstractButton*>(dwLayout->widgetForRole(QDockWidgetLayout::FloatButton));
     button->setIcon(q->style()->standardIcon(QStyle::SP_TitleBarNormalButton, &opt, q));
     button->setVisible(canFloat && !hideButtons);
-
+#ifndef QT_NO_ACCESSIBILITY
+    button->setAccessibleName(QDockWidget::tr("Float"));
+    button->setAccessibleDescription(QDockWidget::tr("Undocks and re-attaches the dock widget"));
+#endif
     button
         = qobject_cast <QAbstractButton*>(dwLayout->widgetForRole(QDockWidgetLayout::CloseButton));
     button->setIcon(q->style()->standardIcon(QStyle::SP_TitleBarCloseButton, &opt, q));
     button->setVisible(canClose && !hideButtons);
-
+#ifndef QT_NO_ACCESSIBILITY
+    button->setAccessibleName(QDockWidget::tr("Close"));
+    button->setAccessibleDescription(QDockWidget::tr("Closes the dock widget"));
+#endif
     q->setAttribute(Qt::WA_ContentsPropagated,
                     (canFloat || canClose) && !hideButtons);
 
@@ -1247,7 +1245,7 @@ QDockWidget::DockWidgetFeatures QDockWidget::features() const
     window "on top" of its parent QMainWindow, instead of being
     docked in the QMainWindow.
 
-    By default, this property is true.
+    By default, this property is \c true.
 
     \sa isWindow()
 */
@@ -1301,8 +1299,8 @@ Qt::DockWidgetAreas QDockWidget::allowedAreas() const
 /*!
     \fn bool QDockWidget::isAreaAllowed(Qt::DockWidgetArea area) const
 
-    Returns true if this dock widget can be placed in the given \a area;
-    otherwise returns false.
+    Returns \c true if this dock widget can be placed in the given \a area;
+    otherwise returns \c false.
 */
 
 /*! \reimp */

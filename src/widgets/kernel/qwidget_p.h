@@ -254,6 +254,7 @@ struct QWExtra {
     uint nativeChildrenForced : 1;
     uint inRenderWithPainter : 1;
     uint hasMask : 1;
+    uint hasWindowContainer : 1;
 
     // *************************** Platform specific values (bit fields first) **********
 #if defined(Q_WS_WIN) // <----------------------------------------------------------- WIN
@@ -274,7 +275,7 @@ struct QWExtra {
 /*!
     \internal
 
-    Returns true if \a p or any of its parents enable the
+    Returns \c true if \a p or any of its parents enable the
     Qt::BypassGraphicsProxyWidget window flag. Used in QWidget::show() and
     QWidget::setParent() to determine whether it's necessary to embed the
     widget into a QGraphicsProxyWidget or not.
@@ -494,7 +495,7 @@ public:
     void setConstraints_sys();
     bool pointInsideRectAndMask(const QPoint &) const;
     QWidget *childAt_helper(const QPoint &, bool) const;
-    QWidget *childAtRecursiveHelper(const QPoint &p, bool, bool includeFrame = false) const;
+    QWidget *childAtRecursiveHelper(const QPoint &p, bool) const;
     void updateGeometry_helper(bool forceUpdate);
 
     void getLayoutItemMargins(int *left, int *top, int *right, int *bottom) const;
@@ -693,6 +694,7 @@ public:
     uint isScrolled : 1;
     uint isMoved : 1;
     uint usesDoubleBufferedGLContext : 1;
+    uint mustHaveWindowHandle : 1;
 #ifndef QT_NO_IM
     uint inheritsInputMethodHints : 1;
 #endif
@@ -778,7 +780,6 @@ public:
     void finishCreateWindow_sys_Cocoa(void * /*NSWindow * */ windowRef);
     void syncCocoaMask();
     void finishCocoaMaskSetup();
-    void syncUnifiedMode();
     // Did we add the drawRectOriginal method?
     bool drawRectOriginalAdded;
     // Is the original drawRect method available?

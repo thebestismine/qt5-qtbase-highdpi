@@ -627,7 +627,6 @@ static inline QFontDatabase::WritingSystem writingSystemFromCharSet(uchar charSe
     case EASTEUROPE_CHARSET:
     case BALTIC_CHARSET:
     case TURKISH_CHARSET:
-    case OEM_CHARSET:
         return QFontDatabase::Latin;
     case GREEK_CHARSET:
         return QFontDatabase::Greek;
@@ -652,8 +651,6 @@ static inline QFontDatabase::WritingSystem writingSystemFromCharSet(uchar charSe
         return QFontDatabase::Vietnamese;
     case SYMBOL_CHARSET:
         return QFontDatabase::Symbol;
-    // ### case MAC_CHARSET:
-    // ### case DEFAULT_CHARSET:
     default:
         break;
     }
@@ -1407,12 +1404,6 @@ HFONT QWindowsFontDatabase::systemFont()
 
 // Creation functions
 
-static inline bool scriptRequiresOpenType(int script)
-{
-    return ((script >= QChar::Script_Syriac && script <= QChar::Script_Sinhala)
-            || script == QChar::Script_Khmer || script == QChar::Script_Nko);
-}
-
 static const char *other_tryFonts[] = {
     "Arial",
     "MS UI Gothic",
@@ -1759,20 +1750,14 @@ QFontEngine *QWindowsFontDatabase::createEngine(int script, const QFontDef &requ
     QFontEngine *fe = 0;
     if (!useDirectWrite)  {
         QWindowsFontEngine *few = new QWindowsFontEngine(request.family, hfont, stockFont, lf, data);
-        few->setObjectName(QStringLiteral("QWindowsFontEngine_") + request.family);
         if (preferClearTypeAA)
             few->glyphFormat = QFontEngineGlyphCache::Raster_RGBMask;
 
         // Also check for OpenType tables when using complex scripts
-        // ### TODO: This only works for scripts that require OpenType. More generally
-        // for scripts that do not require OpenType we should just look at the list of
-        // supported writing systems in the font's OS/2 table.
-        if (scriptRequiresOpenType(script)) {
-            if (!few->supportsScript(QChar::Script(script))) {
-                qWarning("  OpenType support missing for script\n");
-                delete few;
-                return 0;
-            }
+        if (!few->supportsScript(QChar::Script(script))) {
+            qWarning("  OpenType support missing for script %d", int(script));
+            delete few;
+            return 0;
         }
 
         few->initFontInfo(request, fontHdc, dpi);
@@ -1788,7 +1773,6 @@ QFontEngine *QWindowsFontDatabase::createEngine(int script, const QFontDef &requ
                                                                                     request.pixelSize,
                                                                                     data);
             fedw->initFontInfo(request, dpi, directWriteFont);
-            fedw->setObjectName(QStringLiteral("QWindowsFontEngineDirectWrite_") + request.family);
             fe = fedw;
         } else {
             qErrnoWarning("%s: CreateFontFace failed", __FUNCTION__);
@@ -1806,7 +1790,6 @@ QFontEngine *QWindowsFontDatabase::createEngine(int script, const QFontDef &requ
             QStringList list = family_list;
             list.append(extraFonts);
             QFontEngine *mfe = new QWindowsMultiFontEngine(fe, list);
-            mfe->setObjectName(QStringLiteral("QWindowsMultiFontEngine_") + request.family);
             mfe->fontDef = fe->fontDef;
             fe = mfe;
         }

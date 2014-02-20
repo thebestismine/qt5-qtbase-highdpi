@@ -1,6 +1,6 @@
 /***************************************************************************
 **
-** Copyright (C) 2011 - 2012 Research In Motion
+** Copyright (C) 2011 - 2013 BlackBerry Limited. All rights reserved.
 ** Contact: http://www.qt-project.org/legal
 **
 ** This file is part of the plugins of the Qt Toolkit.
@@ -40,9 +40,8 @@
 ****************************************************************************/
 
 #include "qqnxglcontext.h"
-#include "qqnxrootwindow.h"
 #include "qqnxscreen.h"
-#include "qqnxwindow.h"
+#include "qqnxeglwindow.h"
 
 #include "private/qeglconvenience_p.h"
 
@@ -125,7 +124,15 @@ QQnxGLContext::QQnxGLContext(QOpenGLContext *glContext)
     if (m_eglConfig == 0)
         qFatal("QQnxGLContext: failed to find EGL config");
 
-    m_eglContext = eglCreateContext(ms_eglDisplay, m_eglConfig, EGL_NO_CONTEXT, contextAttrs());
+    EGLContext shareContext = EGL_NO_CONTEXT;
+    if (m_glContext) {
+        QQnxGLContext *qshareContext = dynamic_cast<QQnxGLContext*>(m_glContext->shareHandle());
+        if (qshareContext) {
+            shareContext = qshareContext->m_eglContext;
+        }
+    }
+
+    m_eglContext = eglCreateContext(ms_eglDisplay, m_eglConfig, shareContext, contextAttrs());
     if (m_eglContext == EGL_NO_CONTEXT) {
         checkEGLError("eglCreateContext");
         qFatal("QQnxGLContext: failed to create EGL context, err=%d", eglGetError());
@@ -206,7 +213,7 @@ bool QQnxGLContext::makeCurrent(QPlatformSurface *surface)
     if (eglResult != EGL_TRUE)
         qFatal("QQnxGLContext: failed to set EGL API, err=%d", eglGetError());
 
-    QQnxWindow *platformWindow = dynamic_cast<QQnxWindow*>(surface);
+    QQnxEglWindow *platformWindow = dynamic_cast<QQnxEglWindow*>(surface);
     if (!platformWindow)
         return false;
 
@@ -243,7 +250,7 @@ void QQnxGLContext::doneCurrent()
 void QQnxGLContext::swapBuffers(QPlatformSurface *surface)
 {
     qGLContextDebug() << Q_FUNC_INFO;
-    QQnxWindow *platformWindow = dynamic_cast<QQnxWindow*>(surface);
+    QQnxEglWindow *platformWindow = dynamic_cast<QQnxEglWindow*>(surface);
     if (!platformWindow)
         return;
 

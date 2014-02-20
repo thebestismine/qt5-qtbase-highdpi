@@ -77,7 +77,7 @@
     password at once.
 
     Call isValid() to check if the URL is valid. This can be done at any point
-    during the constructing of a URL. If isValid() returns false, you should
+    during the constructing of a URL. If isValid() returns \c false, you should
     clear() the URL before proceeding, or start over by parsing a new URL with
     setUrl().
 
@@ -363,6 +363,23 @@
     \sa QUrl::FormattingOptions
 */
 
+/*!
+    \fn QUrl::QUrl(QUrl &&other)
+
+    Move-constructs a QUrl instance, making it point at the same
+    object that \a other was pointing to.
+
+    \since 5.2
+*/
+
+/*!
+    \fn QUrl &QUrl::operator=(QUrl &&other)
+
+    Move-assigns \a other to this QUrl instance.
+
+    \since 5.2
+*/
+
 #include "qurl.h"
 #include "qurl_p.h"
 #include "qplatformdefs.h"
@@ -397,10 +414,16 @@ static inline QString fileScheme()
     return QStringLiteral("file");
 }
 
+#ifdef Q_COMPILER_CLASS_ENUM
+#  define colon_uchar   : uchar
+#else
+#  define colon_uchar
+#endif
+
 class QUrlPrivate
 {
 public:
-    enum Section {
+    enum Section colon_uchar {
         Scheme = 0x01,
         UserName = 0x02,
         Password = 0x04,
@@ -413,6 +436,10 @@ public:
         Query = 0x40,
         Fragment = 0x80,
         FullUrl = 0xff
+    };
+
+    enum Flags colon_uchar {
+        IsLocalFile = 0x01
     };
 
     enum ErrorCode {
@@ -502,6 +529,8 @@ public:
     inline bool hasQuery() const { return sectionIsPresent & Query; }
     inline bool hasFragment() const { return sectionIsPresent & Fragment; }
 
+    inline bool isLocalFile() const { return flags & IsLocalFile; }
+
     QString mergePaths(const QString &relativePath) const;
 
     QAtomicInt ref;
@@ -522,12 +551,18 @@ public:
     //  - Path (there's no path delimiter, so we optimize its use out of existence)
     // Schemes are never supposed to be empty, but we keep the flag anyway
     uchar sectionIsPresent;
+    uchar flags;
+
+    // 32-bit: 2 bytes tail padding available
+    // 64-bit: 6 bytes tail padding available
 };
+#undef colon_uchar
 
 inline QUrlPrivate::QUrlPrivate()
     : ref(1), port(-1),
       error(0),
-      sectionIsPresent(0)
+      sectionIsPresent(0),
+      flags(0)
 {
 }
 
@@ -541,7 +576,8 @@ inline QUrlPrivate::QUrlPrivate(const QUrlPrivate &copy)
       query(copy.query),
       fragment(copy.fragment),
       error(copy.cloneError()),
-      sectionIsPresent(copy.sectionIsPresent)
+      sectionIsPresent(copy.sectionIsPresent),
+      flags(copy.flags)
 {
 }
 
@@ -939,6 +975,12 @@ inline bool QUrlPrivate::setScheme(const QString &value, int len, bool doSetErro
                 schemeData[i] = c + 0x20;
         }
     }
+
+    // did we set to the file protocol?
+    if (scheme == fileScheme())
+        flags |= IsLocalFile;
+    else
+        flags &= ~IsLocalFile;
     return true;
 }
 
@@ -1089,8 +1131,11 @@ inline void QUrlPrivate::setQuery(const QString &value, int from, int iend)
 
 inline void QUrlPrivate::appendHost(QString &appendTo, QUrl::FormattingOptions options) const
 {
-    // this is the only flag that matters
-    options &= QUrl::EncodeUnicode;
+    // EncodeUnicode is the only flag that matters
+    if ((options & QUrl::FullyDecoded) == QUrl::FullyDecoded)
+        options = 0;
+    else
+        options &= QUrl::EncodeUnicode;
     if (host.isEmpty())
         return;
     if (host.at(0).unicode() == '[') {
@@ -1292,6 +1337,7 @@ inline void QUrlPrivate::parse(const QString &url, QUrl::ParsingMode parsingMode
     //                 /  other path types here
 
     sectionIsPresent = 0;
+    flags = 0;
     clearError();
 
     // find the important delimiters
@@ -1729,7 +1775,7 @@ QUrl::~QUrl()
 }
 
 /*!
-    Returns true if the URL is non-empty and valid; otherwise returns false.
+    Returns \c true if the URL is non-empty and valid; otherwise returns \c false.
 
     The URL is run through a conformance test. Every part of the URL
     must conform to the standard encoding rules of the URI standard
@@ -1747,7 +1793,7 @@ bool QUrl::isValid() const
 }
 
 /*!
-    Returns true if the URL has no data; otherwise returns false.
+    Returns \c true if the URL has no data; otherwise returns \c false.
 
     \sa clear()
 */
@@ -1820,11 +1866,20 @@ void QUrl::setUrl(const QString &url, ParsingMode parsingMode)
     input. It must also start with an ASCII letter.
 
     The scheme describes the type (or protocol) of the URL. It's
-    represented by one or more ASCII characters at the start the URL,
-    and is followed by a ':'. The following example shows a URL where
-    the scheme is "ftp":
+    represented by one or more ASCII characters at the start the URL.
+
+    A scheme is strictly \l {http://www.ietf.org/rfc/rfc3986.txt} {RFC 3986}-compliant:
+        \tt {scheme = ALPHA *( ALPHA / DIGIT / "+" / "-" / "." )}
+
+    The following example shows a URL where the scheme is "ftp":
 
     \image qurl-authority2.png
+
+    To set the scheme, the following call is used:
+    \code
+        QUrl url;
+        url.setScheme("ftp");
+    \endcode
 
     The scheme can also be empty, in which case the URL is interpreted
     as relative.
@@ -1838,6 +1893,7 @@ void QUrl::setScheme(const QString &scheme)
     if (scheme.isEmpty()) {
         // schemes are not allowed to be empty
         d->sectionIsPresent &= ~QUrlPrivate::Scheme;
+        d->flags &= ~QUrlPrivate::IsLocalFile;
         d->scheme.clear();
     } else {
         d->setScheme(scheme, scheme.length(), /* do set error */ true);
@@ -2383,6 +2439,7 @@ void QUrl::setPath(const QString &path, ParsingMode mode)
         mode = TolerantMode;
     }
 
+    data = qt_normalizePathSegments(data, false);
     d->setPath(data, 0, data.length());
 
     // optimized out, since there is no path delimiter
@@ -2486,7 +2543,7 @@ QString QUrl::fileName(ComponentFormattingOptions options) const
 /*!
     \since 4.2
 
-    Returns true if this URL contains a Query (i.e., if ? was seen on it).
+    Returns \c true if this URL contains a Query (i.e., if ? was seen on it).
 
     \sa setQuery(), query(), hasFragment()
 */
@@ -2693,7 +2750,7 @@ void QUrl::setQuery(const QUrlQuery &query)
     \fn bool QUrl::hasQueryItem(const QString &key) const
     \deprecated
 
-    Returns true if there is a query string pair whose key is equal
+    Returns \c true if there is a query string pair whose key is equal
     to \a key from the URL.
 
     \obsolete Use QUrlQuery.
@@ -2706,7 +2763,7 @@ void QUrl::setQuery(const QUrlQuery &query)
     \deprecated
     \since 4.4
 
-    Returns true if there is a query string pair whose key is equal
+    Returns \c true if there is a query string pair whose key is equal
     to \a key from the URL.
 
     \obsolete Use QUrlQuery.
@@ -2977,7 +3034,7 @@ QString QUrl::fragment(ComponentFormattingOptions options) const
 /*!
     \since 4.2
 
-    Returns true if this URL contains a fragment (i.e., if # was seen on it).
+    Returns \c true if this URL contains a fragment (i.e., if # was seen on it).
 
     \sa fragment(), setFragment()
 */
@@ -3074,6 +3131,7 @@ QUrl QUrl::resolved(const QUrl &relative) const
             t.d->sectionIsPresent |= QUrlPrivate::Scheme;
         else
             t.d->sectionIsPresent &= ~QUrlPrivate::Scheme;
+        t.d->flags |= d->flags & QUrlPrivate::IsLocalFile;
     }
     t.d->fragment = relative.d->fragment;
     if (relative.d->hasFragment())
@@ -3093,7 +3151,7 @@ QUrl QUrl::resolved(const QUrl &relative) const
 }
 
 /*!
-    Returns true if the URL is relative; otherwise returns false. A URL is
+    Returns \c true if the URL is relative; otherwise returns \c false. A URL is
     relative reference if its scheme is undefined; this function is therefore
     equivalent to calling scheme().isEmpty().
 
@@ -3147,7 +3205,6 @@ QString QUrl::toString(FormattingOptions options) const
     //  - there's no query or fragment to return
     //    that is, either they aren't present, or we're removing them
     //  - it's a local file
-    //    (test done last since it's the most expensive)
     if (options.testFlag(QUrl::PreferLocalFile) && !options.testFlag(QUrl::RemovePath)
             && (!d->hasQuery() || options.testFlag(QUrl::RemoveQuery))
             && (!d->hasFragment() || options.testFlag(QUrl::RemoveFragment))
@@ -3171,6 +3228,7 @@ QString QUrl::toString(FormattingOptions options) const
         url += QLatin1String("//");
         d->appendAuthority(url, options, QUrlPrivate::FullUrl);
     } else if (isLocalFile() && pathIsAbsolute) {
+        // Comply with the XDG file URI spec, which requires triple slashes.
         url += QLatin1String("//");
     }
 
@@ -3248,9 +3306,10 @@ QUrl QUrl::adjusted(QUrl::FormattingOptions options) const
     if (options & RemovePath) {
         that.setPath(QString());
     } else if (options & (StripTrailingSlash | RemoveFilename | NormalizePathSegments)) {
+        that.detach();
         QString path;
-        d->appendPath(path, options, QUrlPrivate::Path);
-        that.setPath(path);
+        d->appendPath(path, options | FullyEncoded, QUrlPrivate::Path);
+        that.d->setPath(path, 0, path.length());
     }
     return that;
 }
@@ -3305,7 +3364,7 @@ QString QUrl::fromPercentEncoding(const QByteArray &input)
     them to \a include.
 
     Unreserved is defined as:
-       ALPHA / DIGIT / "-" / "." / "_" / "~"
+       \tt {ALPHA / DIGIT / "-" / "." / "_" / "~"}
 
     \snippet code/src_corelib_io_qurl.cpp 6
 */
@@ -3313,6 +3372,33 @@ QByteArray QUrl::toPercentEncoding(const QString &input, const QByteArray &exclu
 {
     return input.toUtf8().toPercentEncoding(exclude, include);
 }
+
+/*! \fn QUrl QUrl::fromCFURL(CFURLRef url)
+    \since 5.2
+
+    Constructs a QUrl containing a copy of the CFURL \a url.
+*/
+
+/*! \fn CFURLRef QUrl::toCFURL() const
+    \since 5.2
+
+    Creates a CFURL from a QUrl. The caller owns the CFURL and is
+    responsible for releasing it.
+*/
+
+/*!
+    \fn QUrl QUrl::fromNSURL(const NSURL *url)
+    \since 5.2
+
+    Constructs a QUrl containing a copy of the NSURL \a url.
+*/
+
+/*!
+    \fn NSURL* QUrl::toNSURL() const
+    \since 5.2
+
+    Creates a NSURL from a QUrl. The NSURL is autoreleased.
+*/
 
 /*!
     \internal
@@ -3379,7 +3465,7 @@ QString QUrl::fromAce(const QByteArray &domain)
     (like \c "example.com") to be written using international
     characters.
 
-    This function return an empty QByteArra if \a domain is not a valid
+    This function returns an empty QByteArray if \a domain is not a valid
     hostname. Note, in particular, that IPv6 literals are not valid domain
     names.
 */
@@ -3392,7 +3478,7 @@ QByteArray QUrl::toAce(const QString &domain)
 /*!
     \internal
 
-    Returns true if this URL is "less than" the given \a url. This
+    Returns \c true if this URL is "less than" the given \a url. This
     provides a means of ordering URLs.
 */
 bool QUrl::operator <(const QUrl &url) const
@@ -3444,8 +3530,8 @@ bool QUrl::operator <(const QUrl &url) const
 }
 
 /*!
-    Returns true if this URL and the given \a url are equal;
-    otherwise returns false.
+    Returns \c true if this URL and the given \a url are equal;
+    otherwise returns \c false.
 */
 bool QUrl::operator ==(const QUrl &url) const
 {
@@ -3473,8 +3559,8 @@ bool QUrl::operator ==(const QUrl &url) const
 /*!
     \since 5.2
 
-    Returns true if this URL and the given \a url are equal after
-    applying \a options to both; otherwise returns false.
+    Returns \c true if this URL and the given \a url are equal after
+    applying \a options to both; otherwise returns \c false.
 
     This is equivalent to calling adjusted(options) on both URLs
     and comparing the resulting urls, but faster.
@@ -3528,7 +3614,7 @@ bool QUrl::matches(const QUrl &url, FormattingOptions options) const
     else if (d->fragment != url.d->fragment)
         return false;
 
-    if (!(d->sectionIsPresent & mask) == (url.d->sectionIsPresent & mask))
+    if ((d->sectionIsPresent & mask) != (url.d->sectionIsPresent & mask))
         return false;
 
     // Compare paths, after applying path-related options
@@ -3540,8 +3626,8 @@ bool QUrl::matches(const QUrl &url, FormattingOptions options) const
 }
 
 /*!
-    Returns true if this URL and the given \a url are not equal;
-    otherwise returns false.
+    Returns \c true if this URL and the given \a url are not equal;
+    otherwise returns \c false.
 */
 bool QUrl::operator !=(const QUrl &url) const
 {
@@ -3686,7 +3772,7 @@ QString QUrl::toLocalFile() const
 
 /*!
     \since 4.8
-    Returns true if this URL is pointing to a local file path. A URL is a
+    Returns \c true if this URL is pointing to a local file path. A URL is a
     local file path if the scheme is "file".
 
     Note that this function considers URLs with hostnames to be local file
@@ -3697,15 +3783,11 @@ QString QUrl::toLocalFile() const
 */
 bool QUrl::isLocalFile() const
 {
-    if (!d) return false;
-
-    if (d->scheme != fileScheme())
-        return false;   // not file
-    return true;
+    return d && d->isLocalFile();
 }
 
 /*!
-    Returns true if this URL is a parent of \a childUrl. \a childUrl is a child
+    Returns \c true if this URL is a parent of \a childUrl. \a childUrl is a child
     of this URL if the two URLs share the same scheme and authority,
     and this URL's path is a parent of the path of \a childUrl.
 */
@@ -3856,7 +3938,7 @@ static inline void appendComponentIfPresent(QString &msg, bool present, const ch
 
     Returns an error message if the last operation that modified this QUrl
     object ran into a parsing error. If no error was detected, this function
-    returns an empty string and isValid() returns true.
+    returns an empty string and isValid() returns \c true.
 
     The error message returned by this function is technical in nature and may
     not be understood by end users. It is mostly useful to developers trying to
@@ -3964,9 +4046,9 @@ uint qHash(const QUrl &url, uint seed) Q_DECL_NOTHROW
 static QUrl adjustFtpPath(QUrl url)
 {
     if (url.scheme() == ftpScheme()) {
-        QString path = url.path();
+        QString path = url.path(QUrl::PrettyDecoded);
         if (path.startsWith(QLatin1String("//")))
-            url.setPath(QLatin1String("/%2F") + path.midRef(2));
+            url.setPath(QLatin1String("/%2F") + path.midRef(2), QUrl::TolerantMode);
     }
     return url;
 }

@@ -45,22 +45,21 @@
 
 #include <stddef.h>
 
-#define QT_VERSION_STR   "5.2.0"
+#define QT_VERSION_STR   "5.2.2"
 /*
    QT_VERSION is (major << 16) + (minor << 8) + patch.
 */
-#define QT_VERSION 0x050200
+#define QT_VERSION 0x050202
 /*
    can be used like #if (QT_VERSION >= QT_VERSION_CHECK(4, 4, 0))
 */
 #define QT_VERSION_CHECK(major, minor, patch) ((major<<16)|(minor<<8)|(patch))
 
-#if !defined(QT_BUILD_MOC) && !defined(QT_BUILD_QMAKE) && !defined(QT_BUILD_CONFIGURE)
+#if !defined(QT_BUILD_QMAKE) && !defined(QT_BUILD_CONFIGURE)
 #include <QtCore/qconfig.h>
-#endif
-
 #include <QtCore/qfeatures.h>
 #define QT_SUPPORTS(FEATURE) (!defined(QT_NO_##FEATURE))
+#endif
 
 /* These two macros makes it possible to turn the builtin line expander into a
  * string literal. */
@@ -194,8 +193,12 @@ typedef quint64 qulonglong;
 #ifndef QT_POINTER_SIZE
 #  if defined(Q_OS_WIN64)
 #   define QT_POINTER_SIZE 8
-#  elif defined(Q_OS_WIN32) || defined(Q_OS_WINCE)
+#  elif defined(Q_OS_WIN32) || defined(Q_OS_WINCE) || defined(Q_OS_WINRT)
 #   define QT_POINTER_SIZE 4
+#  elif defined(Q_OS_ANDROID)
+#   define QT_POINTER_SIZE 4 // ### Add auto-detection to Windows configure
+#  elif !defined(QT_BOOTSTRAPPED)
+#   error could not determine QT_POINTER_SIZE
 #  endif
 #endif
 
@@ -206,19 +209,12 @@ typedef quint64 qulonglong;
 QT_BEGIN_INCLUDE_NAMESPACE
 typedef unsigned char uchar;
 typedef unsigned short ushort;
-#if defined(Q_QDOC) || !defined(Q_OS_ANDROID)
 typedef unsigned int uint;
-#else
-# include <sys/types.h>
-#endif
 typedef unsigned long ulong;
 QT_END_INCLUDE_NAMESPACE
 
-// This logic must match the one in qmetatype.h
 #if defined(QT_COORD_TYPE)
 typedef QT_COORD_TYPE qreal;
-#elif defined(QT_NO_FPU) || defined(Q_PROCESSOR_ARM) || defined(Q_OS_WINCE)
-typedef float qreal;
 #else
 typedef double qreal;
 #endif
@@ -329,9 +325,6 @@ typedef double qreal;
 #else
 #    define Q_AUTOTEST_EXPORT
 #endif
-
-#define Q_INIT_RESOURCE_EXTERN(name) \
-    extern int QT_MANGLE_NAMESPACE(qInitResources_ ## name) ();
 
 #define Q_INIT_RESOURCE(name) \
     do { extern int QT_MANGLE_NAMESPACE(qInitResources_ ## name) ();       \
@@ -469,6 +462,19 @@ typedef qptrdiff qintptr;
 #  define QT_FASTCALL
 #endif
 
+// enable gcc warnings for printf-style functions
+#if defined(Q_CC_GNU) && !defined(__INSURE__)
+#  if defined(Q_CC_MINGW) && !defined(Q_CC_CLANG)
+#    define Q_ATTRIBUTE_FORMAT_PRINTF(A, B) \
+         __attribute__((format(gnu_printf, (A), (B))))
+#  else
+#    define Q_ATTRIBUTE_FORMAT_PRINTF(A, B) \
+         __attribute__((format(printf, (A), (B))))
+#  endif
+#else
+#  define Q_ATTRIBUTE_FORMAT_PRINTF(A, B)
+#endif
+
 //defines the type for the WNDPROC on windows
 //the alignment needs to be forced for sse2 to not crash with mingw
 #if defined(Q_OS_WIN)
@@ -527,6 +533,16 @@ Q_DECL_CONSTEXPR inline const T &qBound(const T &min, const T &val, const T &max
 #  define QT_MAC_DEPLOYMENT_TARGET_BELOW(osx, ios) \
     (defined(__MAC_OS_X_VERSION_MIN_REQUIRED) && osx != __MAC_NA && __MAC_OS_X_VERSION_MIN_REQUIRED < osx) || \
     (defined(__IPHONE_OS_VERSION_MIN_REQUIRED) && ios != __IPHONE_NA && __IPHONE_OS_VERSION_MIN_REQUIRED < ios)
+
+#  define QT_IOS_PLATFORM_SDK_EQUAL_OR_ABOVE(ios) \
+      QT_MAC_PLATFORM_SDK_EQUAL_OR_ABOVE(__MAC_NA, ios)
+#  define QT_OSX_PLATFORM_SDK_EQUAL_OR_ABOVE(osx) \
+      QT_MAC_PLATFORM_SDK_EQUAL_OR_ABOVE(osx, __IPHONE_NA)
+
+#  define QT_IOS_DEPLOYMENT_TARGET_BELOW(ios) \
+      QT_MAC_DEPLOYMENT_TARGET_BELOW(__MAC_NA, ios)
+#  define QT_OSX_DEPLOYMENT_TARGET_BELOW(osx) \
+      QT_MAC_DEPLOYMENT_TARGET_BELOW(osx, __IPHONE_NA)
 #endif
 
 /*
@@ -540,6 +556,10 @@ class QDataStream;
 #  define QT_NO_PROCESS          // no exec*, no fork
 #  define QT_NO_SHAREDMEMORY     // only POSIX, no SysV and in the end...
 #  define QT_NO_SYSTEMSEMAPHORE  // not needed at all in a flat address space
+#endif
+
+#if defined(Q_OS_WINRT)
+#  define QT_NO_PROCESS
 #endif
 
 inline void qt_noop(void) {}
@@ -654,8 +674,13 @@ template <> class QStaticAssertFailure<true> {};
 
 #define Q_STATIC_ASSERT_PRIVATE_JOIN(A, B) Q_STATIC_ASSERT_PRIVATE_JOIN_IMPL(A, B)
 #define Q_STATIC_ASSERT_PRIVATE_JOIN_IMPL(A, B) A ## B
+#ifdef __COUNTER__
+#define Q_STATIC_ASSERT(Condition) \
+    enum {Q_STATIC_ASSERT_PRIVATE_JOIN(q_static_assert_result, __COUNTER__) = sizeof(QStaticAssertFailure<!!(Condition)>)}
+#else
 #define Q_STATIC_ASSERT(Condition) \
     enum {Q_STATIC_ASSERT_PRIVATE_JOIN(q_static_assert_result, __LINE__) = sizeof(QStaticAssertFailure<!!(Condition)>)}
+#endif /* __COUNTER__ */
 #define Q_STATIC_ASSERT_X(Condition, Message) Q_STATIC_ASSERT(Condition)
 #endif
 
@@ -681,11 +706,13 @@ typedef void (*QFunctionPointer)();
 #  define Q_UNIMPLEMENTED() qWarning("%s:%d: %s: Unimplemented code.", __FILE__, __LINE__, Q_FUNC_INFO)
 #endif
 
+Q_DECL_CONSTEXPR static inline bool qFuzzyCompare(double p1, double p2) Q_REQUIRED_RESULT Q_DECL_UNUSED;
 Q_DECL_CONSTEXPR static inline bool qFuzzyCompare(double p1, double p2)
 {
     return (qAbs(p1 - p2) * 1000000000000. <= qMin(qAbs(p1), qAbs(p2)));
 }
 
+Q_DECL_CONSTEXPR static inline bool qFuzzyCompare(float p1, float p2) Q_REQUIRED_RESULT Q_DECL_UNUSED;
 Q_DECL_CONSTEXPR static inline bool qFuzzyCompare(float p1, float p2)
 {
     return (qAbs(p1 - p2) * 100000.f <= qMin(qAbs(p1), qAbs(p2)));
@@ -694,6 +721,7 @@ Q_DECL_CONSTEXPR static inline bool qFuzzyCompare(float p1, float p2)
 /*!
   \internal
 */
+Q_DECL_CONSTEXPR static inline bool qFuzzyIsNull(double d) Q_REQUIRED_RESULT Q_DECL_UNUSED;
 Q_DECL_CONSTEXPR static inline bool qFuzzyIsNull(double d)
 {
     return qAbs(d) <= 0.000000000001;
@@ -702,6 +730,7 @@ Q_DECL_CONSTEXPR static inline bool qFuzzyIsNull(double d)
 /*!
   \internal
 */
+Q_DECL_CONSTEXPR static inline bool qFuzzyIsNull(float f) Q_REQUIRED_RESULT Q_DECL_UNUSED;
 Q_DECL_CONSTEXPR static inline bool qFuzzyIsNull(float f)
 {
     return qAbs(f) <= 0.00001f;
@@ -712,6 +741,7 @@ Q_DECL_CONSTEXPR static inline bool qFuzzyIsNull(float f)
    check whether the actual value is 0 or close to 0, but whether
    it is binary 0, disregarding sign.
 */
+static inline bool qIsNull(double d) Q_REQUIRED_RESULT Q_DECL_UNUSED;
 static inline bool qIsNull(double d)
 {
     union U {
@@ -728,6 +758,7 @@ static inline bool qIsNull(double d)
    check whether the actual value is 0 or close to 0, but whether
    it is binary 0, disregarding sign.
 */
+static inline bool qIsNull(float f) Q_REQUIRED_RESULT Q_DECL_UNUSED;
 static inline bool qIsNull(float f)
 {
     union U {
@@ -788,19 +819,22 @@ Q_CORE_EXPORT void qFreeAligned(void *ptr);
 #endif
 #if defined(QT_NO_WARNINGS)
 #  if defined(Q_CC_MSVC)
-#    pragma warning(disable: 4251) /* class 'A' needs to have dll interface for to be used by clients of class 'B'. */
-#    pragma warning(disable: 4244) /* 'conversion' conversion from 'type1' to 'type2', possible loss of data */
+#    pragma warning(disable: 4251) /* class 'type' needs to have dll-interface to be used by clients of class 'type2' */
+#    pragma warning(disable: 4244) /* conversion from 'type1' to 'type2', possible loss of data */
 #    pragma warning(disable: 4275) /* non - DLL-interface classkey 'identifier' used as base for DLL-interface classkey 'identifier' */
-#    pragma warning(disable: 4514) /* unreferenced inline/local function has been removed */
+#    pragma warning(disable: 4514) /* unreferenced inline function has been removed */
 #    pragma warning(disable: 4800) /* 'type' : forcing value to bool 'true' or 'false' (performance warning) */
 #    pragma warning(disable: 4097) /* typedef-name 'identifier1' used as synonym for class-name 'identifier2' */
 #    pragma warning(disable: 4706) /* assignment within conditional expression */
-#    pragma warning(disable: 4786) /* truncating debug info after 255 characters */
-#    pragma warning(disable: 4660) /* template-class specialization 'identifier' is already instantiated */
+#    if _MSC_VER <= 1310 // MSVC 2003
+#      pragma warning(disable: 4786) /* 'identifier' : identifier was truncated to 'number' characters in the debug information */
+#    endif
 #    pragma warning(disable: 4355) /* 'this' : used in base member initializer list */
-#    pragma warning(disable: 4231) /* nonstandard extension used : 'extern' before template explicit instantiation */
+#    if _MSC_VER < 1800 // MSVC 2013
+#      pragma warning(disable: 4231) /* nonstandard extension used : 'identifier' before template explicit instantiation */
+#    endif
 #    pragma warning(disable: 4710) /* function not inlined */
-#    pragma warning(disable: 4530) /* C++ exception handler used, but unwind semantics are not enabled. Specify -GX */
+#    pragma warning(disable: 4530) /* C++ exception handler used, but unwind semantics are not enabled. Specify /EHsc */
 #  elif defined(Q_CC_BOR)
 #    pragma option -w-inl
 #    pragma option -w-aus
@@ -824,7 +858,7 @@ public:
 };
 
 #define Q_FOREACH(variable, container)                                \
-for (QForeachContainer<__typeof__(container)> _container_(container); \
+for (QForeachContainer<__typeof__((container))> _container_((container)); \
      !_container_.brk && _container_.i != _container_.e;              \
      __extension__  ({ ++_container_.brk; ++_container_.i; }))                       \
     for (variable = *_container_.i;; __extension__ ({--_container_.brk; break;}))
@@ -985,6 +1019,20 @@ template <bool B, typename T = void> struct QEnableIf;
 template <typename T> struct QEnableIf<true, T> { typedef T Type; };
 }
 
+#ifndef Q_FORWARD_DECLARE_OBJC_CLASS
+#  ifdef __OBJC__
+#    define Q_FORWARD_DECLARE_OBJC_CLASS(classname) @class classname
+#  else
+#    define Q_FORWARD_DECLARE_OBJC_CLASS(classname) typedef struct objc_object classname
+#  endif
+#endif
+#ifndef Q_FORWARD_DECLARE_CF_TYPE
+#  define Q_FORWARD_DECLARE_CF_TYPE(type) typedef const struct __ ## type * type ## Ref
+#endif
+#ifndef Q_FORWARD_DECLARE_MUTABLE_CF_TYPE
+#  define Q_FORWARD_DECLARE_MUTABLE_CF_TYPE(type) typedef struct __ ## type * type ## Ref
+#endif
+
 QT_END_NAMESPACE
 // Q_GLOBAL_STATIC
 #include <QtCore/qglobalstatic.h>
@@ -994,6 +1042,7 @@ QT_END_NAMESPACE
 #include <QtCore/qflags.h>
 #include <QtCore/qsysinfo.h>
 #include <QtCore/qtypeinfo.h>
+#include <QtCore/qnumeric.h>
 
 #endif /* __cplusplus */
 

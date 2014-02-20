@@ -5,18 +5,7 @@ QT += platformsupport-private core-private gui-private
 # Uncomment this to build with support for IMF once it becomes available in the BBNDK
 #CONFIG += qqnx_imf
 
-# Uncomment this to build with support for PPS based platform integration
-#CONFIG += qqnx_pps
-
-CONFIG(blackberry) {
-    CONFIG += qqnx_pps
-
-    # Uncomment following line to enable screen event
-    # handling through a dedicated thread.
-    # CONFIG += qqnx_screeneventthread
-} else {
-    CONFIG += qqnx_screeneventthread
-}
+!blackberry:CONFIG += qqnx_screeneventthread
 
 # Uncomment these to enable debugging output for various aspects of the plugin
 #DEFINES += QQNXBPSEVENTFILTER_DEBUG
@@ -33,7 +22,6 @@ CONFIG(blackberry) {
 #DEFINES += QQNXNAVIGATOREVENTNOTIFIER_DEBUG
 #DEFINES += QQNXNAVIGATOR_DEBUG
 #DEFINES += QQNXRASTERBACKINGSTORE_DEBUG
-#DEFINES += QQNXROOTWINDOW_DEBUG
 #DEFINES += QQNXSCREENEVENTTHREAD_DEBUG
 #DEFINES += QQNXSCREENEVENT_DEBUG
 #DEFINES += QQNXSCREEN_DEBUG
@@ -41,7 +29,8 @@ CONFIG(blackberry) {
 #DEFINES += QQNXWINDOW_DEBUG
 #DEFINES += QQNXCURSOR_DEBUG
 #DEFINES += QQNXFILEPICKER_DEBUG
-
+#DEFINES += QQNXEGLWINDOW_DEBUG
+#DEFINES += QQNXRASTERWINDOW_DEBUG
 
 SOURCES =   main.cpp \
             qqnxbuffer.cpp \
@@ -49,14 +38,14 @@ SOURCES =   main.cpp \
             qqnxscreen.cpp \
             qqnxwindow.cpp \
             qqnxrasterbackingstore.cpp \
-            qqnxrootwindow.cpp \
             qqnxscreeneventhandler.cpp \
             qqnxnativeinterface.cpp \
             qqnxnavigatoreventhandler.cpp \
             qqnxabstractnavigator.cpp \
             qqnxabstractvirtualkeyboard.cpp \
             qqnxservices.cpp \
-            qqnxcursor.cpp
+            qqnxcursor.cpp \
+            qqnxrasterwindow.cpp
 
 HEADERS =   main.h \
             qqnxbuffer.h \
@@ -65,14 +54,15 @@ HEADERS =   main.h \
             qqnxscreen.h \
             qqnxwindow.h \
             qqnxrasterbackingstore.h \
-            qqnxrootwindow.h \
             qqnxscreeneventhandler.h \
             qqnxnativeinterface.h \
             qqnxnavigatoreventhandler.h \
             qqnxabstractnavigator.h \
             qqnxabstractvirtualkeyboard.h \
+            qqnxabstractcover.h \
             qqnxservices.h \
-            qqnxcursor.h
+            qqnxcursor.h \
+            qqnxrasterwindow.h
 
 CONFIG(qqnx_screeneventthread) {
     DEFINES += QQNX_SCREENEVENTTHREAD
@@ -83,9 +73,11 @@ CONFIG(qqnx_screeneventthread) {
 LIBS += -lscreen
 
 contains(QT_CONFIG, opengles2) {
-    SOURCES += qqnxglcontext.cpp
+    SOURCES += qqnxglcontext.cpp \
+               qqnxeglwindow.cpp
 
-    HEADERS += qqnxglcontext.h
+    HEADERS += qqnxglcontext.h \
+               qqnxeglwindow.h
 
     LIBS += -lEGL
 }
@@ -114,9 +106,11 @@ CONFIG(blackberry-playbook) {
 } else {
     CONFIG(blackberry) {
         SOURCES += qqnxfiledialoghelper_bb10.cpp \
-                   qqnxfilepicker.cpp
+                   qqnxfilepicker.cpp \
+                   qqnxnavigatorcover.cpp
 
-        HEADERS += qqnxfilepicker.h
+        HEADERS += qqnxfilepicker.h \
+                   qqnxnavigatorcover.h
     }
 }
 
@@ -135,7 +129,8 @@ CONFIG(qqnx_pps) {
                qqnxclipboard.h \
                qqnxbuttoneventnotifier.h
 
-    LIBS += -lpps -lclipboard
+    LIBS += -lpps
+    !contains(DEFINES, QT_NO_CLIPBOARD): LIBS += -lclipboard
 
     CONFIG(qqnx_imf) {
         DEFINES += QQNX_IMF

@@ -75,7 +75,6 @@ public:
     QList<QByteArray> frameworks;
     QSet<QByteArray> preprocessedIncludes;
     Macros macros;
-    Symbols preprocessed(const QByteArray &filename, FILE *file);
     Symbols preprocessed(const QByteArray &filename, QIODevice *device);
 
     void parseDefineArguments(Macro *m);
@@ -90,6 +89,8 @@ public:
 
     int evaluateCondition();
 
+    enum TokenizeMode { TokenizeCpp, TokenizePreprocessor, PreparePreprocessorStatement, TokenizePreprocessorStatement, TokenizeInclude, PrepareDefine, TokenizeDefine };
+    static Symbols tokenize(const QByteArray &input, int lineNum = 1, TokenizeMode mode = TokenizeCpp);
 
 private:
     void until(Token);

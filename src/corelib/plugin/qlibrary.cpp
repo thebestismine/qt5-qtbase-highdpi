@@ -223,7 +223,7 @@ static long qt_find_pattern(const char *s, ulong s_len,
   we can get the verification data without have to actually load the library.
   This lets us detect mismatches more safely.
 
-  Returns false if version information is not present, or if the
+  Returns \c false if version information is not present, or if the
                 information could not be read.
   Returns  true if version information is present and successfully read.
 */
@@ -256,7 +256,8 @@ static bool findPatternUnloaded(const QString &library, QLibraryPrivate *lib)
     */
     bool hasMetaData = false;
     long pos = 0;
-    const char pattern[] = "QTMETADATA  ";
+    char pattern[] = "qTMETADATA  ";
+    pattern[0] = 'Q'; // Ensure the pattern "QTMETADATA" is not found in this library should QPluginLoader ever encounter it.
     const ulong plen = qstrlen(pattern);
 #if defined (Q_OF_ELF) && defined(Q_CC_GNU)
     int r = QElfParser().parse(filedata, fdlen, library, lib, &pos, &fdlen);
@@ -373,6 +374,7 @@ private:
 
 static QBasicMutex qt_library_mutex;
 static QLibraryStore *qt_library_data = 0;
+static bool qt_library_data_once;
 
 QLibraryStore::~QLibraryStore()
 {
@@ -428,8 +430,11 @@ Q_DESTRUCTOR_FUNCTION(qlibraryCleanup)
 // must be called with a locked mutex
 QLibraryStore *QLibraryStore::instance()
 {
-    if (Q_UNLIKELY(!qt_library_data))
+    if (Q_UNLIKELY(!qt_library_data_once && !qt_library_data)) {
+        // only create once per process lifetime
         qt_library_data = new QLibraryStore;
+        qt_library_data_once = true;
+    }
     return qt_library_data;
 }
 
@@ -439,12 +444,15 @@ inline QLibraryPrivate *QLibraryStore::findOrCreate(const QString &fileName, con
     QLibraryStore *data = instance();
 
     // check if this library is already loaded
-    QLibraryPrivate *lib = data->libraryMap.value(fileName);
+    QLibraryPrivate *lib = 0;
+    if (Q_LIKELY(data))
+        lib = data->libraryMap.value(fileName);
     if (!lib)
         lib = new QLibraryPrivate(fileName, version);
 
     // track this library
-    data->libraryMap.insert(fileName, lib);
+    if (Q_LIKELY(data))
+        data->libraryMap.insert(fileName, lib);
 
     lib->libraryRefCount.ref();
     return lib;
@@ -463,9 +471,11 @@ inline void QLibraryStore::releaseLibrary(QLibraryPrivate *lib)
     // no one else is using
     Q_ASSERT(lib->libraryUnloadCount.load() == 0);
 
-    QLibraryPrivate *that = data->libraryMap.take(lib->fileName);
-    Q_ASSERT(lib == that);
-    Q_UNUSED(that);
+    if (Q_LIKELY(data)) {
+        QLibraryPrivate *that = data->libraryMap.take(lib->fileName);
+        Q_ASSERT(lib == that);
+        Q_UNUSED(that);
+    }
     delete lib;
 }
 
@@ -560,8 +570,8 @@ bool QLibraryPrivate::loadPlugin()
 }
 
 /*!
-    Returns true if \a fileName has a valid suffix for a loadable
-    library; otherwise returns false.
+    Returns \c true if \a fileName has a valid suffix for a loadable
+    library; otherwise returns \c false.
 
     \table
     \header \li Platform \li Valid suffixes
@@ -736,8 +746,8 @@ void QLibraryPrivate::updatePluginState()
 }
 
 /*!
-    Loads the library and returns true if the library was loaded
-    successfully; otherwise returns false. Since resolve() always
+    Loads the library and returns \c true if the library was loaded
+    successfully; otherwise returns \c false. Since resolve() always
     calls this function before resolving any symbols it is not
     necessary to call it explicitly. In some situations you might want
     the library loaded in advance, in which case you would use this
@@ -756,8 +766,8 @@ bool QLibrary::load()
 }
 
 /*!
-    Unloads the library and returns true if the library could be
-    unloaded; otherwise returns false.
+    Unloads the library and returns \c true if the library could be
+    unloaded; otherwise returns \c false.
 
     This happens automatically on application termination, so you
     shouldn't normally need to call this function.
@@ -780,7 +790,7 @@ bool QLibrary::unload()
 }
 
 /*!
-    Returns true if the library is loaded; otherwise returns false.
+    Returns \c true if the library is loaded; otherwise returns \c false.
 
     \sa load()
  */
