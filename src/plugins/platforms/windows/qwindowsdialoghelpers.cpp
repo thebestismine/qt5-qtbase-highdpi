@@ -880,7 +880,7 @@ public:
     inline static QWindowsNativeFileDialogBase *create(QFileDialogOptions::AcceptMode am, const QWindowsFileDialogSharedData &data);
 
     virtual void setWindowTitle(const QString &title);
-    inline void setMode(QFileDialogOptions::FileMode mode, QFileDialogOptions::FileDialogOptions options);
+    inline void setMode(QFileDialogOptions::FileMode mode, QFileDialogOptions::AcceptMode acceptMode, QFileDialogOptions::FileDialogOptions options);
     inline void setDirectory(const QString &directory);
     inline void updateDirectory() { setDirectory(m_data.directory().toLocalFile()); }
     inline QString directory() const;
@@ -1037,14 +1037,17 @@ void QWindowsNativeFileDialogBase::doExec(HWND owner)
     }
 }
 
-void QWindowsNativeFileDialogBase::setMode(QFileDialogOptions::FileMode mode, QFileDialogOptions::FileDialogOptions options)
+void QWindowsNativeFileDialogBase::setMode(QFileDialogOptions::FileMode mode,
+                                           QFileDialogOptions::AcceptMode acceptMode,
+                                           QFileDialogOptions::FileDialogOptions options)
 {
     DWORD flags = FOS_PATHMUSTEXIST | FOS_FORCESHOWHIDDEN;
     if (options & QFileDialogOptions::DontResolveSymlinks)
         flags |= FOS_NODEREFERENCELINKS;
     switch (mode) {
     case QFileDialogOptions::AnyFile:
-        flags |= FOS_NOREADONLYRETURN;
+        if (acceptMode == QFileDialogOptions::AcceptSave)
+            flags |= FOS_NOREADONLYRETURN;
         if (!(options & QFileDialogOptions::DontConfirmOverwrite))
             flags |= FOS_OVERWRITEPROMPT;
         break;
@@ -1059,8 +1062,9 @@ void QWindowsNativeFileDialogBase::setMode(QFileDialogOptions::FileMode mode, QF
         flags |= FOS_FILEMUSTEXIST | FOS_ALLOWMULTISELECT;
         break;
     }
-    qCDebug(lcQpaDialogs) << __FUNCTION__ << " mode=" << mode << " options"
-        << options << " results in 0x" << flags;
+    qCDebug(lcQpaDialogs) << __FUNCTION__ << "mode=" << mode
+        << "acceptMode=" << acceptMode << "options=" << options
+        << "results in" << showbase << hex << flags;
 
     if (FAILED(m_fileDialog->SetOptions(flags)))
         qErrnoWarning("%s: SetOptions() failed", __FUNCTION__);
@@ -1191,7 +1195,7 @@ static QList<FilterSpec> filterSpecs(const QStringList &filters,
     const QRegExp filterSeparatorRE(QStringLiteral("[;\\s]+"));
     const QString separator = QStringLiteral(";");
     Q_ASSERT(filterSeparatorRE.isValid());
-    // Split filter specification as 'Texts (*.txt[;] *.doc)'
+    // Split filter specification as 'Texts (*.txt[;] *.doc)', '*.txt[;] *.doc'
     // into description and filters specification as '*.txt;*.doc'
     foreach (const QString &filterString, filters) {
         const int openingParenPos = filterString.lastIndexOf(QLatin1Char('('));
@@ -1199,8 +1203,10 @@ static QList<FilterSpec> filterSpecs(const QStringList &filters,
             filterString.indexOf(QLatin1Char(')'), openingParenPos + 1) : -1;
         FilterSpec filterSpec;
         filterSpec.filter = closingParenPos == -1 ?
-            QString(QLatin1Char('*')) :
+            filterString :
             filterString.mid(openingParenPos + 1, closingParenPos - openingParenPos - 1).trimmed();
+        if (filterSpec.filter.isEmpty())
+            filterSpec.filter += QLatin1Char('*');
         filterSpec.filter.replace(filterSeparatorRE, separator);
         filterSpec.description = filterString;
         if (hideFilterDetails && openingParenPos != -1) { // Do not show pattern in description
@@ -1555,7 +1561,7 @@ public:
     QWindowsFileDialogHelper() {}
     virtual bool supportsNonModalDialog(const QWindow * /* parent */ = 0) const { return false; }
     virtual bool defaultNameFilterDisables() const
-        { return true; }
+        { return false; }
     virtual void setDirectory(const QUrl &directory) Q_DECL_OVERRIDE;
     virtual QUrl directory() const Q_DECL_OVERRIDE;
     virtual void selectFile(const QUrl &filename) Q_DECL_OVERRIDE;
@@ -1592,7 +1598,7 @@ QWindowsNativeDialogBase *QWindowsFileDialogHelper::createNativeDialog()
     m_data.fromOptions(opts);
     const QFileDialogOptions::FileMode mode = opts->fileMode();
     result->setWindowTitle(opts->windowTitle());
-    result->setMode(mode, opts->options());
+    result->setMode(mode, opts->acceptMode(), opts->options());
     result->setHideFiltersDetails(opts->testOption(QFileDialogOptions::HideNameFilterDetails));
     const QStringList nameFilters = opts->nameFilters();
     if (!nameFilters.isEmpty())

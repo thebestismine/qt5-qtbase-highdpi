@@ -257,9 +257,9 @@ QLibraryInfo::buildDate()
 
 #if defined(Q_CC_CLANG) // must be before GNU, because clang claims to be GNU too
 #  ifdef __apple_build_version__ // Apple clang has other version numbers
-#    define COMPILER_STRING __clang_version__ " (Apple)"
+#    define COMPILER_STRING "Clang " __clang_version__ " (Apple)"
 #  else
-#    define COMPILER_STRING __clang_version__
+#    define COMPILER_STRING "Clang " __clang_version__
 #  endif
 #elif defined(Q_CC_GNU)
 #  define COMPILER_STRING "GCC " __VERSION__
@@ -287,9 +287,9 @@ QLibraryInfo::buildDate()
   \since 5.3
 */
 
-const char *QLibraryInfo::build()
+const char *QLibraryInfo::build() Q_DECL_NOTHROW
 {
-   static const char data[] = "Qt " QT_VERSION_STR " (" __DATE__ "), "
+   static const char data[] = "Qt " QT_VERSION_STR " (" __DATE__ ", "
         COMPILER_STRING ", "
 #if QT_POINTER_SIZE == 4
         "32"

@@ -61,6 +61,7 @@
 QT_BEGIN_NAMESPACE
 
 class QPlatformTextureList;
+class QPlatformTextureListWatcher;
 class QWidgetBackingStore;
 
 struct BeginPaintInfo {
@@ -70,6 +71,7 @@ struct BeginPaintInfo {
     uint backingStoreRecreated : 1;
 };
 
+#ifndef QT_NO_OPENGL
 class QPlatformTextureListWatcher : public QObject
 {
     Q_OBJECT
@@ -86,10 +88,21 @@ private:
      bool m_locked;
      QWidgetBackingStore *m_backingStore;
 };
+#endif
 
 class Q_AUTOTEST_EXPORT QWidgetBackingStore
 {
 public:
+    enum UpdateTime {
+        UpdateNow,
+        UpdateLater
+    };
+
+    enum BufferState{
+        BufferValid,
+        BufferInvalid
+    };
+
     QWidgetBackingStore(QWidget *t);
     ~QWidgetBackingStore();
 
@@ -109,10 +122,10 @@ public:
     }
 
     // ### Qt 4.6: Merge into a template function (after MSVC isn't supported anymore).
-    void markDirty(const QRegion &rgn, QWidget *widget, bool updateImmediately = false,
-                   bool invalidateBuffer = false);
-    void markDirty(const QRect &rect, QWidget *widget, bool updateImmediately = false,
-                   bool invalidateBuffer = false);
+    void markDirty(const QRegion &rgn, QWidget *widget, UpdateTime updateTime = UpdateLater,
+                   BufferState bufferState = BufferValid);
+    void markDirty(const QRect &rect, QWidget *widget, UpdateTime updateTime = UpdateLater,
+                   BufferState bufferState = BufferValid);
 
 private:
     QWidget *tlw;
@@ -131,10 +144,13 @@ private:
 
     QPlatformTextureListWatcher *textureListWatcher;
 
-    void sendUpdateRequest(QWidget *widget, bool updateImmediately);
+    void sendUpdateRequest(QWidget *widget, UpdateTime updateTime);
 
     static bool flushPaint(QWidget *widget, const QRegion &rgn);
     static void unflushPaint(QWidget *widget, const QRegion &rgn);
+    static void qt_flush(QWidget *widget, const QRegion &region, QBackingStore *backingStore,
+                         QWidget *tlw, const QPoint &tlwOffset,
+                         QPlatformTextureList *widgetTextures = 0);
 
     void doSync();
     bool bltRect(const QRect &rect, int dx, int dy, QWidget *widget);
