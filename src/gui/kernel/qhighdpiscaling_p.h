@@ -48,8 +48,8 @@
 #include <QtCore/qvector.h>
 #include <QtGui/qregion.h>
 
-// This file implmements utility functions for high-dpi on operating systems
-// that do not provide native scaling support
+// This file implmements utility functions for high-dpi scaling on
+// operating systems that do not provide native scaling support.
 //
 // The functons support creating a logical device-independent
 // coordinate system which is related to the device pixel coordinate
