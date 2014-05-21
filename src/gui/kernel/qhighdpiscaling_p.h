@@ -5,19 +5,21 @@
 #include <QtCore/qvector.h>
 #include <QtGui/qregion.h>
 
-// Qt high-dpi scaling for operating systems that do not provide
-// "retina"-type scaling support.
+// This file implmements utility functions for high-dpi on operating systems
+// that do not provide native scaling support
 //
-// These functons support creating a logical device-independent
+// The functons support creating a logical device-independent
 // coordinate system which is related to the device pixel coordinate
 // through a scaling factor. The scaling factor is set by the
 // QT_HIGHDPI_SCALE_FACTOR environment variable.
 //
-// Most of the Qt API will then operate in the device-independent
-// pixels. For example, setting the scale factor to 2.0 make Qt see
-// half of the "device" window geometry.
+// Whith thse functons in use  most of the Qt API will then operate in
+// the device-independent coodinate system. For example, setting
+// the scale factor to 2.0 will make Qt see half of the "device"
+// window geometry. Desktop and event geometry will be scaled
+// to match.
 //
-// Integer scaling factors work best. Glitch free-graphics at non-integer
+// Integer scaling factors work best. Glitch-free graphics at non-integer
 // scaling factors can not be guaranteed.
 
 Q_GUI_EXPORT bool qHighDpiIsScaled();       // Returns true if a scaling factor is set
