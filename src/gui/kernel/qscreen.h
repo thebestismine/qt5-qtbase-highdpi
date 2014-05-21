@@ -150,6 +150,7 @@ private:
     friend class QGuiApplicationPrivate;
     friend class QPlatformIntegration;
     friend class QPlatformScreen;
+    friend class QHighDpiScaling;
 };
 
 QT_END_NAMESPACE
