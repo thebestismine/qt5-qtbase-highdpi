@@ -39,6 +39,9 @@
 **
 ****************************************************************************/
 
+#ifndef QHIGHDPISCALING_P_H
+#define QHIGHDPISCALING_P_H
+
 #include <QtCore/qglobal.h>
 #include <QtCore/qmargins.h>
 #include <QtCore/qrect.h>
@@ -230,3 +233,4 @@ QPair<T, U> qHighDpiToDevicePixels(const QPair<T, U> &pointPair)
     return qMakePair(qHighDpiToDevicePixels(pointPair.first), qHighDpiToDevicePixels(pointPair.second));
 }
 
+#endif
