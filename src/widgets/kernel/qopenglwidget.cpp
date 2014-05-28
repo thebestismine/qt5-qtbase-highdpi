@@ -626,7 +626,7 @@ void QOpenGLWidgetPrivate::recreateFbo()
     format.setAttachment(QOpenGLFramebufferObject::CombinedDepthStencil);
     format.setSamples(samples);
 
-    const QSize deviceSize = q->size() * q->devicePixelRatio();
+    const QSize deviceSize = q->size() * q->devicePixelRatioF();
     fbo = new QOpenGLFramebufferObject(deviceSize, format);
     if (samples > 0)
         resolvedFbo = new QOpenGLFramebufferObject(deviceSize);
@@ -635,7 +635,7 @@ void QOpenGLWidgetPrivate::recreateFbo()
     context->functions()->glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
     paintDevice->setSize(deviceSize);
-    paintDevice->setDevicePixelRatio(q->devicePixelRatio());
+    paintDevice->setDevicePixelRatio(q->devicePixelRatioF());
 
     emit q->resized();
 }
