@@ -12622,6 +12622,9 @@ int QWidget::metric(PaintDeviceMetric m) const
         return qRound(screen->physicalDotsPerInchY());
     } else if (m == PdmDevicePixelRatio) {
         return topLevelWindow ? topLevelWindow->devicePixelRatio() : qApp->devicePixelRatio();
+    } else if (m == PdmDevicePixelRatioScaled) {
+        return (topLevelWindow ? topLevelWindow->devicePixelRatio() : qApp->devicePixelRatio())
+            * QPaintDevice::devicePixelRatioFScale;
     } else {
         val = QPaintDevice::metric(m);// XXX
     }
