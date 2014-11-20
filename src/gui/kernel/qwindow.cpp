@@ -1410,7 +1410,7 @@ void QWindow::setGeometry(const QRect &rect)
 
     d->positionPolicy = QWindowPrivate::WindowFrameExclusive;
     if (d->platformWindow) {
-        d->platformWindow->setGeometry(qHighDpiToDevicePixels(rect));
+        d->platformWindow->setGeometry(qHighDpiToDevicePixels(rect, this));
     } else {
         d->geometry = rect;
 
@@ -1434,7 +1434,7 @@ QRect QWindow::geometry() const
 {
     Q_D(const QWindow);
     if (d->platformWindow)
-        return qHighDpiToDeviceIndependentPixels(d->platformWindow->geometry());
+        return qHighDpiToDeviceIndependentPixels(d->platformWindow->geometry(), this);
     return d->geometry;
 }
 
@@ -1447,7 +1447,7 @@ QMargins QWindow::frameMargins() const
 {
     Q_D(const QWindow);
     if (d->platformWindow)
-        return qHighDpiToDeviceIndependentPixels(d->platformWindow->frameMargins());
+        return qHighDpiToDeviceIndependentPixels(d->platformWindow->frameMargins(), this);
     return QMargins();
 }
 
@@ -1461,7 +1461,7 @@ QRect QWindow::frameGeometry() const
     Q_D(const QWindow);
     if (d->platformWindow) {
         QMargins m = frameMargins();
-        return qHighDpiToDeviceIndependentPixels(d->platformWindow->geometry()).adjusted(-m.left(), -m.top(), m.right(), m.bottom());
+        return qHighDpiToDeviceIndependentPixels(d->platformWindow->geometry(), this).adjusted(-m.left(), -m.top(), m.right(), m.bottom());
     }
     return d->geometry;
 }
@@ -1478,7 +1478,7 @@ QPoint QWindow::framePosition() const
     Q_D(const QWindow);
     if (d->platformWindow) {
         QMargins margins = frameMargins();
-        return qHighDpiToDeviceIndependentPixels(d->platformWindow->geometry().topLeft()) - QPoint(margins.left(), margins.top());
+        return qHighDpiToDeviceIndependentPixels(d->platformWindow->geometry().topLeft(), this) - QPoint(margins.left(), margins.top());
     }
     return d->geometry.topLeft();
 }
@@ -1493,7 +1493,7 @@ void QWindow::setFramePosition(const QPoint &point)
     Q_D(QWindow);
     d->positionPolicy = QWindowPrivate::WindowFrameInclusive;
     if (d->platformWindow) {
-        d->platformWindow->setGeometry(qHighDpiToDevicePixels(QRect(point, size())));
+        d->platformWindow->setGeometry(qHighDpiToDevicePixels(QRect(point, size()), this));
     } else {
         d->positionAutomatic = false;
         d->geometry.moveTopLeft(point);
@@ -1554,7 +1554,7 @@ void QWindow::resize(const QSize &newSize)
 {
     Q_D(QWindow);
     if (d->platformWindow) {
-        d->platformWindow->setGeometry(qHighDpiToDevicePixels(QRect(position(), newSize)));
+        d->platformWindow->setGeometry(qHighDpiToDevicePixels(QRect(position(), newSize), this));
     } else {
         const QSize oldSize = d->geometry.size();
         d->geometry.setSize(newSize);
