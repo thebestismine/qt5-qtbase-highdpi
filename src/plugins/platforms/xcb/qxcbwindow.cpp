@@ -313,11 +313,11 @@ void QXcbWindow::create()
     // Parameters to XCreateWindow() are frame corner + inner size.
     // This fits in case position policy is frame inclusive. There is
     // currently no way to implement it for frame-exclusive geometries.
-    QRect rect = qHighDpiToDevicePixels(window()->geometry());
+    QRect rect = windowGeometry();
     QPlatformWindow::setGeometry(rect);
     const int dpr = int(devicePixelRatio());
 
-    const QSize minimumSize = qHighDpiToDevicePixelsConstrained(window()->minimumSize());
+    const QSize minimumSize = windowMinimumSize();
     if (rect.width() > 0 || rect.height() > 0) {
         rect.setWidth(qBound(1, rect.width(), XCOORD_MAX/dpr));
         rect.setHeight(qBound(1, rect.height(), XCOORD_MAX/dpr));
@@ -1211,7 +1211,7 @@ void QXcbWindow::updateMotifWmHintsBeforeMap()
         mwmhints.flags &= ~MWM_HINTS_INPUT_MODE;
     }
 
-    if (window()->minimumSize() == window()->maximumSize()) {
+    if (windowMinimumSize() == windowMaximumSize()) {
         // fixed size, remove the resize handle (since mwm/dtwm
         // isn't smart enough to do it itself)
         mwmhints.flags |= MWM_HINTS_FUNCTIONS;
@@ -1488,10 +1488,10 @@ void QXcbWindow::propagateSizeHints()
         xcb_size_hints_set_size(&hints, true, xRect.width(), xRect.height());
     xcb_size_hints_set_win_gravity(&hints, m_gravity);
 
-    QSize minimumSize = qHighDpiToDevicePixelsConstrained(win->minimumSize()) * dpr;
-    QSize maximumSize = qHighDpiToDevicePixelsConstrained(win->maximumSize()) * dpr;
-    QSize baseSize = qHighDpiToDevicePixels(win->baseSize()) * dpr;
-    QSize sizeIncrement = qHighDpiToDevicePixels(win->sizeIncrement()) * dpr;
+    QSize minimumSize = windowMinimumSize() * dpr;
+    QSize maximumSize = windowMaximumSize() * dpr;
+    QSize baseSize = windowBaseSize() * dpr;
+    QSize sizeIncrement = windowSizeIncrement() * dpr;
 
     if (minimumSize.width() > 0 || minimumSize.height() > 0)
         xcb_size_hints_set_min_size(&hints,
