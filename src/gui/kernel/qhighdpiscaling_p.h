@@ -80,10 +80,12 @@ class Q_GUI_EXPORT QHighDpiScaling {
 public:
     static bool isActive() { return m_active; }
     static qreal factor(const QWindow *window = 0);
+    static bool scaleDpi();
     static void setFactor(qreal factor);
     static void setWindowFactor(QWindow *window, qreal factor);
 private:
     static qreal m_factor;
+    static bool m_scaleDpi;
     static bool m_active;
     static bool m_perWindowActive;
 };

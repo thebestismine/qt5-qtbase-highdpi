@@ -51,19 +51,32 @@ QT_BEGIN_NAMESPACE
 
 Q_LOGGING_CATEGORY(lcScaling, "qt.scaling");
 
-static inline qreal initialScaleFactor()
+
+// Get a qreal from the given environemnt variable. Returns
+// true on success: the env. variable was set and it contained
+// someting convertible to qreal.
+static bool getEnvReal(qreal *factor, const char *envVar)
 {
-    static const char envVar[] = "QT_SCALE_FACTOR";
-    qreal result = 1;
     if (qEnvironmentVariableIsSet(envVar)) {
         bool ok;
         const qreal f = qgetenv(envVar).toDouble(&ok);
         if (ok && f > 0) {
-            qCDebug(lcScaling) << "Apply QT_SCALE_FACTOR" << f;
-            result = f;
+            qCDebug(lcScaling) << "Apply" << envVar << f;
+            *factor = f;
+            return true;
         }
     }
-    return result;
+    return false;
+}
+
+static inline qreal getInitialScaleFactor(bool *scaleDpi)
+{
+    qreal factor = 1;
+    if (getEnvReal(&factor, "QT_SCALE_FACTOR"))
+        *scaleDpi = false;
+    else if (getEnvReal(&factor, "QT_SCALE_FACTOR_DPI"))
+        *scaleDpi = true;
+    return factor;
 }
 
 /*!
@@ -76,7 +89,8 @@ static inline qreal initialScaleFactor()
     \brief Collection of utility functions for UI scaling.
 */
 
-qreal QHighDpiScaling::m_factor = initialScaleFactor();
+bool  QHighDpiScaling::m_scaleDpi = false;
+qreal QHighDpiScaling::m_factor = getInitialScaleFactor(&m_scaleDpi);
 bool QHighDpiScaling::m_active = !qFuzzyCompare(QHighDpiScaling::m_factor, qreal(1));
 bool QHighDpiScaling::m_perWindowActive = false;
 
@@ -109,6 +123,11 @@ qreal QHighDpiScaling::factor(const QWindow *window)
 
     QVariant windowFactor = window->property(scaleFactorProperty);
     return m_factor * (windowFactor.isValid() ? windowFactor.toReal() : 1);
+}
+
+bool QHighDpiScaling::scaleDpi()
+{
+    return m_scaleDpi;
 }
 
 Q_GUI_EXPORT QSize qHighDpiToDevicePixelsConstrained(const QSize &size, const QWindow *window)

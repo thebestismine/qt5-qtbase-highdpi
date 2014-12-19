@@ -79,7 +79,12 @@ public:
     {
         geometry = qHighDpiToDeviceIndependentPixels(platformScreen->geometry());
         availableGeometry = qHighDpiToDeviceIndependentPixels(platformScreen->availableGeometry());
-    }
+        logicalDpi = platformScreen->logicalDpi();
+        if (QHighDpiScaling::isActive() && QHighDpiScaling::scaleDpi()) { // Apply inverse factor to maintain point sizes of fonts.
+            logicalDpi.first /= QHighDpiScaling::factor();
+            logicalDpi.second /= QHighDpiScaling::factor();
+        }
+     }
 
     void updatePrimaryOrientation();
 
