@@ -86,6 +86,7 @@ public:
 private:
     static qreal m_factor;
     static bool m_scaleDpi;
+    static bool m_isFactor;
     static bool m_active;
     static bool m_perWindowActive;
 };

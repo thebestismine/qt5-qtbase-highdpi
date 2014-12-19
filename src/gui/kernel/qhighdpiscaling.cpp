@@ -69,13 +69,22 @@ static bool getEnvReal(qreal *factor, const char *envVar)
     return false;
 }
 
-static inline qreal getInitialScaleFactor(bool *scaleDpi)
+static inline qreal getInitialScaleFactor(bool *scaleDpi, bool *isFactor)
 {
     qreal factor = 1;
-    if (getEnvReal(&factor, "QT_SCALE_FACTOR"))
+    if (getEnvReal(&factor, "QT_SCALE_FACTOR")) {
         *scaleDpi = false;
-    else if (getEnvReal(&factor, "QT_SCALE_FACTOR_DPI"))
+        *isFactor = true;
+    } else if (getEnvReal(&factor, "QT_SCALE_FACTOR_DPI")) {
         *scaleDpi = true;
+        *isFactor = true;
+    } else if (getEnvReal(&factor, "QT_SCALE")) {
+        *scaleDpi = false;
+        *isFactor = false;
+    } else if (getEnvReal(&factor, "QT_SCALE_DPI")) {
+        *scaleDpi = true;
+        *isFactor = false;
+    }
     return factor;
 }
 
@@ -90,7 +99,8 @@ static inline qreal getInitialScaleFactor(bool *scaleDpi)
 */
 
 bool  QHighDpiScaling::m_scaleDpi = false;
-qreal QHighDpiScaling::m_factor = getInitialScaleFactor(&m_scaleDpi);
+bool  QHighDpiScaling::m_isFactor = true;
+qreal QHighDpiScaling::m_factor = getInitialScaleFactor(&m_scaleDpi, &m_isFactor);
 bool QHighDpiScaling::m_active = !qFuzzyCompare(QHighDpiScaling::m_factor, qreal(1));
 bool QHighDpiScaling::m_perWindowActive = false;
 
@@ -104,6 +114,7 @@ void QHighDpiScaling::setFactor(qreal factor)
 
     QHighDpiScaling::m_active = !qFuzzyCompare(factor, qreal(1));
     QHighDpiScaling::m_factor = QHighDpiScaling::m_active ? factor : qreal(1);
+    QHighDpiScaling::m_isFactor = true; // setFactor sets a factor.
     Q_FOREACH (QScreen *screen, QGuiApplication::screens())
          screen->d_func()->updateHighDpi();
 }
@@ -118,8 +129,15 @@ void QHighDpiScaling::setWindowFactor(QWindow *window, qreal factor)
 
 qreal QHighDpiScaling::factor(const QWindow *window)
 {
-    if (m_perWindowActive || window == 0)
+    if (window == 0)
         return m_factor;
+
+    if (!m_perWindowActive) {
+        if (m_isFactor)
+            return m_factor;
+        else
+            return m_factor / (window->handle()? window->handle()->devicePixelRatio() : qreal(1.0));
+    }
 
     QVariant windowFactor = window->property(scaleFactorProperty);
     return m_factor * (windowFactor.isValid() ? windowFactor.toReal() : 1);
